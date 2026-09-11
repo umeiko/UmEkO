@@ -1,0 +1,520 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>UMEKO Admin</title>
+<style>
+  :root {
+    color-scheme: light;
+    --ink: #17221f;
+    --muted: #6b7773;
+    --paper: #f4f1e8;
+    --panel: #fffdf7;
+    --line: #d9d4c7;
+    --accent: #087f68;
+    --accent-dark: #056452;
+    --signal: #e8a23a;
+  }
+  * { box-sizing: border-box; margin: 0; }
+  body { background: var(--paper); color: var(--ink);
+         font-family: Inter, "Noto Sans SC", system-ui, sans-serif; min-height: 100vh; }
+
+  /* ---- 登录 ---- */
+  body.auth { display: grid; place-items: center; }
+  .auth-card { width: min(390px, calc(100vw - 32px)); padding: 22px;
+    border: 1px solid var(--line); border-radius: 12px;
+    background: var(--paper); box-shadow: 0 20px 70px #17211e40;
+    display: grid; gap: 10px; }
+  .eyebrow { color: var(--accent); font: 700 11px/1.2 ui-monospace, monospace;
+             letter-spacing: .16em; }
+  .auth-card h2 { margin: 0 0 5px; font-size: 21px; letter-spacing: -.03em; }
+  .auth-card label { color: var(--muted); font-size: 12px; }
+  .auth-card input { width: 100%; padding: 10px 11px; border: 1px solid var(--line);
+    border-radius: 7px; outline: none; background: #fff;
+    font: 13px/1.4 ui-monospace, monospace; }
+  .auth-card input:focus { border-color: var(--accent); box-shadow: 0 0 0 3px #087f6818; }
+  .attach-button { padding: 8px 12px; border: 0; border-radius: 7px; color: #fff;
+    background: var(--accent); font-size: 12px; font-weight: 700; cursor: pointer; }
+  .attach-button:hover { background: var(--accent-dark); }
+  .auth-card .attach-button { padding: 10px; font-size: 13px; }
+  .auth-foot { color: var(--muted); font-size: 11px; text-align: center; margin-top: 6px; }
+
+  /* ---- 控制台 ---- */
+  body.console { padding: 10px 14px 12px; }
+  .topbar { max-width: 1180px; height: 40px; margin: 0 auto; display: flex;
+    align-items: flex-end; gap: 10px; border-bottom: 1px solid var(--line); }
+  .topbar .brand { font: 700 13px/1 ui-monospace, monospace; letter-spacing: .1em;
+    margin-bottom: 10px; }
+  .topbar .brand span { color: var(--accent); }
+  .tabs { display: flex; gap: 3px; flex: 1; padding: 0 5px; }
+  .tabs button { height: 34px; padding: 0 14px; border: 1px solid transparent;
+    border-bottom: 0; border-radius: 9px 9px 0 0; color: #66716d; background: transparent;
+    font-size: 12px; cursor: pointer; }
+  .tabs button:hover { color: var(--ink); background: #f2efe6; }
+  .tabs button.active { color: var(--ink); border-color: var(--line);
+    background: var(--panel); position: relative; }
+  .tabs button.active::before { content: ""; position: absolute; top: 0; left: 10px;
+    right: 10px; height: 3px; border-radius: 0 0 3px 3px; background: var(--accent); }
+  .topbar .who { display: flex; align-items: center; gap: 8px; margin-bottom: 8px; }
+  .who .name { font-size: 12px; font-weight: 650; }
+  .text-button { border: 0; background: transparent; color: var(--accent);
+    cursor: pointer; font-size: 12px; padding: 6px 8px; }
+  .text-button:hover { color: var(--accent-dark); }
+
+  .card { max-width: 1180px; margin: 16px auto 0; padding: 16px;
+    border: 1px solid var(--line); border-radius: 12px; background: var(--panel); }
+  input, select { padding: 7px 10px; border: 1px solid var(--line); border-radius: 7px;
+    outline: none; background: #fff; color: var(--ink); font: 13px/1.4 inherit; }
+  input:focus, select:focus { border-color: var(--accent); box-shadow: 0 0 0 3px #087f6818; }
+  button { padding: 7px 12px; border: 1px solid var(--line); border-radius: 7px;
+    color: var(--ink); background: #fff; font-size: 12px; cursor: pointer; }
+  button:hover { background: #f2efe6; }
+  button.primary { border: 0; color: #fff; background: var(--accent); font-weight: 700; }
+  button.primary:hover { background: var(--accent-dark); }
+  button.danger { border-color: #b95448; color: #9d382e; background: transparent; }
+  button.danger:hover { background: #fff0ee; }
+  table { width: 100%; border-collapse: collapse; margin-top: 12px; }
+  th, td { text-align: left; padding: 8px 10px; border-bottom: 1px solid var(--line);
+    font-size: 13px; }
+  th { color: var(--muted); font-weight: 500; font-size: 12px; }
+  td .row { margin: 0; }
+  .row { display: flex; gap: 8px; align-items: center; flex-wrap: wrap; margin-top: 12px; }
+  .muted { color: var(--muted); font-size: 12px; }
+  .tag { padding: 1px 8px; border: 1px solid var(--line); border-radius: 10px;
+    color: var(--muted); font-size: 11px; }
+  .tag.admin { border-color: #087f6844; color: var(--accent-dark); background: #edf7f3; }
+  #toast { position: fixed; top: 16px; right: 16px; z-index: 10; padding: 10px 16px;
+    border: 1px solid var(--line); border-radius: 8px; background: var(--panel);
+    box-shadow: 0 10px 30px #17211e24; font-size: 13px; display: none; }
+  .cfg-grid { display: grid; grid-template-columns: 260px 1fr; gap: 10px 12px;
+    align-items: center; margin-top: 12px; }
+  .cfg-grid label { color: var(--muted); font: 12px/1.4 ui-monospace, monospace; }
+  .cfg-grid input { width: 100%; font: 13px/1.4 ui-monospace, monospace; }
+  /* Provider 左右分栏 */
+  .split { max-width: 1180px; margin: 16px auto 0; display: grid;
+    grid-template-columns: 260px minmax(0, 1fr); gap: 14px; align-items: start; }
+  .prv-side { border: 1px solid var(--line); border-radius: 12px;
+    background: var(--panel); padding: 12px; }
+  .prv-side h3 { font-size: 13px; margin: 0 0 10px; display: flex;
+    align-items: center; justify-content: space-between; }
+  .prv-item { width: 100%; text-align: left; border: 1px solid transparent;
+    background: transparent; border-radius: 8px; padding: 8px 10px; margin-top: 4px;
+    display: grid; gap: 2px; cursor: pointer; }
+  .prv-item:hover { background: #f2efe6; }
+  .prv-item.active { border-color: var(--line); background: #fff; }
+  .prv-item .p-name { font-size: 13px; font-weight: 650; }
+  .prv-item .p-sub { color: var(--muted); font-size: 11px; overflow: hidden;
+    text-overflow: ellipsis; white-space: nowrap; }
+  .prv-detail { border: 1px solid var(--line); border-radius: 12px;
+    background: var(--panel); padding: 16px; }
+  .form-grid { display: grid; grid-template-columns: 90px 1fr; gap: 10px 12px;
+    align-items: center; margin-top: 12px; }
+  .form-grid label { color: var(--muted); font-size: 12px; }
+  .form-grid input { width: 100%; font: 13px/1.4 ui-monospace, monospace; }
+  .checkline { display: inline-flex; align-items: center; gap: 6px;
+    color: var(--muted); font-size: 12px; cursor: pointer; }
+  .checkline input { width: auto; }
+  .tag.current { border-color: #087f6844; color: var(--accent-dark); background: #edf7f3; }
+  pre.example { margin-top: 10px; padding: 12px; border: 1px solid var(--line);
+    border-radius: 8px; background: #fff; font: 11px/1.5 ui-monospace, monospace;
+    overflow-x: auto; white-space: pre; }
+  textarea.paste { width: 100%; min-height: 150px; padding: 10px;
+    border: 1px solid var(--line); border-radius: 8px; background: #fff;
+    font: 12px/1.5 ui-monospace, monospace; resize: vertical; }
+  .import-panel { margin: 10px 0 0; padding: 12px; border: 1px dashed var(--line);
+    border-radius: 8px; }
+  .hidden { display: none !important; }
+</style>
+</head>
+<body class="auth">
+<div id="toast"></div>
+
+<div id="login" class="auth-card hidden">
+  <p class="eyebrow">UMEKO ADMIN</p>
+  <h2>管理面登录</h2>
+  <label for="l-user">管理员账号</label>
+  <input id="l-user" autocomplete="username" required>
+  <label for="l-pass">密码</label>
+  <input id="l-pass" type="password" autocomplete="current-password" required>
+  <button class="attach-button" onclick="login()">登录</button>
+  <p class="auth-foot">统一多智能体执行内核与编排器 · 管理面</p>
+</div>
+
+<div id="main" class="hidden">
+  <div class="topbar">
+    <span class="brand">UMEKO <span>ADMIN</span></span>
+    <div class="tabs">
+      <button id="tab-users" class="active" onclick="showTab('users')">用户</button>
+      <button id="tab-sessions" onclick="showTab('sessions')">Session</button>
+      <button id="tab-config" onclick="showTab('config')">Provider / Model</button>
+    </div>
+    <div class="who">
+      <span class="name" id="who"></span>
+      <button class="text-button" onclick="logout()">退出</button>
+    </div>
+  </div>
+
+  <div id="page-users" class="card">
+    <div class="row">
+      <input id="nu-name" placeholder="用户名">
+      <input id="nu-pass" type="password" placeholder="密码（≥8位）">
+      <select id="nu-role"><option value="user">user</option><option value="admin">admin</option></select>
+      <button class="primary" onclick="createUser()">新建用户</button>
+    </div>
+    <table><thead><tr><th>用户名</th><th>角色</th><th>Session 数</th><th>创建时间</th><th>操作</th></tr></thead>
+    <tbody id="users-body"></tbody></table>
+  </div>
+
+  <div id="page-sessions" class="card hidden">
+    <div class="muted" id="sess-for">从「用户」页选择一个用户查看其 Session。</div>
+    <table><thead><tr><th>标题</th><th>更新于</th><th>内存态</th><th>上下文</th><th>操作</th></tr></thead>
+    <tbody id="sess-body"></tbody></table>
+  </div>
+
+  <div id="page-config" class="split hidden">
+    <div class="prv-side">
+      <h3>Provider <span class="muted" id="prv-count"></span></h3>
+      <div class="row" style="margin-top:0">
+        <button class="primary" onclick="newProvider()">＋ 新增</button>
+        <button id="imp-toggle" onclick="toggleImport()">导入 JSON</button>
+      </div>
+      <div id="prv-list"></div>
+    </div>
+    <div>
+      <div id="import-panel" class="prv-detail hidden" style="margin-bottom:14px">
+        <div class="row" style="margin-top:0;justify-content:space-between;align-items:center">
+          <span class="muted">批量导入：同名 Provider 自动合并；带 <code>active</code> 字段则一并激活并全员生效</span>
+          <button onclick="toggleImport()">✕ 关闭</button>
+        </div>
+        <textarea id="import-text" class="paste" placeholder='{"providers":[...],"active":"provider/model"}'></textarea>
+        <div class="row">
+          <button class="primary" onclick="doImport()">导入</button>
+          <button onclick="fillExample()">填入样例</button>
+          <button onclick="copyExample()">复制样例</button>
+        </div>
+        <pre class="example" id="import-example"></pre>
+      </div>
+      <div id="prv-empty" class="prv-detail muted">选择左侧 Provider，或新增一个。</div>
+      <div id="prv-detail" class="prv-detail hidden">
+        <div class="row" style="margin-top:0; justify-content:space-between">
+          <strong id="pd-title" style="font-size:15px"></strong>
+          <span class="muted" id="pd-effective"></span>
+        </div>
+        <div class="form-grid">
+          <label>名称</label><input id="pd-name">
+          <label>base_url</label><input id="pd-base-url">
+          <label>api_key</label>
+          <div class="row" style="margin:0;flex-wrap:nowrap">
+            <input id="pd-api-key" type="password" style="flex:1">
+            <button type="button" id="key-eye" onclick="toggleKeyVis()" title="显示/隐藏">👁</button>
+            <button type="button" onclick="copyKey()" title="复制 api_key">复制</button>
+          </div>
+          <label>proxy</label><input id="pd-proxy" placeholder="留空 = 直连">
+        </div>
+        <div class="row">
+          <button class="primary" onclick="saveProvider()">保存</button>
+          <button id="prv-imp-toggle" onclick="togglePrvImport()">导入 JSON</button>
+          <button class="danger" onclick="delProvider()">删除 Provider</button>
+          <span class="muted">改动当前生效模型的所属配置后，重新点「设为当前」应用。</span>
+        </div>
+        <div id="prv-import-panel" class="import-panel hidden">
+          <div class="row" style="margin-top:0;justify-content:space-between;align-items:center">
+            <span class="muted">导入到当前 Provider：模型数组，或含 models / api_key / base_url / proxy 的对象</span>
+            <button onclick="togglePrvImport()">✕ 关闭</button>
+          </div>
+          <textarea id="prv-import-text" class="paste" spellcheck="false" style="min-height:110px"></textarea>
+          <div class="row" style="margin-top:0">
+            <button onclick="fillPrvExample()">填入样例</button>
+            <button class="primary" onclick="doPrvImport()">导入</button>
+          </div>
+        </div>
+        <table><thead><tr><th>模型</th><th>视觉能力</th><th></th><th>操作</th></tr></thead>
+        <tbody id="model-body"></tbody></table>
+        <div class="row">
+          <input id="nm-name" placeholder="新模型名，如 deepseek-v4-flash-0731" style="flex:1;min-width:260px">
+          <label class="checkline"><input id="nm-vision" type="checkbox">具备视觉能力</label>
+          <button class="primary" onclick="addModel()">添加模型</button>
+        </div>
+      </div>
+    </div>
+  </div>
+</div>
+
+<script>
+const $ = id => document.getElementById(id);
+let currentUser = null;
+
+function toast(msg, bad) {
+  const t = $("toast"); t.textContent = msg;
+  t.style.borderColor = bad ? "#b95448" : "var(--line)"; t.style.display = "block";
+  setTimeout(() => t.style.display = "none", 3000);
+}
+async function api(method, url, body) {
+  const res = await fetch(url, { method, headers: {"Content-Type": "application/json"},
+    body: body ? JSON.stringify(body) : undefined });
+  if (res.status === 401) { showLogin(); throw Error("未登录"); }
+  if (!res.ok) { const d = await res.json().catch(() => ({})); throw Error(d.detail || res.status); }
+  return res.status === 204 ? null : res.json();
+}
+function showLogin() {
+  document.body.className = "auth";
+  $("login").classList.remove("hidden"); $("main").classList.add("hidden");
+}
+function showMain(user) {
+  document.body.className = "console";
+  $("login").classList.add("hidden"); $("main").classList.remove("hidden");
+  $("who").textContent = user.username; loadUsers(); loadProviders();
+}
+async function login() {
+  try { showMain(await api("POST", "/admin/login", {username: $("l-user").value, password: $("l-pass").value})); }
+  catch (e) { toast(e.message, true); }
+}
+async function logout() { await api("POST", "/admin/logout"); showLogin(); }
+function showTab(name) {
+  for (const t of ["users", "sessions", "config"]) {
+    $("tab-" + t).classList.toggle("active", t === name);
+    $("page-" + t).classList.toggle("hidden", t !== name);
+  }
+}
+async function loadUsers() {
+  const users = await api("GET", "/admin/v1/users");
+  $("users-body").innerHTML = users.map(u => `<tr>
+    <td>${u.username}</td>
+    <td><span class="tag ${u.role}">${u.role}</span></td>
+    <td>${u.session_count}</td>
+    <td class="muted">${u.created_at.slice(0, 10)}</td>
+    <td><div class="row">
+      <button onclick="loadSessions('${u.id}','${u.username}')">Session</button>
+      <button onclick="resetPass('${u.id}')">重置密码</button>
+      <button onclick="toggleRole('${u.id}','${u.role}')">${u.role === "admin" ? "降为user" : "升为admin"}</button>
+      <button class="danger" onclick="delUser('${u.id}','${u.username}')">删除</button>
+    </div></td></tr>`).join("");
+}
+async function createUser() {
+  try {
+    await api("POST", "/admin/v1/users", {username: $("nu-name").value,
+      password: $("nu-pass").value, role: $("nu-role").value});
+    toast("已创建"); loadUsers();
+  } catch (e) { toast(e.message, true); }
+}
+async function resetPass(id) {
+  const pw = prompt("新密码（≥8位）"); if (!pw) return;
+  try { await api("PUT", `/admin/v1/users/${id}/password`, {password: pw}); toast("已重置"); }
+  catch (e) { toast(e.message, true); }
+}
+async function toggleRole(id, role) {
+  try { await api("PUT", `/admin/v1/users/${id}/role`, {role: role === "admin" ? "user" : "admin"}); loadUsers(); }
+  catch (e) { toast(e.message, true); }
+}
+async function delUser(id, name) {
+  if (!confirm(`删除用户 ${name}？其全部 Session 与文件将一并清除。`)) return;
+  try { await api("DELETE", `/admin/v1/users/${id}`); toast("已删除"); loadUsers(); }
+  catch (e) { toast(e.message, true); }
+}
+async function loadSessions(uid, name) {
+  currentUser = uid; showTab("sessions");
+  if (name) $("sess-for").textContent = `用户 ${name} 的 Session：`;
+  const list = await api("GET", `/admin/v1/users/${uid}/sessions`);
+  $("sess-body").innerHTML = list.map(s => `<tr>
+    <td>${s.title}</td><td class="muted">${(s.updated_at || "").slice(0, 16).replace("T", " ")}</td>
+    <td>${s.loaded ? "在线" : "—"}</td>
+    <td>${s.context_percent != null ? s.context_percent + "%" : "—"}</td>
+    <td><div class="row">
+      <button onclick="evict('${s.id}')">驱逐</button>
+      <button class="danger" onclick="delSession('${s.id}')">删除</button>
+    </div></td></tr>`).join("") || `<tr><td colspan="5" class="muted">无 Session</td></tr>`;
+}
+async function evict(id) {
+  await api("POST", `/admin/v1/sessions/${id}/evict`); toast("已驱逐");
+  if (currentUser) loadSessions(currentUser);
+}
+async function delSession(id) {
+  if (!confirm("删除该 Session 及其全部消息与文件？")) return;
+  await api("DELETE", `/admin/v1/sessions/${id}`); toast("已删除");
+  if (currentUser) loadSessions(currentUser);
+}
+// ---------- Provider / Model ----------
+let providers = [], selectedPrv = null;
+const EXAMPLE = {
+  providers: [
+    {
+      name: "dmxapi",
+      base_url: "https://www.dmxapi.cn/v1",
+      api_key: "sk-你的key",
+      proxy: null,
+      models: [
+        {name: "deepseek-v4-flash-0731", vision: false},
+        {name: "qwen3.7-flash", vision: true}
+      ]
+    },
+    {
+      name: "openai",
+      base_url: "https://api.openai.com/v1",
+      api_key: "sk-另一个key",
+      models: [{name: "gpt-4o", vision: true}]
+    }
+  ],
+  active: "dmxapi/deepseek-v4-flash-0731"
+};
+$("import-example").textContent = JSON.stringify(EXAMPLE, null, 2);
+
+async function loadProviders(keepSelection) {
+  const data = await api("GET", "/admin/v1/providers");
+  providers = data.providers;
+  $("prv-count").textContent = `${providers.length} 个`;
+  if (!keepSelection || !providers.some(p => p.id === selectedPrv)) {
+    selectedPrv = providers.length ? providers[0].id : null;
+  }
+  $("prv-list").innerHTML = providers.map(p => `
+    <button class="prv-item ${p.id === selectedPrv ? "active" : ""}" onclick="selectPrv('${p.id}')">
+      <span class="p-name">${p.name}${p.models.some(m => m.active) ? ' <span class="tag current">当前</span>' : ""}</span>
+      <span class="p-sub">${p.base_url} · ${p.models.length} 个模型</span>
+    </button>`).join("") || `<div class="muted" style="margin-top:8px">还没有 Provider</div>`;
+  renderPrvDetail();
+}
+function selectPrv(id) { selectedPrv = id; loadProviders(true); }
+function renderPrvDetail() {
+  const p = providers.find(x => x.id === selectedPrv);
+  $("prv-empty").classList.toggle("hidden", !!p);
+  $("prv-detail").classList.toggle("hidden", !p);
+  if (!p) return;
+  closePrvImport();
+  $("pd-title").textContent = p.name;
+  const active = p.models.find(m => m.active);
+  $("pd-effective").textContent = active ? `当前生效模型：${active.name}` : "";
+  $("pd-name").value = p.name;
+  $("pd-base-url").value = p.base_url;
+  $("pd-api-key").value = p.api_key || "";
+  $("pd-api-key").type = "password";
+  $("key-eye").textContent = "👁";
+  $("pd-proxy").value = p.proxy || "";
+  $("model-body").innerHTML = p.models.map(m => `<tr>
+    <td style="font-family:ui-monospace,monospace">${m.name}</td>
+    <td><label class="checkline"><input type="checkbox" ${m.vision ? "checked" : ""}
+      onchange="toggleVision('${m.id}', this.checked)">视觉</label></td>
+    <td>${m.active ? '<span class="tag current">当前</span>' : ""}</td>
+    <td><div class="row">
+      ${m.active ? "" : `<button onclick="activateModel('${m.id}')">设为当前</button>`}
+      <button class="danger" onclick="delModel('${m.id}','${m.name}')">删除</button>
+    </div></td></tr>`).join("") || `<tr><td colspan="4" class="muted">还没有模型，下方添加</td></tr>`;
+}
+async function newProvider() {
+  const name = prompt("Provider 名称（如 dmxapi）"); if (!name) return;
+  const base_url = prompt("base_url（如 https://api.openai.com/v1）"); if (!base_url) return;
+  const api_key = prompt("api_key"); if (!api_key) return;
+  try {
+    const p = await api("POST", "/admin/v1/providers", {name, base_url, api_key});
+    selectedPrv = p.id; loadProviders(true); toast("已创建，继续添加模型");
+  } catch (e) { toast(e.message, true); }
+}
+function toggleKeyVis() {
+  const i = $("pd-api-key");
+  i.type = i.type === "password" ? "text" : "password";
+  $("key-eye").textContent = i.type === "password" ? "👁" : "🙈";
+}
+async function copyKey() {
+  const v = $("pd-api-key").value;
+  if (!v) return toast("没有可复制的 key", true);
+  await navigator.clipboard.writeText(v);
+  toast("api_key 已复制");
+}
+async function saveProvider() {
+  const updates = {name: $("pd-name").value, base_url: $("pd-base-url").value,
+                   proxy: $("pd-proxy").value};
+  if ($("pd-api-key").value.trim()) updates.api_key = $("pd-api-key").value.trim();
+  try { await api("PUT", `/admin/v1/providers/${selectedPrv}`, updates);
+    toast("已保存"); loadProviders(true); }
+  catch (e) { toast(e.message, true); }
+}
+async function delProvider() {
+  const p = providers.find(x => x.id === selectedPrv);
+  if (!p || !confirm(`删除 Provider ${p.name} 及其全部模型？`)) return;
+  await api("DELETE", `/admin/v1/providers/${selectedPrv}`);
+  selectedPrv = null; toast("已删除"); loadProviders();
+}
+async function addModel() {
+  const name = $("nm-name").value.trim();
+  if (!name) return toast("模型名不能为空", true);
+  try {
+    await api("POST", `/admin/v1/providers/${selectedPrv}/models`,
+      {name, vision: $("nm-vision").checked});
+    $("nm-name").value = ""; $("nm-vision").checked = false;
+    toast("已添加"); loadProviders(true);
+  } catch (e) { toast(e.message, true); }
+}
+async function toggleVision(id, vision) {
+  try { await api("PUT", `/admin/v1/models/${id}`, {vision}); }
+  catch (e) { toast(e.message, true); loadProviders(true); }
+}
+async function activateModel(id) {
+  if (!confirm("设为当前模型将驱逐全部在线 Session，确认应用？")) return;
+  try {
+    const r = await api("PUT", "/admin/v1/active-model", {model_id: id});
+    toast(`已生效：${r.text_model}（视觉 ${r.text_model_vision ? "原生" : (r.vision_model || "无")}），驱逐 ${r.evicted_sessions} 个在线 Session`);
+    loadProviders(true);
+  } catch (e) { toast(e.message, true); }
+}
+async function delModel(id, name) {
+  if (!confirm(`删除模型 ${name}？`)) return;
+  await api("DELETE", `/admin/v1/models/${id}`); toast("已删除"); loadProviders(true);
+}
+function toggleImport() {
+  const nowHidden = $("import-panel").classList.toggle("hidden");
+  $("imp-toggle").classList.toggle("primary", !nowHidden);
+  $("imp-toggle").textContent = nowHidden ? "导入 JSON" : "✕ 关闭导入";
+}
+// 单个 Provider 内的 JSON 导入：模型数组或含 models/配置 的对象
+const PRV_EXAMPLE = [
+  {name: "deepseek-v4-pro", vision: false},
+  {name: "qwen3-vl-plus", vision: true}
+];
+function togglePrvImport() {
+  const nowHidden = $("prv-import-panel").classList.toggle("hidden");
+  $("prv-imp-toggle").classList.toggle("primary", !nowHidden);
+  $("prv-imp-toggle").textContent = nowHidden ? "导入 JSON" : "✕ 关闭导入";
+}
+function closePrvImport() {
+  $("prv-import-panel").classList.add("hidden");
+  $("prv-imp-toggle").classList.remove("primary");
+  $("prv-imp-toggle").textContent = "导入 JSON";
+}
+function fillPrvExample() { $("prv-import-text").value = JSON.stringify(PRV_EXAMPLE, null, 2); }
+async function doPrvImport() {
+  const p = providers.find(x => x.id === selectedPrv);
+  if (!p) return;
+  let doc;
+  try { doc = JSON.parse($("prv-import-text").value); }
+  catch { return toast("JSON 解析失败", true); }
+  if (Array.isArray(doc)) doc = {models: doc};
+  try {
+    const r = await api("POST", "/admin/v1/providers/import",
+      {providers: [{name: p.name, ...doc}]});
+    toast(`导入完成：新增 ${r.added_models} 个模型，已合并进 ${p.name}`);
+    closePrvImport();
+    await loadProviders(true);
+  } catch (e) { toast(e.message, true); }
+}
+function fillExample() { $("import-text").value = JSON.stringify(EXAMPLE, null, 2); }
+async function copyExample() {
+  await navigator.clipboard.writeText(JSON.stringify(EXAMPLE, null, 2));
+  toast("样例已复制");
+}
+async function doImport() {
+  let doc;
+  try { doc = JSON.parse($("import-text").value); }
+  catch { return toast("JSON 解析失败，请检查格式", true); }
+  try {
+    const r = await api("POST", "/admin/v1/providers/import", {document: doc});
+    toast(`导入完成：新增 ${r.providers_created} 个 Provider（合并 ${r.providers_merged}）、${r.models_created} 个模型` +
+      (r.activated ? `，已激活 ${r.activated}` : ""));
+    loadProviders(true);
+  } catch (e) { toast(e.message, true); }
+}
+(async () => { try { showMain(await api("GET", "/admin/v1/me")); } catch { showLogin(); } })();
+document.addEventListener("keydown", e => {
+  if (e.key === "Enter" && !$("login").classList.contains("hidden")) login();
+});
+</script>
+</body>
+</html>
