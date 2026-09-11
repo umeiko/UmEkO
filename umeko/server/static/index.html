@@ -1,0 +1,205 @@
+<!doctype html>
+<html lang="zh-CN">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>UMEKO</title>
+  <link rel="stylesheet" href="/static/app.css?v=umeko7">
+</head>
+<body>
+  <main class="shell">
+    <nav class="sessionbar" data-i18n-aria="session.navAria" aria-label="Session 管理">
+      <div id="session-tabs" class="session-tabs"></div>
+      <div class="status"><span id="status-dot"></span><span id="status">正在连接</span></div>
+      <button id="new-session" class="session-action" type="button" data-i18n="session.new">＋ 新建 Session</button>
+      <details id="user-menu" class="user-menu">
+        <summary class="user-summary" data-i18n-aria="user.menuAria" aria-label="打开用户菜单">
+          <span class="user-avatar" aria-hidden="true"><img id="user-avatar-image" class="hidden" alt=""><span id="user-avatar-fallback">账</span></span>
+          <span id="user-name" class="user-name">账户</span><span class="user-caret">⌄</span>
+        </summary>
+        <div class="session-menu user-menu-panel"><button id="user-settings" type="button" data-i18n="user.settings">用户设置</button><button id="logout" class="logout-action" type="button" data-i18n="user.logout">退出登录</button></div>
+      </details>
+    </nav>
+
+    <section class="workspace">
+      <aside class="filebar">
+        <div class="filebar-head">
+          <div><p class="eyebrow">CLIENT</p><h2 id="sidebar-title">output</h2></div>
+          <div class="filebar-actions"><button id="file-actions" class="icon-button" type="button" data-i18n-title="filebar.newEntry" data-i18n-aria="filebar.newEntry" title="新建文件或目录" aria-label="新建文件或目录">＋</button><button id="refresh-tree" class="icon-button" type="button" data-i18n-title="filebar.refresh" data-i18n-aria="filebar.refresh" title="刷新文件树" aria-label="刷新文件树">↻</button></div>
+        </div>
+        <nav class="sidebar-tabs" data-i18n-aria="sidebar.resourcesAria" aria-label="客户端资源">
+          <button class="sidebar-tab active" data-section="workspace" type="button">Workspace</button>
+          <button class="sidebar-tab" data-section="skills" type="button">Skills</button>
+        </nav>
+        <div id="workspace-panel" class="sidebar-panel active">
+          <div id="file-tree" class="file-tree"><p class="tree-empty" data-i18n="tree.loading">正在读取文件…</p></div>
+          <div class="drop-hint" data-i18n="drop.hint">拖入文件，保存到当前 Session</div>
+        </div>
+        <div id="skills-panel" class="sidebar-panel resource-list"></div>
+      </aside>
+
+      <div id="left-resizer" class="layout-resizer vertical" role="separator" data-i18n-aria="resizer.filebar" aria-label="调整文件栏宽度" aria-orientation="vertical" tabindex="0"></div>
+
+      <article class="conversation">
+        <div id="messages" class="messages" aria-live="polite">
+          <div class="message assistant" data-i18n="message.welcome">描述你的任务，可以附带文档或图片。</div>
+        </div>
+        <div id="composer-resizer" class="layout-resizer horizontal" role="separator" data-i18n-aria="resizer.composer" aria-label="调整输入区高度" aria-orientation="horizontal" tabindex="0"></div>
+        <form id="composer" class="composer">
+          <label class="file-button" data-i18n-title="composer.attachTitle" title="添加附件">
+            <input id="file" type="file" multiple>
+            <span data-i18n="composer.attach">＋ 附件</span>
+          </label>
+          <div id="attachments" class="attachments"></div>
+          <div class="context-controls" data-i18n-title="context.hintTitle" title="上下文长度为近似估算，不代表供应商计费 token">
+            <span id="context-status">上下文 --</span>
+            <div class="context-menu-wrap">
+              <button id="compact-context" type="button" aria-haspopup="menu" aria-expanded="false" data-i18n="context.menu">上下文 ▾</button>
+              <div id="context-menu" class="context-menu hidden" role="menu">
+                <button id="context-menu-compact" type="button" role="menuitem" data-i18n="context.compact">压缩上下文</button>
+                <button id="context-menu-clear" type="button" role="menuitem" data-i18n="context.clear">强制清空上下文</button>
+              </div>
+            </div>
+          </div>
+          <div class="composer-input">
+            <textarea id="prompt" rows="3" data-i18n-placeholder="composer.placeholder" placeholder="例如：帮我汇总这几个文档的要点（Enter 发送，Shift+Enter 换行）" required></textarea>
+            <div class="composer-toolbar">
+              <div class="model-menu-wrap">
+                <button id="model-picker" class="model-pill" type="button" aria-haspopup="menu" aria-expanded="false" data-i18n-title="model.pickerTitle" title="选择本会话使用的主模型">默认模型 ▾</button>
+              </div>
+              <button id="send" type="submit" data-i18n="composer.send">发送</button>
+              <button id="stop" class="stop-run hidden" type="button" data-i18n="composer.stop">停止</button>
+            </div>
+          </div>
+          <div class="composer-drop-hint" data-i18n="composer.dropHint">松开后保存到 output，并添加为对话附件</div>
+        </form>
+      </article>
+
+      <div id="right-resizer" class="layout-resizer vertical" role="separator" data-i18n-aria="resizer.preview" aria-label="调整预览栏宽度" aria-orientation="vertical" tabindex="0"></div>
+
+      <aside class="preview">
+        <div class="preview-head">
+          <div><p id="preview-kicker" class="eyebrow">PREVIEW</p><h2 id="preview-title">预览</h2></div>
+          <div class="preview-actions">
+            <button id="save-resource" class="text-button hidden" type="button" data-i18n="action.save">保存</button>
+            <button id="delete-resource" class="danger-button hidden" type="button" data-i18n="action.delete">删除</button>
+            <button id="attach-workspace-file" class="attach-button hidden" type="button" data-i18n="preview.attach">＋ 加入聊天附件</button>
+            <a id="open-file" class="text-link hidden" href="#" target="_blank" data-i18n="preview.openFile">打开原文件</a>
+            <button id="collapse-preview" class="text-button" type="button" data-i18n="preview.collapse" data-i18n-title="preview.collapseTitle" data-i18n-aria="preview.collapseTitle" title="收起预览面板" aria-label="收起预览面板">收起 ›</button>
+          </div>
+        </div>
+        <div id="canvas" class="canvas empty" data-i18n="canvas.empty">点击左侧文件预览；对话中的产物也会出现在这里。</div>
+        <article id="markdown-view" class="document-view hidden"></article>
+        <section id="csv-view" class="csv-view hidden" data-i18n-aria="csv.aria" aria-label="CSV 表格预览"></section>
+        <pre id="code-view" class="code-view hidden"></pre>
+        <textarea id="resource-editor" class="resource-editor hidden" spellcheck="false"></textarea>
+      </aside>
+
+      <button id="expand-preview" class="preview-expand-tab" type="button" data-i18n-title="preview.expandTitle" data-i18n-aria="preview.expandTitle" title="展开预览面板" aria-label="展开预览面板" aria-expanded="false"><span class="expand-icon">‹</span></button>
+    </section>
+  </main>
+  <div id="file-context-menu" class="file-context-menu hidden" role="menu">
+    <button type="button" data-file-action="new-file" data-i18n="fileMenu.newFile">新建文本文件</button>
+    <button type="button" data-file-action="new-directory" data-i18n="fileMenu.newDir">新建目录</button>
+    <button type="button" data-file-action="paste" data-i18n="fileMenu.paste">粘贴</button>
+    <hr>
+    <button type="button" data-file-action="copy" data-i18n="fileMenu.copy">复制</button>
+    <button type="button" data-file-action="cut" data-i18n="fileMenu.cut">剪切</button>
+    <button type="button" data-file-action="rename" data-i18n="fileMenu.rename">重命名</button>
+    <button type="button" data-file-action="download" data-i18n="fileMenu.download">下载</button>
+    <hr>
+    <button type="button" class="danger-menu-item" data-file-action="delete" data-i18n="action.delete">删除</button>
+  </div>
+  <dialog id="file-entry-dialog" class="resource-dialog">
+    <form id="file-entry-form"><p class="eyebrow">WORKSPACE</p><h2 id="file-entry-title">新建文件</h2><label for="file-entry-name" data-i18n="form.name">名称</label><input id="file-entry-name" maxlength="180" required autocomplete="off"><p id="file-entry-help" class="dialog-help"></p><div class="dialog-actions"><button id="file-entry-cancel" class="text-button" type="button" data-i18n="action.cancel">取消</button><button class="attach-button" type="submit" data-i18n="action.confirm">确认</button></div></form>
+  </dialog>
+  <dialog id="resource-dialog" class="resource-dialog">
+    <form id="resource-dialog-form" method="dialog">
+      <p class="eyebrow">NEW SKILL</p>
+      <h2 id="resource-dialog-title" data-i18n="skill.new">新建 Skill</h2>
+      <label for="resource-name" data-i18n="form.name">名称</label>
+      <input id="resource-name" name="name" autocomplete="off" required pattern="[A-Za-z0-9_-]+">
+      <label for="resource-description" data-i18n="skill.description">需求描述</label>
+      <textarea id="resource-description" rows="6" data-i18n-placeholder="skill.descPlaceholder" placeholder="描述适用场景、触发条件、操作规范或直接粘贴完整需求"></textarea>
+      <p class="dialog-help" data-i18n="skill.help">“AI 生成”会生成并校验完整 Skill；“空白模板”只创建合法文件头，供你手动编辑。</p>
+      <div class="dialog-actions">
+        <button id="resource-dialog-cancel" class="text-button" type="button" data-i18n="action.cancel">取消</button>
+        <button class="text-button" type="submit" value="blank" data-i18n="skill.blank">空白模板</button>
+        <button class="attach-button" type="submit" value="generate" data-i18n="skill.generate">AI 生成</button>
+      </div>
+    </form>
+  </dialog>
+  <dialog id="tool-detail-dialog" class="tool-detail-dialog">
+    <div class="tool-detail-shell">
+      <header class="tool-detail-head">
+        <div><p class="eyebrow">TOOL CALL</p><h2 id="tool-detail-title" data-i18n="tool.detail">工具调用详情</h2><p id="tool-detail-meta" class="tool-detail-meta"></p></div>
+        <button id="tool-detail-close" class="tool-detail-close" type="button" data-i18n-aria="tool.closeAria" aria-label="关闭工具调用详情">×</button>
+      </header>
+      <section class="tool-detail-section">
+        <div class="tool-detail-section-head"><span data-i18n="tool.request">模型请求</span><small data-i18n="tool.requestSub">传给工具的参数</small></div>
+        <pre id="tool-detail-request" tabindex="0"></pre>
+      </section>
+      <section class="tool-detail-section">
+        <div class="tool-detail-section-head"><span data-i18n="tool.result">工具返回</span><small data-i18n="tool.resultSub">返回给模型的结果</small></div>
+        <pre id="tool-detail-result" tabindex="0"></pre>
+      </section>
+    </div>
+  </dialog>
+  <dialog id="auth-dialog" class="resource-dialog auth-dialog">
+    <form id="auth-form">
+      <p class="eyebrow">UMEKO</p><h2 data-i18n="auth.title">登录工作台</h2>
+      <label for="auth-username" data-i18n="auth.username">用户名</label><input id="auth-username" autocomplete="username" required minlength="3">
+      <label for="auth-password" data-i18n="auth.password">密码</label><input id="auth-password" type="password" autocomplete="current-password" required minlength="8">
+      <p id="auth-error" class="dialog-help"></p>
+      <div class="dialog-actions"><button id="register" class="text-button" type="button" data-i18n="auth.register">注册</button><button class="attach-button" type="submit" data-i18n="auth.login">登录</button></div>
+    </form>
+  </dialog>
+  <dialog id="user-settings-dialog" class="resource-dialog user-settings-dialog">
+    <form id="user-settings-form">
+      <p class="eyebrow">USER SETTINGS</p><h2 data-i18n="settings.title">用户设置</h2>
+      <div class="avatar-editor">
+        <span class="settings-avatar" aria-hidden="true"><img id="settings-avatar-image" class="hidden" alt=""><span id="settings-avatar-fallback">账</span></span>
+        <div class="avatar-editor-copy"><strong id="settings-username">账户</strong><span data-i18n="settings.avatarHint">PNG、JPEG、WebP 或 GIF，最大 2 MB</span></div>
+      </div>
+      <label class="avatar-file-button" for="avatar-file"><span data-i18n="settings.chooseAvatar">选择头像</span><input id="avatar-file" type="file" accept="image/png,image/jpeg,image/webp,image/gif"></label>
+      <fieldset class="model-prefs">
+        <legend data-i18n="settings.general">通用</legend>
+        <label for="pref-language" data-i18n="settings.language">界面语言</label>
+        <select id="pref-language">
+          <option value="zh-CN">简体中文</option>
+          <option value="zh-TW">繁體中文</option>
+          <option value="en">English</option>
+          <option value="ko">한국어</option>
+          <option value="fr">Français</option>
+          <option value="de">Deutsch</option>
+          <option value="it">Italiano</option>
+        </select>
+      </fieldset>
+      <fieldset class="model-prefs">
+        <legend data-i18n="settings.modelPrefs">模型偏好</legend>
+        <label for="pref-main" data-i18n="settings.mainAgent">主智能体</label>
+        <select id="pref-main"></select>
+        <label for="pref-sub" data-i18n="settings.subAgent">子智能体</label>
+        <select id="pref-sub"></select>
+        <label for="pref-vision" data-i18n="settings.visionAgent">视觉智能体</label>
+        <select id="pref-vision"></select>
+        <p class="dialog-help" data-i18n="settings.prefsHelp">“跟随默认”使用管理员配置的当前模型；改动从下一条消息开始生效。视觉智能体只列出具备视觉能力的模型。</p>
+      </fieldset>
+      <p id="user-settings-error" class="dialog-help"></p>
+      <div class="dialog-actions avatar-actions"><button id="avatar-remove" class="danger-button" type="button" data-i18n="settings.removeAvatar">移除头像</button><span></span><button id="user-settings-cancel" class="text-button" type="button" data-i18n="action.cancel">取消</button><button class="attach-button" type="submit" data-i18n="action.save">保存</button></div>
+    </form>
+  </dialog>
+  <dialog id="rename-session-dialog" class="resource-dialog">
+    <form id="rename-session-form"><p class="eyebrow">SESSION</p><h2 data-i18n="rename.title">重命名会话</h2><label for="session-title-input" data-i18n="rename.name">会话名称</label><input id="session-title-input" maxlength="80" required><div class="dialog-actions"><button id="rename-session-cancel" class="text-button" type="button" data-i18n="action.cancel">取消</button><button class="attach-button" type="submit" data-i18n="action.save">保存</button></div></form>
+  </dialog>
+  <dialog id="delete-session-dialog" class="resource-dialog danger-dialog">
+    <form id="delete-session-form"><p class="eyebrow">DANGER ZONE</p><h2 data-i18n="deleteSession.title">永久删除会话？</h2><p id="delete-session-message" class="dialog-warning"></p><p class="dialog-help" data-i18n="deleteSession.help">会话历史、附件、生成文件及客户端资源将被永久删除，此操作不可恢复。</p><div class="dialog-actions"><button id="delete-session-cancel" class="text-button" type="button" data-i18n="action.cancel">取消</button><button class="danger-confirm" type="submit" data-i18n="deleteSession.confirm">永久删除</button></div></form>
+  </dialog>
+  <div id="model-menu" class="model-menu hidden" role="menu">
+    <div class="model-search"><input id="model-search" data-i18n-placeholder="model.search" placeholder="搜索模型" autocomplete="off"></div>
+    <div id="model-list" class="model-list"></div>
+  </div>
+  <script src="/static/i18n.js?v=umeko7" defer></script>
+  <script src="/static/app.js?v=umeko7" defer></script>
+</body>
+</html>

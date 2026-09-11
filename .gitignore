@@ -1,0 +1,28 @@
+# 密钥与本地配置——严禁提交
+.env
+*.local
+
+# 运行时数据（数据库含用户凭据与 Provider api_key，严禁提交）
+local_data/
+server_data/
+output/
+
+# Python
+.venv/
+__pycache__/
+*.py[cod]
+*.egg-info/
+.pytest_cache/
+.ruff_cache/
+build/
+dist/
+
+# 运行时生成的技能包
+skills/
+!skills/.gitkeep
+
+# 系统/编辑器
+.DS_Store
+Thumbs.db
+.idea/
+.vscode/
