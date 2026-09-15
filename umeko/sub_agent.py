@@ -47,7 +47,7 @@ _SERVER_SESSION_PATH_POLICY = """
 
 [Server Session 文件策略]
 你只能访问当前 Session 的 `workspace/`、`attachments/` 和 `generate/` 节点。
-调用文件工具和汇报结果时必须使用 Session 相对路径，例如 `workspace/需求.md`；禁止请求、
+调用文件工具和汇报结果时必须使用 Session 相对路径，例如 `workspace/notes.md`；禁止请求、
 猜测、复述或输出服务器绝对路径。`.` 仅表示当前 Session 的可读节点。
 """
 
@@ -104,7 +104,7 @@ class FileSubAgent:
         self._image_reasoning_llm = (
             LLMClient(settings.vision_model) if settings.vision_model is not None else None
         )
-        ocr_llm = (
+        vision_llm = (
             None
             if self._vision or settings.vision_model is None
             else LLMClient(settings.vision_model)
@@ -112,7 +112,7 @@ class FileSubAgent:
         skills = build_file_tools(
             session,
             self._images,
-            ocr_llm=ocr_llm,
+            vision_llm=vision_llm,
             command_runner=command_runner,
             readable_root=readable_root,
             readable_roots=readable_roots,
@@ -150,7 +150,6 @@ class FileSubAgent:
                 },
                 handler=self._image_reasoning,
             )
-        self._tools = [skill.to_openai_tool() for skill in self._skills.values()]
         self._should_cancel = should_cancel
         self._on_event = on_event
         self._run_lock = threading.Lock()

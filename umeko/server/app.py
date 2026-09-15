@@ -37,7 +37,9 @@ from .models import (
     WorkspaceEntryCreate,
     WorkspaceFileView,
     WorkspaceNode,
+    ToolEventView,
     WorkspaceTransfer,
+    WorkspaceExtract,
 )
 
 STATIC_DIR = Path(__file__).with_name("static")
@@ -253,9 +255,15 @@ def create_app(
         response_model=list[WorkspaceNode],
         tags=["workspace"],
     )
-    def workspace_tree(session_id: str) -> list[WorkspaceNode]:
-        get_session(session_id)
-        return [WorkspaceNode(**node) for node in service.workspace_tree(session_id)]
+    def workspace_tree(session_id: str, filter: str = "") -> list[WorkspaceNode]:
+        try:
+            nodes = [
+                WorkspaceNode(**node)
+                for node in service.workspace_tree(session_id, filter=filter)
+            ]
+        except ValueError as e:
+            raise HTTPException(status_code=400, detail=str(e)) from e
+        return nodes
 
     @app.get(
         "/v1/sessions/{session_id}/client/{kind}",
@@ -447,6 +455,27 @@ def create_app(
             raise HTTPException(404, f"文件或目录不存在：{path}") from exc
 
     @app.post(
+        "/v1/sessions/{session_id}/workspace/extract",
+        response_model=WorkspaceFileView,
+        tags=["workspace"],
+    )
+    def extract_workspace_archive(session_id: str, payload: WorkspaceExtract) -> WorkspaceFileView:
+        session = get_session(session_id)
+        if session.lock.locked():
+            raise HTTPException(409, "Session 正在运行，暂时不能修改文件")
+        try:
+            target = service.extract_archive(session_id, payload.path)
+        except ValueError as exc:
+            raise HTTPException(400, str(exc)) from exc
+        except FileNotFoundError as exc:
+            raise HTTPException(404, "压缩包不存在") from exc
+        return WorkspaceFileView(
+            path=target.relative_to(session.root).as_posix(),
+            filename=target.name,
+            size=sum(f.stat().st_size for f in target.rglob("*") if f.is_file()),
+        )
+
+    @app.post(
         "/v1/sessions/{session_id}/workspace/files",
         response_model=WorkspaceFileView,
         status_code=201,
@@ -504,6 +533,22 @@ def create_app(
                             ),
                             attachments=json.loads(row["attachments"]), created_at=row["created_at"])
                 for row in rows]
+
+    @app.get(
+        "/v1/sessions/{session_id}/tool-events",
+        response_model=list[ToolEventView],
+        tags=["sessions"],
+    )
+    def session_tool_events(session_id: str) -> list[ToolEventView]:
+        get_session(session_id)
+        return [
+            ToolEventView(
+                agent=row["agent"], name=row["name"],
+                arguments=row["arguments"], result=row["result"],
+                created_at=row["created_at"],
+            )
+            for row in store.tool_events(session_id)
+        ]
 
     @app.get(
         "/v1/sessions/{session_id}/context",

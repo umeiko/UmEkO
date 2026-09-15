@@ -109,8 +109,8 @@ class UmekoAgent:
         self._readable_root = readable_root
         self._readable_roots = readable_roots
         self._on_progress = on_progress  # 界面层进度提示
-        # 主模型无视觉能力且配置了视觉模型时，用视觉模型提供 OCR 工具作为替代
-        ocr_llm = (
+        # 主模型无视觉能力且配置了视觉模型时，用视觉模型提供 image_reasoning 工具
+        vision_llm = (
             None
             if self._vision or settings.vision_model is None
             else LLMClient(settings.vision_model)
@@ -118,11 +118,16 @@ class UmekoAgent:
         skills = build_file_tools(
             session,
             self._pending,
-            ocr_llm=ocr_llm,
+            vision_llm=vision_llm,
             command_runner=command_runner,
             readable_root=readable_root,
             readable_roots=readable_roots,
             should_cancel=should_cancel,
+            on_tool_progress=(
+                lambda name, delta: self._emit(
+                    ev.TOOL_PROGRESS, name=name, output_delta=delta
+                )
+            ),
         )
         if not self._vision:  # 无视觉能力时不下发 read_image，避免模型误调
             skills = [s for s in skills if s.name != "read_image"]

@@ -67,6 +67,14 @@ class MessageView(BaseModel):
     created_at: str
 
 
+class ToolEventView(BaseModel):
+    agent: str = "main"
+    name: str
+    arguments: str | None = None
+    result: str | None = None
+    created_at: str
+
+
 class RunCreate(BaseModel):
     input: str = Field(min_length=1)
     attachments: list[str] = Field(default_factory=list)
@@ -118,6 +126,10 @@ class WorkspaceTransfer(BaseModel):
     operation: Literal["copy", "move"]
 
 
+class WorkspaceExtract(BaseModel):
+    path: str = Field(min_length=1, max_length=500)
+
+
 class ArtifactView(BaseModel):
     id: str
     name: str
@@ -132,6 +144,8 @@ class WorkspaceNode(BaseModel):
     type: Literal["directory", "file"]
     size: int | None = None
     children: list["WorkspaceNode"] = Field(default_factory=list)
+    truncated: bool = False
+    virtual: bool = False
 
 
 class ClientResourceView(BaseModel):

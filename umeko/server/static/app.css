@@ -80,6 +80,16 @@ h2 { font-size: 20px; }
 .sidebar-tab.active { color: var(--accent-dark); border-bottom-color: var(--accent); background: #fff; }
 .sidebar-panel { display: none; min-height: 0; flex: 1; }
 .sidebar-panel.active { display: flex; flex-direction: column; overflow: hidden; }
+.tree-filter { display: flex; gap: 4px; align-items: center; padding: 2px 10px 6px; }
+.tree-filter input { flex: 1; min-width: 0; padding: 3px 8px; border: 1px solid transparent;
+  border-radius: 6px; background: transparent; color: var(--ink); outline: none;
+  font: 11px/1.5 ui-monospace, "Cascadia Code", monospace; transition: border-color .12s, background .12s; }
+.tree-filter input::placeholder { color: var(--muted); opacity: .65; }
+.tree-filter input:hover { border-color: var(--line); }
+.tree-filter input:focus { border-color: var(--accent); background: #fffdf7; box-shadow: none; }
+.tree-filter .icon-button { padding: 2px 6px; font-size: 12px; color: var(--muted); }
+.tree-filter .icon-button:hover { color: var(--accent-dark); }
+.tree-truncated { padding: 3px 6px 3px 16px; color: var(--muted); font-size: 11px; user-select: none; }
 .icon-button, .text-button { border: 0; background: transparent; color: var(--accent); cursor: pointer; }
 .attach-button { padding: 7px 10px; border: 0; border-radius: 7px; color: white; background: var(--accent); font-size: 12px; font-weight: 700; cursor: pointer; }
 .attach-button:hover { background: var(--accent-dark); }

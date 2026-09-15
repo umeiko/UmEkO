@@ -16,6 +16,8 @@ const ui = {
   canvas: document.querySelector("#canvas"),
   tree: document.querySelector("#file-tree"),
   refreshTree: document.querySelector("#refresh-tree"),
+  treeFilter: document.querySelector("#tree-filter"),
+  treeFilterClear: document.querySelector("#tree-filter-clear"),
   previewKicker: document.querySelector("#preview-kicker"),
   previewTitle: document.querySelector("#preview-title"),
   openFile: document.querySelector("#open-file"),
@@ -97,6 +99,7 @@ let pendingAvatarFile = null;
 let removeAvatarPending = false;
 let avatarPreviewUrl = null;
 let workspaceRefreshTimer = null;
+let treeFilterTimer = null;
 let renderedTreeSessionId = null;
 let renderedTreeSignature = null;
 let activeToolDetail = null;
@@ -237,6 +240,17 @@ function toolLabel(name) {
   const key = `tool.name.${name}`;
   const label = t(key);
   return label === key ? name : label;
+}
+
+// 历史回放：把一条持久化的 tool_events 记录渲染成已完成的工具 chip
+function replayToolEvent(event) {
+  const action = addAgentAction(event.name, event.agent || "main", event.arguments, null);
+  action.node.classList.remove("running");
+  action.node.classList.add("completed");
+  action.icon.textContent = "✓";
+  action.text.textContent = t("action.completed", {tool: toolLabel(event.name)});
+  action.result = event.result ?? "";
+  makeToolActionInspectable(action);
 }
 
 function prettyToolData(value, emptyText) {
@@ -709,7 +723,22 @@ async function loadSession(id) {
     const welcomeNode = addMessage(t("message.welcome"));
     welcomeNode.dataset.welcome = "1";
   }
-  for (const message of messages) addMessage(message.content, message.role, message.attachments.map(filename => ({filename})));
+  // 回放工具调用历史：按时间归并到消息流（tool_events 与 messages 各自按时间排序）
+  let toolEvents = [];
+  try { toolEvents = await api(`/v1/sessions/${id}/tool-events`); } catch (_) { toolEvents = []; }
+  if (loadToken !== sessionLoadToken || sessionId !== id) return;
+  const timeline = [
+    ...messages.map(m => ({kind: "message", at: m.created_at, m})),
+    ...toolEvents.map(e => ({kind: "tool", at: e.created_at, e})),
+  ].sort((a, b) => (a.at < b.at ? -1 : a.at > b.at ? 1 : 0));
+  for (const item of timeline) {
+    if (item.kind === "message") {
+      const m = item.m;
+      addMessage(m.content, m.role, m.attachments.map(filename => ({filename})));
+    } else {
+      replayToolEvent(item.e);
+    }
+  }
   await Promise.all([
     refreshTree(), refreshResources("skills"), refreshContext(id),
   ]);
@@ -1061,6 +1090,9 @@ function validateEntryName(name) {
 
 function closeFileMenu() { ui.fileContextMenu.classList.add("hidden"); }
 
+// 可解压的压缩包后缀（与后端 ARCHIVE_SUFFIXES 对齐）
+const ARCHIVE_RE = /\.(zip|7z|rar|tar|gz|bz2|xz|tgz)$/i;
+
 function openFileMenu(target, x, y) {
   fileMenuTarget = target;
   const root = isWorkspaceRoot(target.path);
@@ -1070,7 +1102,8 @@ function openFileMenu(target, x, y) {
       (["new-file", "new-directory", "paste"].includes(action) && target.type !== "directory") ||
       (action === "paste" && !fileClipboard) ||
       (["copy", "cut", "rename", "delete"].includes(action) && root) ||
-      (action === "download" && !["file", "directory"].includes(target.type))
+      (action === "download" && !["file", "directory"].includes(target.type)) ||
+      (action === "extract" && !(target.type === "file" && ARCHIVE_RE.test(target.name)))
     );
     if (action === "download") {
       button.textContent = target.type === "directory" ? t("file.downloadDir") : t("file.downloadFile");
@@ -1127,6 +1160,21 @@ async function executeFileAction(action, target) {
     if (fileClipboard.operation === "move") fileClipboard = null;
     return;
   }
+  if (action === "extract") {
+    if (!ARCHIVE_RE.test(target.name)) return setStatus(t("file.notArchive"), true);
+    setStatus(t("file.extracting", {name: target.name}), true);
+    try {
+      const result = await api(`/v1/sessions/${sessionId}/workspace/extract`, {
+        method: "POST", headers: {"Content-Type": "application/json"},
+        body: JSON.stringify({path: target.path}),
+      });
+      await refreshTree();
+      setStatus(t("file.extracted", {name: result.filename}), true);
+    } catch (error) {
+      setStatus(error.message);
+    }
+    return;
+  }
   if (action === "download") {
     const link = document.createElement("a");
     link.href = `/v1/sessions/${sessionId}/workspace/files/download?path=${encodeURIComponent(target.path)}`;
@@ -1178,6 +1226,24 @@ ui.fileActions.addEventListener("click", event => {
 });
 document.addEventListener("click", event => { if (!ui.fileContextMenu.contains(event.target)) closeFileMenu(); });
 document.addEventListener("keydown", event => { if (event.key === "Escape") closeFileMenu(); });
+ui.treeFilter?.addEventListener("input", () => {
+  ui.treeFilterClear.hidden = !(ui.treeFilter.value || "").trim();
+  if (treeFilterTimer) clearTimeout(treeFilterTimer);
+  treeFilterTimer = setTimeout(() => {
+    treeFilterTimer = null;
+    renderedTreeSignature = ""; // 过滤串变化，强制重渲染
+    refreshTree(sessionId).catch(error => setStatus(error.message));
+  }, 300);
+});
+ui.treeFilter?.addEventListener("keydown", event => {
+  if (event.key === "Enter") { event.preventDefault(); refreshTree(sessionId).catch(error => setStatus(error.message)); }
+});
+ui.treeFilterClear?.addEventListener("click", () => {
+  ui.treeFilter.value = "";
+  ui.treeFilterClear.hidden = true;
+  renderedTreeSignature = "";
+  refreshTree(sessionId).catch(error => setStatus(error.message));
+});
 ui.tree.addEventListener("contextmenu", event => {
   if (event.target.closest(".tree-file, .tree-dir > summary")) return;
   event.preventDefault(); openFileMenu({path: "workspace", name: "workspace", type: "directory"}, event.clientX, event.clientY);
@@ -1217,6 +1283,13 @@ function bindTreeEntry(element, node, {dropDirectory = false} = {}) {
 
 function renderTreeNodes(nodes, parent) {
   for (const node of nodes) {
+    if (node.virtual) {
+      const hint = document.createElement("p");
+      hint.className = "tree-truncated";
+      hint.textContent = node.name;
+      parent.append(hint);
+      continue;
+    }
     if (node.type === "directory") {
       const details = document.createElement("details");
       details.className = "tree-dir";
@@ -1295,7 +1368,9 @@ async function refreshTree(targetSessionId = sessionId) {
   if (!targetSessionId) return;
   const expanded = new Set([...ui.tree.querySelectorAll(".tree-dir[open] > summary")].map(node => node.dataset.path));
   const scrollTop = ui.tree.scrollTop;
-  const nodes = await api(`/v1/sessions/${targetSessionId}/workspace/tree`);
+  const filter = (ui.treeFilter?.value || "").trim();
+  const query = filter ? `?filter=${encodeURIComponent(filter)}` : "";
+  const nodes = await api(`/v1/sessions/${targetSessionId}/workspace/tree${query}`);
   if (targetSessionId !== sessionId) return;
   const signature = treeStructureSignature(nodes);
   if (renderedTreeSessionId === targetSessionId && renderedTreeSignature === signature) {
@@ -1875,6 +1950,17 @@ function followRun(runId, runSessionId = sessionId) {
     const action = addAgentAction(name, "main", payload.data.arguments ?? "", assistant);
     const queue = pendingTools.get(name) || [];
     queue.push(action); pendingTools.set(name, queue);
+  });
+  stream.addEventListener("tool.progress", event => {
+    if (sessionId !== runSessionId) return;
+    const payload = JSON.parse(event.data);
+    const name = payload.data.name;
+    const queue = pendingTools.get(name) || [];
+    const action = queue[queue.length - 1];
+    if (!action) return;
+    // 流式中间输出：滚进工具卡片的 liveOutput，点开可见实时滚动
+    action.liveOutput = (action.liveOutput + (payload.data.output_delta || "")).slice(-12000);
+    if (activeToolDetail === action) renderToolDetail(action);
   });
   stream.addEventListener("resource.activated", event => {
     if (sessionId !== runSessionId) return;

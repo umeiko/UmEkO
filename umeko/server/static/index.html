@@ -32,6 +32,7 @@
           <button class="sidebar-tab" data-section="skills" type="button">Skills</button>
         </nav>
         <div id="workspace-panel" class="sidebar-panel active">
+          <div class="tree-filter"><input id="tree-filter" type="search" data-i18n-placeholder="tree.filterPlaceholder" placeholder="过滤文件名，如 image-*" spellcheck="false"><button id="tree-filter-clear" class="icon-button" type="button" data-i18n-title="tree.filterClear" title="清除过滤" aria-label="清除过滤" hidden>×</button></div>
           <div id="file-tree" class="file-tree"><p class="tree-empty" data-i18n="tree.loading">正在读取文件…</p></div>
           <div class="drop-hint" data-i18n="drop.hint">拖入文件，保存到当前 Session</div>
         </div>
@@ -106,6 +107,7 @@
     <button type="button" data-file-action="copy" data-i18n="fileMenu.copy">复制</button>
     <button type="button" data-file-action="cut" data-i18n="fileMenu.cut">剪切</button>
     <button type="button" data-file-action="rename" data-i18n="fileMenu.rename">重命名</button>
+    <button type="button" data-file-action="extract" data-i18n="fileMenu.extract">解压到此处</button>
     <button type="button" data-file-action="download" data-i18n="fileMenu.download">下载</button>
     <hr>
     <button type="button" class="danger-menu-item" data-file-action="delete" data-i18n="action.delete">删除</button>

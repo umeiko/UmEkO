@@ -1,7 +1,7 @@
 """通用会话状态：产物目录、工作文档与 Skill 挂载，供工具处理器读写。
 
 领域会话状态（如"当前图""当前任务"）由各领域项目在自己的 Session 中扩展；
-基座 Session 只管：产物落点（write_file 的写入边界）、工作文档（多素材整合的
+基座 Session 只管：产物落点（write_file 的写入边界）、工作文档（多信息源整合的
 中间产物）、Skill 的发现/挂载/卸载。
 """
 
@@ -20,7 +20,7 @@ class Session:
     """一次 Agent 会话的通用状态。
 
     - output_dir：产物目录，write_file/replace_in_file 的写入边界，路径始终绝对；
-    - 工作文档（working_doc.md）：整合多份素材信息的中间产物，避免素材原文
+    - 工作文档（working_doc.md）：整合关键信息的中间产物，避免大段原文
       长期堆在对话上下文里；
     - Skill 挂载：use_skill 读取技能包指引并登记为已启用，供主 Agent 编排使用。
     """
@@ -50,7 +50,7 @@ class Session:
 
     @property
     def working_doc_path(self) -> Path:
-        """工作文档路径：整合素材信息与初步方案的中间产物（markdown）。"""
+        """工作文档路径：整合关键信息与中间结论的中间产物（markdown）。"""
         return self._output_dir / "working_doc.md"
 
     def read_working_doc(self) -> str:
