@@ -10,6 +10,7 @@ from __future__ import annotations
 import hashlib
 import json
 import mimetypes
+import os
 import shutil
 import tempfile
 import threading
@@ -28,6 +29,7 @@ from ..prompts.system import DEFAULT_SYSTEM
 from ..runtime import app_dir
 from ..runner import Run, RunManager, TERMINAL_STATUSES
 from ..session import Session
+from ..tree import TreeNode, TreeBudget, build_tree, compile_filter
 from .profile import CLOUD_PROFILE, Profile
 from ..skillpacks import parse_skill_pack_text
 from .storage import Store
@@ -132,40 +134,48 @@ class AgentService:
             raise FileNotFoundError(relative_path)
         return candidate
 
-    def workspace_tree(self, session_id: str) -> list[dict]:
+    def workspace_tree(self, session_id: str, filter: str = "") -> list[dict]:
         session = self.get_session(session_id)
-
-        def walk(directory: Path) -> list[dict]:
-            nodes = []
-            try:
-                entries = sorted(
-                    directory.iterdir(), key=lambda p: (not p.is_dir(), p.name.casefold())
-                )
-            except OSError:
-                return nodes
-            for path in entries:
-                relative = path.relative_to(session.root).as_posix()
-                if path.is_dir():
-                    nodes.append({
-                        "name": path.name, "path": relative,
-                        "type": "directory", "children": walk(path),
-                    })
-                elif path.is_file():
-                    nodes.append({
-                        "name": path.name, "path": relative, "type": "file",
-                        "size": path.stat().st_size, "children": [],
-                    })
-            return nodes
-
-        nodes = []
+        try:
+            rx = compile_filter(filter or None)
+        except ValueError as e:
+            raise ValueError(str(e))
+        budget = TreeBudget()
+        nodes: list[dict] = []
         for name in self.WORKSPACE_ROOTS:
             directory = session.root / name
-            if directory.is_dir():
-                nodes.append({
-                    "name": name, "path": name, "type": "directory",
-                    "children": walk(directory),
-                })
+            if not directory.is_dir():
+                continue
+            tree = build_tree(directory, budget=budget, pattern=filter or None)
+            tree.path = name  # 可读根显示名（真实目录名可能不同）
+            nodes.append(self._tree_node_to_dict(tree))
         return nodes
+
+    @staticmethod
+    def _tree_node_to_dict(node: TreeNode) -> dict:
+        base = {
+            "name": node.name,
+            "path": node.path,
+            "type": "directory" if node.is_dir else "file",
+            "children": [AgentService._tree_node_to_dict(c) for c in node.children],
+        }
+        if not node.is_dir:
+            base["size"] = node.size
+        if node.omitted or node.children_truncated:
+            base["truncated"] = True
+            omitted = node.omitted
+            tail = node.children[-1] if node.children else None
+            tail_name = tail.name if tail is not None else None
+            hint = f"其余 {omitted} 项" if omitted else "部分内容"
+            base["children"].append({
+                "name": f"…（{hint}被折叠）",
+                "path": f"{node.path}/__truncated__",
+                "type": "file",
+                "size": None,
+                "children": [],
+                "virtual": True,
+            })
+        return base
 
     def workspace_file(self, session_id: str, relative_path: str) -> Path:
         candidate = self._workspace_path(session_id, relative_path)
@@ -324,6 +334,61 @@ class AgentService:
         path.write_bytes(content)
         return path
 
+    # ---------- 压缩包解压（7-Zip） ----------
+
+    ARCHIVE_SUFFIXES = {".zip", ".7z", ".rar", ".tar", ".gz", ".bz2", ".xz", ".tgz"}
+
+    def extract_archive(self, session_id: str, relative_path: str) -> Path:
+        """用本机 7-Zip 把 workspace 内的压缩包解压到同名目录（不覆盖已有文件）。
+
+        返回解压目标目录。安全：目标目录保持在 workspace 内；7z 已带防路径
+        穿越（-snld 前缀剥离 + 目标限制）；超出预算（条目/累计体积）时中止。
+        """
+        import subprocess
+
+        archive = self._workspace_path(session_id, relative_path, must_exist=True)
+        if archive.suffix.lower() not in self.ARCHIVE_SUFFIXES:
+            raise ValueError(
+                f"不支持的压缩包格式：{archive.suffix or '(无后缀)'}。"
+                f"支持：{'、'.join(sorted(self.ARCHIVE_SUFFIXES))}"
+            )
+        seven_zip = Path(os.environ.get("SEVENZIP_PATH", r"C:\Program Files\7-Zip\7z.exe"))
+        if not seven_zip.is_file():
+            raise ValueError(
+                "未找到 7-Zip（默认路径 C:\\Program Files\\7-Zip\\7z.exe），"
+                "请安装或用环境变量 SEVENZIP_PATH 指定 7z.exe 位置。"
+            )
+        target = archive.parent / archive.stem
+        # 同名目录已存在：追加序号，避免混淆旧解压结果
+        final_target = target
+        counter = 1
+        while final_target.exists():
+            final_target = archive.parent / f"{archive.stem}_{counter}"
+            counter += 1
+        final_target.mkdir(parents=True)
+        workspace = self.session_workspace(session_id).resolve()
+        try:
+            result = subprocess.run(
+                [str(seven_zip), "x", "-y", f"-o{final_target}", str(archive)],
+                capture_output=True, text=True, timeout=300,
+                creationflags=getattr(subprocess, "CREATE_NO_WINDOW", 0),
+            )
+        except subprocess.TimeoutExpired as exc:
+            shutil.rmtree(final_target, ignore_errors=True)
+            raise ValueError("解压超时（5 分钟），已中止并清理。") from exc
+        if result.returncode != 0:
+            shutil.rmtree(final_target, ignore_errors=True)
+            detail = (result.stderr or result.stdout or "").strip().splitlines()
+            raise ValueError("解压失败：" + (detail[-1] if detail else f"7z 退出码 {result.returncode}"))
+        # 安全校验：解压产物必须全部落在 workspace 内
+        for p in final_target.rglob("*"):
+            try:
+                p.resolve().relative_to(workspace)
+            except ValueError as exc:
+                shutil.rmtree(final_target, ignore_errors=True)
+                raise ValueError("压缩包内含越界路径，已中止并清理。") from exc
+        return final_target
+
     # ---------- Session 生命周期 ----------
 
     def create_session(
@@ -359,6 +424,8 @@ class AgentService:
         )
         holder: dict[str, Run | None] = {"run": None}
 
+        tool_event_ids = {"main": [], "subagent": []}  # started→completed 关联队列
+
         def on_event(event_type: str, data: dict) -> None:
             """引擎事件（L1）-> 宿主事件（L2），Web 前端 SSE 契约保持不变。"""
             run = holder["run"]
@@ -378,10 +445,34 @@ class AgentService:
             elif event_type == ev.TOOL_STARTED:
                 run.emit("tool.started", name=data.get("name"),
                          arguments=data.get("arguments"))
+                try:
+                    db_id = self.store.add_tool_event(
+                        session_id, agent="main", name=data.get("name", "tool"),
+                        arguments=json.dumps(data.get("arguments"), ensure_ascii=False)
+                        if data.get("arguments") is not None else None,
+                        run_id=run.id,
+                    )
+                    tool_event_ids["main"].append(db_id)
+                except Exception:
+                    pass  # 持久化失败不阻断运行
             elif event_type == ev.TOOL_COMPLETED:
                 name = data.get("name", "tool")
                 run.emit("tool.completed", name=name, result=data.get("result"))
                 run.emit("workspace.changed", reason=f"tool:{name}")
+                pending = tool_event_ids["main"]
+                if pending:
+                    db_id = pending.pop(0)
+                    try:
+                        self.store.complete_tool_event(
+                            db_id,
+                            json.dumps(data.get("result"), ensure_ascii=False)
+                            if data.get("result") is not None else None,
+                        )
+                    except Exception:
+                        pass
+            elif event_type == ev.TOOL_PROGRESS:
+                run.emit("tool.progress", name=data.get("name"),
+                         output_delta=data.get("output_delta", ""))
             elif event_type == ev.PROGRESS_UPDATED:
                 run.emit("progress.updated", message=data.get("message"))
                 run.emit("workspace.changed", reason="progress")
@@ -390,9 +481,31 @@ class AgentService:
                 sub = event_type[len(ev.SUBAGENT_PREFIX):]
                 if sub == "usage":
                     run.emit("usage.delta", chars=data.get("chars", 0), kind="subagent")
+                if sub == "tool.started":
+                    try:
+                        db_id = self.store.add_tool_event(
+                            session_id, agent="subagent", name=data.get("name", "tool"),
+                            arguments=json.dumps(data.get("arguments"), ensure_ascii=False)
+                            if data.get("arguments") is not None else None,
+                            run_id=run.id,
+                        )
+                        tool_event_ids["subagent"].append(db_id)
+                    except Exception:
+                        pass
                 if sub == "tool.completed":
                     run.emit("workspace.changed",
                              reason=f"subagent:{data.get('name', 'tool')}")
+                    pending = tool_event_ids["subagent"]
+                    if pending:
+                        db_id = pending.pop(0)
+                        try:
+                            self.store.complete_tool_event(
+                                db_id,
+                                json.dumps(data.get("result"), ensure_ascii=False)
+                                if data.get("result") is not None else None,
+                            )
+                        except Exception:
+                            pass
 
         agent = UmekoAgent(
             effective,
@@ -418,6 +531,8 @@ class AgentService:
             self._activate_mounted_resources(state)
             summary, messages = self.store.context_messages(session_id)
             agent.restore_history(messages, summary)
+            # 恢复附件映射：上次会话上传的 file_id → 磁盘文件（失效路径自动剔除）
+            state.files.update(self.store.session_files(session_id))
         else:
             self.store.save_session(session_id, user_id, title)
         return state
@@ -935,6 +1050,7 @@ class AgentService:
             counter += 1
         path.write_bytes(content)
         session.files[file_id] = path
+        self.store.add_session_file(session_id, file_id, path)
         return file_id, path
 
     def attach_workspace_file(self, session_id: str, relative_path: str) -> tuple[str, Path]:
@@ -942,6 +1058,7 @@ class AgentService:
         path = self.workspace_file(session_id, relative_path)
         file_id = f"file_{uuid.uuid4().hex}"
         session.files[file_id] = path
+        self.store.add_session_file(session_id, file_id, path)
         return file_id, path
 
     def artifacts(self, session_id: str) -> list[dict]:

@@ -18,6 +18,7 @@ REASONING_DELTA = "reasoning.delta"    # {text} 思考流增量（reasoning_cont
 TOOL_TICK = "tool.tick"                # {text} 工具参数流式增量（token 估算用）
 TOOL_STARTED = "tool.started"          # {name, arguments}
 TOOL_COMPLETED = "tool.completed"      # {name, result}
+TOOL_PROGRESS = "tool.progress"        # {name, output_delta} 慢工具的流式中间输出
 PROGRESS_UPDATED = "progress.updated"  # {message}
 SUBAGENT_PREFIX = "subagent."          # subagent.<started|update|finished|usage|tool.*>，data 透传
 

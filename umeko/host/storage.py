@@ -80,6 +80,24 @@ class Store:
               main_model_id TEXT, sub_model_id TEXT, vision_model_id TEXT,
               updated_at TEXT NOT NULL
             );
+            CREATE TABLE IF NOT EXISTS tool_events (
+              id INTEGER PRIMARY KEY AUTOINCREMENT,
+              session_id TEXT NOT NULL REFERENCES agent_sessions(id) ON DELETE CASCADE,
+              run_id TEXT,
+              agent TEXT NOT NULL DEFAULT 'main',
+              name TEXT NOT NULL,
+              arguments TEXT,
+              result TEXT,
+              created_at TEXT NOT NULL
+            );
+            CREATE INDEX IF NOT EXISTS idx_tool_events_session
+              ON tool_events(session_id, id);
+            CREATE TABLE IF NOT EXISTS session_files (
+              file_id TEXT PRIMARY KEY,
+              session_id TEXT NOT NULL REFERENCES agent_sessions(id) ON DELETE CASCADE,
+              path TEXT NOT NULL,
+              created_at TEXT NOT NULL
+            );
             """)
             # 旧库迁移：users 补 role 列（管理员入口，role='admin'）
             cols = {row["name"] for row in db.execute("PRAGMA table_info(users)")}
@@ -680,6 +698,63 @@ class Store:
         with self.connect() as db:
             rows = db.execute("SELECT id,role,content,attachments,created_at FROM messages WHERE session_id=? ORDER BY id", (session_id,)).fetchall()
         return [dict(row) for row in rows]
+
+    def add_tool_event(
+        self, session_id: str, agent: str, name: str,
+        arguments: str | None = None, result: str | None = None,
+        run_id: str | None = None,
+    ) -> int:
+        """插入一条工具调用事件；返回事件 id（用于 started→completed 关联）。"""
+        with self.connect() as db:
+            cur = db.execute(
+                "INSERT INTO tool_events(session_id,run_id,agent,name,arguments,result,created_at) "
+                "VALUES(?,?,?,?,?,?,?)",
+                (session_id, run_id, agent, name, arguments, result, _now()),
+            )
+            return cur.lastrowid
+
+    def complete_tool_event(self, event_id: int, result: str | None) -> None:
+        with self.connect() as db:
+            db.execute(
+                "UPDATE tool_events SET result=? WHERE id=?", (result, event_id)
+            )
+
+    def tool_events(self, session_id: str) -> list[dict]:
+        with self.connect() as db:
+            rows = db.execute(
+                "SELECT id,agent,name,arguments,result,created_at FROM tool_events "
+                "WHERE session_id=? ORDER BY id",
+                (session_id,),
+            ).fetchall()
+        return [dict(row) for row in rows]
+
+    def add_session_file(self, session_id: str, file_id: str, path: Path) -> None:
+        """登记 file_id → 文件绝对路径，随 Session 持久化。"""
+        with self.connect() as db:
+            exists = db.execute(
+                "SELECT 1 FROM agent_sessions WHERE id=?", (session_id,)
+            ).fetchone()
+            if exists is None:
+                return  # session 不在库中（测试桩场景），跳过持久化
+            db.execute(
+                "INSERT OR REPLACE INTO session_files(file_id,session_id,path,created_at) "
+                "VALUES(?,?,?,?)",
+                (file_id, session_id, path.as_posix(), _now()),
+            )
+
+    def session_files(self, session_id: str) -> dict[str, Path]:
+        """恢复 file_id → Path 映射（重建 SessionState 时用）。失效路径自动剔除。"""
+        mapping: dict[str, Path] = {}
+        with self.connect() as db:
+            rows = db.execute(
+                "SELECT file_id,path FROM session_files WHERE session_id=? ORDER BY created_at",
+                (session_id,),
+            ).fetchall()
+        for row in rows:
+            p = Path(row["path"])
+            if p.is_file():
+                mapping[row["file_id"]] = p
+        return mapping
 
     def context_messages(self, session_id: str) -> tuple[str | None, list[dict]]:
         with self.connect() as db:

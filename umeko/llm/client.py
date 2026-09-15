@@ -275,6 +275,9 @@ class LLMClient:
                         proxy=self._model.proxy,
                         trust_env=False,
                     ),
+                    # 网关挂起/无响应时的兜底：单请求最长等 10 分钟，防无限卡死
+                    timeout=600.0,
+                    max_retries=2,
                 )
             return self._client
 
