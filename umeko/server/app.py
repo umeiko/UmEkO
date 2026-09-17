@@ -383,6 +383,21 @@ def create_app(
             raise HTTPException(404, f"文件不存在：{path}") from exc
         return FileResponse(file_path, media_type=None)
 
+    @app.get(
+        "/v1/sessions/{session_id}/workspace/files/raw/{file_path:path}",
+        tags=["workspace"],
+    )
+    def workspace_file_raw(session_id: str, file_path: str):
+        """路径式文件访问：URL 自带位置信息，HTML 内的相对路径引用（图片/CSS）
+        可被浏览器正确解析。用于 HTML 报告等产物的整页渲染（新标签页打开）。"""
+        try:
+            resolved = service.workspace_file(session_id, file_path)
+        except ValueError as exc:
+            raise HTTPException(403, str(exc)) from exc
+        except FileNotFoundError as exc:
+            raise HTTPException(404, f"文件不存在：{file_path}") from exc
+        return FileResponse(resolved, media_type=None)
+
     @app.get("/v1/sessions/{session_id}/workspace/files/download", tags=["workspace"])
     def download_workspace_file(session_id: str, path: str = Query(min_length=1)):
         try:
