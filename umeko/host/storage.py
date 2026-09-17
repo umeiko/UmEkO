@@ -118,6 +118,14 @@ class Store:
                 db.execute(
                     "ALTER TABLE agent_sessions ADD COLUMN model_override_id TEXT"
                 )
+            # 旧库迁移：default_skills 补 enabled 列（管理员停用/启用，停用不下发）
+            skill_cols = {
+                row["name"] for row in db.execute("PRAGMA table_info(default_skills)")
+            }
+            if skill_cols and "enabled" not in skill_cols:
+                db.execute(
+                    "ALTER TABLE default_skills ADD COLUMN enabled INTEGER NOT NULL DEFAULT 1"
+                )
             db.execute("PRAGMA optimize")
 
     @staticmethod
@@ -766,20 +774,29 @@ class Store:
     def upsert_default_skill(self, name: str, content: str) -> None:
         with self.connect() as db:
             db.execute(
-                "INSERT INTO default_skills(name,content,updated_at) VALUES(?,?,?) "
+                "INSERT INTO default_skills(name,content,updated_at,enabled) VALUES(?,?,?,1) "
                 "ON CONFLICT(name) DO UPDATE SET content=excluded.content, updated_at=excluded.updated_at",
                 (name, content, _now()),
+            )
+
+    def set_default_skill_enabled(self, name: str, enabled: bool) -> None:
+        with self.connect() as db:
+            db.execute(
+                "UPDATE default_skills SET enabled=?, updated_at=? WHERE name=?",
+                (1 if enabled else 0, _now(), name),
             )
 
     def delete_default_skill(self, name: str) -> None:
         with self.connect() as db:
             db.execute("DELETE FROM default_skills WHERE name=?", (name,))
 
-    def default_skills(self) -> list[dict]:
+    def default_skills(self, *, enabled_only: bool = False) -> list[dict]:
+        query = "SELECT name,content,enabled,updated_at FROM default_skills"
+        if enabled_only:
+            query += " WHERE enabled=1"
+        query += " ORDER BY name"
         with self.connect() as db:
-            rows = db.execute(
-                "SELECT name,content,updated_at FROM default_skills ORDER BY name"
-            ).fetchall()
+            rows = db.execute(query).fetchall()
         return [dict(row) for row in rows]
 
     def default_skill(self, name: str) -> str | None:

@@ -306,11 +306,24 @@ def create_admin_app(settings: Settings, service: AgentService, store: Store) ->
         return {
             "skills": [
                 {"name": item["name"], "updated_at": item["updated_at"],
-                 "size": len(item["content"])}
+                 "size": len(item["content"]), "enabled": bool(item["enabled"])}
                 for item in store.default_skills()
             ],
             "library": library,
         }
+
+    @app.post("/admin/v1/default-skills/{name}/toggle")
+    def toggle_default_skill(name: str) -> dict:
+        """停用/启用：停用后不再下发到新 Session（已播种的不撤回）。"""
+        content = store.default_skill(name)
+        if content is None:
+            raise HTTPException(404, "默认 Skill 不存在")
+        current = next(
+            (s for s in store.default_skills() if s["name"] == name), None
+        )
+        enabled = not (current["enabled"] if current else False)
+        store.set_default_skill_enabled(name, enabled)
+        return {"name": name, "enabled": enabled}
 
     @app.post("/admin/v1/default-skills/import/{name}", status_code=201)
     def import_default_skill(name: str) -> dict:

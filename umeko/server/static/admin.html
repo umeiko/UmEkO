@@ -42,7 +42,7 @@
 
   /* ---- 控制台 ---- */
   body.console { padding: 10px 14px 12px; }
-  .topbar { max-width: 1180px; height: 40px; margin: 0 auto; display: flex;
+  .topbar { max-width: min(100%, 1600px); height: 40px; margin: 0 auto; display: flex;
     align-items: flex-end; gap: 10px; border-bottom: 1px solid var(--line); }
   .topbar .brand { font: 700 13px/1 ui-monospace, monospace; letter-spacing: .1em;
     margin-bottom: 10px; }
@@ -62,7 +62,7 @@
     cursor: pointer; font-size: 12px; padding: 6px 8px; }
   .text-button:hover { color: var(--accent-dark); }
 
-  .card { max-width: 1180px; margin: 16px auto 0; padding: 16px;
+  .card { max-width: min(100%, 1600px); margin: 16px auto 0; padding: 16px;
     border: 1px solid var(--line); border-radius: 12px; background: var(--panel); }
   input, select { padding: 7px 10px; border: 1px solid var(--line); border-radius: 7px;
     outline: none; background: #fff; color: var(--ink); font: 13px/1.4 inherit; }
@@ -92,7 +92,7 @@
   .cfg-grid label { color: var(--muted); font: 12px/1.4 ui-monospace, monospace; }
   .cfg-grid input { width: 100%; font: 13px/1.4 ui-monospace, monospace; }
   /* Provider 左右分栏 */
-  .split { max-width: 1180px; margin: 16px auto 0; display: grid;
+  .split { max-width: min(100%, 1600px); margin: 16px auto 0; display: grid;
     grid-template-columns: 260px minmax(0, 1fr); gap: 14px; align-items: start; }
   .prv-side { border: 1px solid var(--line); border-radius: 12px;
     background: var(--panel); padding: 12px; }
@@ -119,6 +119,7 @@
   pre.example { margin-top: 10px; padding: 12px; border: 1px solid var(--line);
     border-radius: 8px; background: #fff; font: 11px/1.5 ui-monospace, monospace;
     overflow-x: auto; white-space: pre; }
+  textarea.auto-grow { height: 180px; min-height: 180px; max-height: 70vh; overflow-y: auto; }
   textarea.paste { width: 100%; min-height: 150px; padding: 10px;
     border: 1px solid var(--line); border-radius: 8px; background: #fff;
     font: 12px/1.5 ui-monospace, monospace; resize: vertical; }
@@ -182,14 +183,14 @@
       <input type="file" id="ds-file" accept=".md" style="display:none" onchange="loadSkillFile(this)">
       <button onclick="document.getElementById('ds-file').click()">从文件选择</button>
     </div>
-    <textarea id="ds-content" class="paste" placeholder='---
+    <textarea id="ds-content" class="paste auto-grow" placeholder='---
 name: export-guide
 description: 导出为指定格式的操作指引
 ---
 
 ## 步骤
 1. ...'></textarea>
-    <table><thead><tr><th>名称</th><th>大小</th><th>更新时间</th><th>操作</th></tr></thead>
+    <table><thead><tr><th>名称</th><th>状态</th><th>大小</th><th>更新时间</th><th>操作</th></tr></thead>
       <tbody id="ds-body"></tbody></table>
     <h3 style="margin-top:18px">服务器技能库 <span class="muted">（源文件，不自动下发；点「导入并下发」才对用户生效）</span></h3>
     <table><thead><tr><th>名称</th><th>大小</th><th>状态</th></tr></thead>
@@ -295,14 +296,17 @@ async function loadDefaultSkills() {
   const data = await api("GET", "/admin/v1/default-skills");
   const items = data.skills || [];
   $("ds-body").innerHTML = items.length ? items.map(s => `<tr>
-    <td style="font-family:ui-monospace,monospace">${s.name}</td>
+    <td><a href="javascript:void(0)" style="font-family:ui-monospace,monospace;color:var(--accent)" onclick="previewDefaultSkill('${s.name}')">${s.name}</a></td>
+    <td>${s.enabled ? `<span class="tag current">启用</span>` : `<span class="tag">停用</span>`}</td>
     <td class="muted">${s.size} 字符</td>
     <td class="muted">${s.updated_at.slice(0, 16).replace("T", " ")}</td>
     <td><div class="row">
+      <button onclick="previewDefaultSkill('${s.name}')">预览</button>
       <button onclick="editDefaultSkill('${s.name}')">编辑</button>
+      <button onclick="toggleDefaultSkill('${s.name}', ${s.enabled})">${s.enabled ? "停用" : "启用"}</button>
       <button class="danger" onclick="delDefaultSkill('${s.name}')">删除</button>
     </div></td></tr>`).join("")
-    : `<tr><td colspan="4" class="muted">暂无已下发的默认 Skill。</td></tr>`;
+    : `<tr><td colspan="5" class="muted">暂无已下发的默认 Skill。</td></tr>`;
   // 服务器技能库（源文件，不自动下发）
   const lib = data.library || [];
   $("ds-lib-body").innerHTML = lib.length ? lib.map(s => `<tr>
@@ -313,6 +317,33 @@ async function loadDefaultSkills() {
       : `<button class="primary" onclick="importLibSkill('${s.name}')">导入并下发</button>`}</td>
   </tr>`).join("")
     : `<tr><td colspan="3" class="muted">服务器 skills/ 目录暂无可用技能文件。</td></tr>`;
+}
+async function toggleDefaultSkill(name, enabled) {
+  try {
+    const r = await api("POST", `/admin/v1/default-skills/${encodeURIComponent(name)}/toggle`);
+    toast(r.enabled ? `已启用 ${name}` : `已停用 ${name}（新 Session 不再下发）`);
+    loadDefaultSkills();
+  } catch (e) { toast(e.message, true); }
+}
+async function previewDefaultSkill(name) {
+  try {
+    const item = await api("GET", `/admin/v1/default-skills/${encodeURIComponent(name)}`);
+    const editor = $("ds-content");
+    $("ds-name").value = name;
+    editor.value = item.content;
+    editor.readOnly = true;
+    autoGrowEditor(editor);
+    editor.scrollIntoView({behavior: "smooth"});
+    editor.title = "只读预览中——点「编辑」解除";
+  } catch (e) { toast(e.message, true); }
+}
+document.addEventListener("DOMContentLoaded", () => {
+  const editor = document.getElementById("ds-content");
+  if (editor) editor.addEventListener("input", () => autoGrowEditor(editor));
+});
+function autoGrowEditor(el) {
+  el.style.height = "auto";
+  el.style.height = Math.min(Math.max(el.scrollHeight + 4, 180), 900) + "px";
 }
 async function importLibSkill(name) {
   try {
@@ -360,8 +391,12 @@ async function editDefaultSkill(name) {
   try {
     const item = await api("GET", `/admin/v1/default-skills/${encodeURIComponent(name)}`);
     $("ds-name").value = name;
-    $("ds-content").value = item.content;
-    $("ds-content").scrollIntoView({behavior: "smooth"});
+    const editor = $("ds-content");
+    editor.value = item.content;
+    editor.readOnly = false;
+    editor.title = "";
+    autoGrowEditor(editor);
+    editor.scrollIntoView({behavior: "smooth"});
   } catch (e) { toast(e.message, true); }
 }
 async function delDefaultSkill(name) {
