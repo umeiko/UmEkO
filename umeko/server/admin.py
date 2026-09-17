@@ -285,9 +285,11 @@ def create_admin_app(settings: Settings, service: AgentService, store: Store) ->
 
     @app.get("/admin/v1/default-skills")
     def list_default_skills() -> dict:
-        db_names = {item["name"] for item in store.default_skills()}
         # 服务器 skills/ 目录（仓库自带的技能库源文件）：管理员可一键导入，
         # 但不自动下发——是否给用户由管理员决定。
+        # dispatch 状态：未导入 / 已启用（下发中）/ 已停用（DB 拷贝存在但停用）；
+        # 另标 stale：源文件与 DB 拷贝内容不一致，可重新导入覆盖。
+        db_skills = {item["name"]: item for item in store.default_skills()}
         library = []
         lib_dir = app_dir() / "skills"
         if lib_dir.is_dir():
@@ -298,10 +300,13 @@ def create_admin_app(settings: Settings, service: AgentService, store: Store) ->
                     continue
                 if parse_skill_pack_text(text) is None:
                     continue
+                entry = db_skills.get(f.name)
                 library.append({
                     "name": f.name,
                     "size": len(text),
-                    "imported": f.name in db_names,
+                    "imported": entry is not None,
+                    "enabled": bool(entry["enabled"]) if entry else None,
+                    "stale": entry is not None and entry["content"] != text,
                 })
         return {
             "skills": [

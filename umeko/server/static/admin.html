@@ -192,7 +192,7 @@ description: 导出为指定格式的操作指引
 1. ...'></textarea>
     <table><thead><tr><th>名称</th><th>状态</th><th>大小</th><th>更新时间</th><th>操作</th></tr></thead>
       <tbody id="ds-body"></tbody></table>
-    <h3 style="margin-top:18px">服务器技能库 <span class="muted">（源文件，不自动下发；点「导入并下发」才对用户生效）</span></h3>
+    <h3 style="margin-top:18px">服务器技能库 <span class="muted">（skills/ 目录的源文件模板。导入 = 拷贝一份到上方列表；之后的启停/编辑只作用于那份拷贝，源文件不变；源文件更新后会标「源文件已更新」，可重新导入覆盖）</span></h3>
     <table><thead><tr><th>名称</th><th>大小</th><th>状态</th></tr></thead>
       <tbody id="ds-lib-body"></tbody></table>
   </div>
@@ -307,13 +307,16 @@ async function loadDefaultSkills() {
       <button class="danger" onclick="delDefaultSkill('${s.name}')">删除</button>
     </div></td></tr>`).join("")
     : `<tr><td colspan="5" class="muted">暂无已下发的默认 Skill。</td></tr>`;
-  // 服务器技能库（源文件，不自动下发）
+  // 服务器技能库（源文件，不自动下发）——状态反映上方已下发列表的启停
   const lib = data.library || [];
   $("ds-lib-body").innerHTML = lib.length ? lib.map(s => `<tr>
     <td style="font-family:ui-monospace,monospace">${s.name}</td>
     <td class="muted">${s.size} 字符</td>
     <td>${s.imported
-      ? `<span class="tag current">已导入</span>`
+      ? (s.enabled
+          ? `<span class="tag current">已启用${s.stale ? " · 源文件已更新" : ""}</span>`
+          : `<span class="tag">已停用${s.stale ? " · 源文件已更新" : ""}</span>`)
+        + ` <button onclick="importLibSkill('${s.name}')">重新导入覆盖</button>`
       : `<button class="primary" onclick="importLibSkill('${s.name}')">导入并下发</button>`}</td>
   </tr>`).join("")
     : `<tr><td colspan="3" class="muted">服务器 skills/ 目录暂无可用技能文件。</td></tr>`;
