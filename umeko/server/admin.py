@@ -27,6 +27,35 @@ STATIC_DIR = Path(__file__).parent / "static"
 SECRET_MASK = "********"
 
 
+TEMPLATE_SCRIPT = """#!/usr/bin/env python
+\""\"UMEKO 技能包脚本模板（统一契约）
+
+- stdin  : {"args": {...}, "workdir": "<产物目录绝对路径>", "session_root": "<Session根绝对路径>"}
+- stdout : 一行 JSON {"ok": true, "result": "给模型的结论", "files": ["产物相对路径"]}
+- stderr : 逐行进度文本（实时展示给用户）
+- 约束：不联网、不读密钥、只写 workdir/session_root 内；超时（默认60s）会被强杀
+\"\""
+
+import json
+import sys
+from pathlib import Path
+
+
+def main():
+    payload = json.loads(sys.stdin.read() or "{}")
+    args = payload.get("args", {})
+    workdir = Path(payload.get("workdir", "."))
+
+    # TODO: 你的确定性逻辑
+    result = f"收到参数: {args}"
+    print(json.dumps({"ok": True, "result": result, "files": []}, ensure_ascii=False))
+
+
+if __name__ == "__main__":
+    main()
+"""
+
+
 class _Login(BaseModel):
     username: str
     password: str
@@ -48,6 +77,11 @@ class _RoleSet(BaseModel):
 
 class _DefaultSkillIn(BaseModel):
     content: str = Field(min_length=1, max_length=200_000)
+
+
+class _ScriptTestIn(BaseModel):
+    args: str = "{}"
+    timeout: int = 10
 
 
 class _ProviderIn(BaseModel):
@@ -370,5 +404,92 @@ def create_admin_app(settings: Settings, service: AgentService, store: Store) ->
     @app.delete("/admin/v1/default-skills/{name}", status_code=204)
     def delete_default_skill(name: str) -> None:
         store.delete_default_skill(name)
+
+    # ---------- 技能包脚本（skills/<pack>/<script>.py 资产管理） ----------
+
+    @app.get("/admin/v1/skill-scripts/{pack}")
+    def list_skill_scripts(pack: str) -> dict:
+        base = app_dir() / "skills"
+        pack_dir = (base / pack).resolve()
+        try:
+            pack_dir.relative_to(base.resolve())
+        except ValueError:
+            raise HTTPException(400, "非法包名")
+        scripts = []
+        if pack_dir.is_dir():
+            for f in sorted(pack_dir.glob("*.py")):
+                try:
+                    text = f.read_text(encoding="utf-8")
+                except (OSError, UnicodeDecodeError):
+                    continue
+                scripts.append({"name": f.name, "size": len(text)})
+        return {"pack": pack, "scripts": scripts}
+
+    @app.get("/admin/v1/skill-scripts/{pack}/{script_name}")
+    def get_skill_script(pack: str, script_name: str) -> dict:
+        base = app_dir() / "skills"
+        target = (base / pack / script_name).resolve()
+        try:
+            target.relative_to(base.resolve())
+        except ValueError:
+            raise HTTPException(400, "非法路径")
+        if not target.is_file():
+            raise HTTPException(404, "脚本不存在")
+        return {"name": script_name, "content": target.read_text(encoding="utf-8")}
+
+    @app.put("/admin/v1/skill-scripts/{pack}/{script_name}", status_code=201)
+    def put_skill_script(pack: str, script_name: str, payload: _DefaultSkillIn) -> dict:
+        """新建/覆盖技能包脚本。内容须可编译（语法检查），防低级错误上线。"""
+        base = app_dir() / "skills"
+        if "/" in pack or "\\" in pack or ".." in pack:
+            raise HTTPException(400, "非法包名")
+        clean = Path(script_name).name
+        if clean != script_name or not clean.endswith(".py"):
+            raise HTTPException(400, "脚本名须为 xxx.py（不带路径）")
+        import ast
+        try:
+            ast.parse(payload.content)
+        except SyntaxError as e:
+            raise HTTPException(400, f"Python 语法错误：{e}") from e
+        pack_dir = base / pack
+        pack_dir.mkdir(parents=True, exist_ok=True)
+        (pack_dir / clean).write_text(payload.content, encoding="utf-8")
+        return {"name": clean, "saved": True}
+
+    @app.delete("/admin/v1/skill-scripts/{pack}/{script_name}", status_code=204)
+    def delete_skill_script(pack: str, script_name: str) -> None:
+        base = app_dir() / "skills"
+        target = (base / pack / script_name).resolve()
+        try:
+            target.relative_to(base.resolve())
+        except ValueError:
+            raise HTTPException(400, "非法路径")
+        if target.is_file():
+            target.unlink()
+
+    @app.get("/admin/v1/skill-scripts-template")
+    def skill_script_template() -> dict:
+        """统一契约的脚本模板（面板可下载/新建时预填）。"""
+        return {
+            "name": "my_script.py",
+            "content": TEMPLATE_SCRIPT,
+        }
+
+    @app.post("/admin/v1/skill-scripts/{pack}/{script_name}/test")
+    def test_skill_script(pack: str, script_name: str, payload: _ScriptTestIn) -> dict:
+        """在隔离环境测试脚本：临时 workdir，超时强杀，返回结果与进度。"""
+        import tempfile
+        from ..skills.script_runner import run_skill_script
+        base = app_dir() / "skills"
+        if not (base / pack / script_name).is_file():
+            raise HTTPException(404, "脚本不存在")
+        with tempfile.TemporaryDirectory() as tmp:
+            result = run_skill_script(
+                pack=pack, script=script_name,
+                args=payload.args,
+                workdir=Path(tmp), session_root=Path(tmp),
+                timeout=min(max(1, payload.timeout), 30),
+            )
+        return {"output": result}
 
     return app

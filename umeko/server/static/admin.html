@@ -195,6 +195,27 @@ description: 导出为指定格式的操作指引
     <h3 style="margin-top:18px">服务器技能库 <span class="muted">（skills/ 目录的源文件模板。导入 = 拷贝一份到上方列表；之后的启停/编辑只作用于那份拷贝，源文件不变；源文件更新后会标「源文件已更新」，可重新导入覆盖）</span></h3>
     <table><thead><tr><th>名称</th><th>大小</th><th>状态</th></tr></thead>
       <tbody id="ds-lib-body"></tbody></table>
+
+    <h3 style="margin-top:18px">技能包脚本 <span class="muted">（skills/&lt;包名&gt;/ 目录下的 .py，由 run_skill_script 工具在沙箱中执行。选中技能库中的包后管理其脚本）</span></h3>
+    <div class="row">
+      <select id="ss-pack" style="width:240px"><option value="">选择技能包…</option></select>
+      <button id="ss-refresh" onclick="loadSkillScripts()">刷新脚本</button>
+      <button class="primary" onclick="newSkillScript()">＋ 新建脚本</button>
+      <button onclick="downloadScriptTemplate()">下载脚本模板</button>
+    </div>
+    <div class="row">
+      <input id="ss-name" placeholder="脚本名，如 render_report.py" style="width:260px">
+      <button class="primary" onclick="saveSkillScript()">保存脚本</button>
+      <button onclick="testSkillScript()">▶ 测试运行</button>
+      <input type="file" id="ss-file" accept=".py" style="display:none" onchange="loadScriptFile(this)">
+      <button onclick="document.getElementById('ss-file').click()">从文件选择</button>
+      <span class="muted">测试参数 JSON：</span>
+      <input id="ss-test-args" value="{}" style="width:260px;flex:1">
+    </div>
+    <textarea id="ss-content" class="paste auto-grow" placeholder="# Python 脚本（统一契约：stdin JSON → stdout 一行 JSON，stderr 进度）"></textarea>
+    <table><thead><tr><th>脚本</th><th>大小</th><th>操作</th></tr></thead>
+      <tbody id="ss-body"></tbody></table>
+    <pre id="ss-test-out" class="example hidden"></pre>
   </div>
 
   <div id="page-config" class="split hidden">
@@ -309,6 +330,13 @@ async function loadDefaultSkills() {
     : `<tr><td colspan="5" class="muted">暂无已下发的默认 Skill。</td></tr>`;
   // 服务器技能库（源文件，不自动下发）——状态反映上方已下发列表的启停
   const lib = data.library || [];
+  const packSel = $("ss-pack");
+  if (packSel) {
+    const current = packSel.value;
+    packSel.innerHTML = '<option value="">选择技能包…</option>' +
+      lib.map(l => `<option value="${l.name.replace(/\.md$/, "")}">${l.name.replace(/\.md$/, "")}</option>`).join("");
+    if ([...packSel.options].some(o => o.value === current)) packSel.value = current;
+  }
   $("ds-lib-body").innerHTML = lib.length ? lib.map(s => `<tr>
     <td style="font-family:ui-monospace,monospace">${s.name}</td>
     <td class="muted">${s.size} 字符</td>
@@ -353,6 +381,99 @@ async function importLibSkill(name) {
     await api("POST", `/admin/v1/default-skills/import/${encodeURIComponent(name)}`);
     toast(`已导入 ${name}，对新 Session 生效`);
     loadDefaultSkills();
+  } catch (e) { toast(e.message, true); }
+}
+
+// ---------- 技能包脚本 ----------
+async function loadSkillScripts() {
+  const pack = $("ss-pack").value;
+  if (!pack) return toast("先选择技能包", true);
+  const data = await api("GET", `/admin/v1/skill-scripts/${encodeURIComponent(pack)}`);
+  $("ss-body").innerHTML = data.scripts.length ? data.scripts.map(sc => `<tr>
+    <td style="font-family:ui-monospace,monospace">${sc.name}</td>
+    <td class="muted">${sc.size} 字符</td>
+    <td><div class="row">
+      <button onclick="editSkillScript('${sc.name}')">编辑</button>
+      <button class="danger" onclick="delSkillScript('${sc.name}')">删除</button>
+    </div></td></tr>`).join("")
+    : `<tr><td colspan="3" class="muted">该包暂无脚本。「＋ 新建脚本」或「下载脚本模板」开始。</td></tr>`;
+}
+async function editSkillScript(name) {
+  const pack = $("ss-pack").value;
+  try {
+    const item = await api("GET", `/admin/v1/skill-scripts/${encodeURIComponent(pack)}/${encodeURIComponent(name)}`);
+    $("ss-name").value = name;
+    const editor = $("ss-content");
+    editor.value = item.content;
+    autoGrowEditor(editor);
+    editor.scrollIntoView({behavior: "smooth"});
+  } catch (e) { toast(e.message, true); }
+}
+async function newSkillScript() {
+  const pack = $("ss-pack").value;
+  if (!pack) return toast("先选择技能包", true);
+  try {
+    const tpl = await api("GET", "/admin/v1/skill-scripts-template");
+    $("ss-name").value = tpl.name;
+    const editor = $("ss-content");
+    editor.value = tpl.content;
+    autoGrowEditor(editor);
+    editor.scrollIntoView({behavior: "smooth"});
+    toast("已填入统一契约模板，按需修改后保存");
+  } catch (e) { toast(e.message, true); }
+}
+async function downloadScriptTemplate() {
+  try {
+    const tpl = await api("GET", "/admin/v1/skill-scripts-template");
+    const blob = new Blob([tpl.content], {type: "text/x-python"});
+    const a = document.createElement("a");
+    a.href = URL.createObjectURL(blob);
+    a.download = tpl.name;
+    a.click();
+    URL.revokeObjectURL(a.href);
+  } catch (e) { toast(e.message, true); }
+}
+function loadScriptFile(input) {
+  const file = input.files?.[0];
+  if (!file) return;
+  $("ss-name").value = file.name;
+  const reader = new FileReader();
+  reader.onload = () => { $("ss-content").value = reader.result; autoGrowEditor($("ss-content")); };
+  reader.readAsText(file);
+  input.value = "";
+}
+async function saveSkillScript() {
+  const pack = $("ss-pack").value;
+  const name = $("ss-name").value.trim();
+  if (!pack) return toast("先选择技能包", true);
+  if (!name.endsWith(".py")) return toast("脚本名须为 xxx.py", true);
+  try {
+    await api("PUT", `/admin/v1/skill-scripts/${encodeURIComponent(pack)}/${encodeURIComponent(name)}`,
+      {content: $("ss-content").value});
+    toast("已保存（含语法校验）");
+    loadSkillScripts();
+  } catch (e) { toast(e.message, true); }
+}
+async function testSkillScript() {
+  const pack = $("ss-pack").value;
+  const name = $("ss-name").value.trim();
+  if (!pack || !name.endsWith(".py")) return toast("先选择包并填脚本名", true);
+  const out = $("ss-test-out");
+  out.classList.remove("hidden");
+  out.textContent = "执行中…（临时目录沙箱，超时强杀）";
+  try {
+    const r = await api("POST",
+      `/admin/v1/skill-scripts/${encodeURIComponent(pack)}/${encodeURIComponent(name)}/test`,
+      {args: $("ss-test-args").value, timeout: 10});
+    out.textContent = r.output;
+  } catch (e) { out.textContent = "测试失败：" + e.message; }
+}
+async function delSkillScript(name) {
+  const pack = $("ss-pack").value;
+  if (!confirm(`删除脚本 ${pack}/${name}？`)) return;
+  try {
+    await api("DELETE", `/admin/v1/skill-scripts/${encodeURIComponent(pack)}/${encodeURIComponent(name)}`);
+    toast("已删除"); loadSkillScripts();
   } catch (e) { toast(e.message, true); }
 }
 function fillDefaultSkillExample() {

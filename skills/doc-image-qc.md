@@ -69,17 +69,17 @@ description: 图文 Markdown 大文档的图片质检流水线。触发场景：
 - 图片文件不存在：status 记 MISSING，继续下一张。
 - 单个子 Agent 反复失败 2 次：status 记 ERROR，跳过。
 
-## 阶段 3：渲染报告（主 Agent 直接做）
+## 阶段 3：渲染报告（主 Agent 调确定性脚本）
 
-全部完成后：
-1. 把 `generate/qc-report.json` **移动到被检 Markdown 的同目录**（图片相对引用
-   才能生效）：`read_document` 读出 + `write_file` 写到
-   `<Markdown所在目录>/qc-report.json`。
-2. 调用 `render_qc_report` 工具，data_path 传该位置——它会在同目录生成
-   `qc-report.html`（确定性模板：统计卡、建议清单、逐图缩略图+三项检查，
-   样式与平台一致，不消耗推理）。
-3. 向用户交付：qc-report.html 的路径（提示可双击在浏览器整页查看）+
-   统计数字（PASS/WARN/FAIL 各多少）+ 最严重的 3 个问题（每条一句话）。
+全部完成后，调用 `run_skill_script` 工具（一次搞定，不消耗推理）：
+
+- pack: `doc-image-qc`
+- script: `render_report.py`
+- args: `{"data_path": "generate/qc-report.json", "doc_dir": "<被检 Markdown 所在的 Session 相对目录，如 workspace/md>"}`
+
+脚本会在 Markdown 同目录生成 `qc-report.html` + `qc-report.json`（图片相对
+引用直接生效）。然后向用户交付：qc-report.html 的路径（提示可双击在浏览器
+整页查看）+ 统计数字（PASS/WARN/FAIL 各多少）+ 最严重的 3 个问题（每条一句话）。
 
 ## working_doc 模板（阶段 0 初始化）
 
@@ -99,5 +99,5 @@ description: 图文 Markdown 大文档的图片质检流水线。触发场景：
 ## 断点续跑规则
 
 用户说"继续"时：`read_working_doc` + `read_document generate/qc-progress.md`
-→ 从第一个未完成图片继续阶段 2。qc-report.json 已有的条目不重复检查。
+→ 从第一个未完成图片继续阶段 2。qc-report.json 已有的条目不重复检查。阶段 3 的渲染由 run_skill_script 确定性完成。
 清单文件若不存在则重跑阶段 1。
