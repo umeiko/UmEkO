@@ -19,6 +19,8 @@ from pydantic import BaseModel, Field
 from ..config import Settings
 from ..host.service import AgentService
 from ..host.storage import Store
+from ..runtime import app_dir
+from ..skillpacks import parse_skill_pack_text
 
 ADMIN_COOKIE = "umeko_admin"
 STATIC_DIR = Path(__file__).parent / "static"
@@ -282,12 +284,50 @@ def create_admin_app(settings: Settings, service: AgentService, store: Store) ->
     # ---------- 默认 Skill（管理员下发，出现在用户的 Skills 列表） ----------
 
     @app.get("/admin/v1/default-skills")
-    def list_default_skills() -> list[dict]:
-        return [
-            {"name": item["name"], "updated_at": item["updated_at"],
-             "size": len(item["content"])}
-            for item in store.default_skills()
-        ]
+    def list_default_skills() -> dict:
+        db_names = {item["name"] for item in store.default_skills()}
+        # 服务器 skills/ 目录（仓库自带的技能库源文件）：管理员可一键导入，
+        # 但不自动下发——是否给用户由管理员决定。
+        library = []
+        lib_dir = app_dir() / "skills"
+        if lib_dir.is_dir():
+            for f in sorted(lib_dir.glob("*.md")):
+                try:
+                    text = f.read_text(encoding="utf-8")
+                except (OSError, UnicodeDecodeError):
+                    continue
+                if parse_skill_pack_text(text) is None:
+                    continue
+                library.append({
+                    "name": f.name,
+                    "size": len(text),
+                    "imported": f.name in db_names,
+                })
+        return {
+            "skills": [
+                {"name": item["name"], "updated_at": item["updated_at"],
+                 "size": len(item["content"])}
+                for item in store.default_skills()
+            ],
+            "library": library,
+        }
+
+    @app.post("/admin/v1/default-skills/import/{name}", status_code=201)
+    def import_default_skill(name: str) -> dict:
+        """把服务器 skills/ 目录中的技能文件导入默认 Skill（导入后新 Session 生效）。"""
+        clean = Path(name).name
+        if clean != name or not clean.endswith(".md"):
+            raise HTTPException(400, "名称必须是 xxx.md 形式（不带路径）")
+        source = app_dir() / "skills" / clean
+        if not source.is_file():
+            raise HTTPException(404, f"技能库中不存在：{clean}")
+        content = source.read_text(encoding="utf-8")
+        try:
+            service._validate_resource(content)
+        except ValueError as exc:
+            raise HTTPException(400, str(exc)) from exc
+        store.upsert_default_skill(clean, content)
+        return {"name": clean, "imported": True}
 
     @app.get("/admin/v1/default-skills/{name}")
     def get_default_skill(name: str) -> dict:

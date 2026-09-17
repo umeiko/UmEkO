@@ -420,16 +420,10 @@ class AgentService:
         (root / "attachments").mkdir(exist_ok=True)
         (root / "generate").mkdir(exist_ok=True)
         builtin_resources = {"skills": set()}
-        source = app_dir() / "skills"
         target = root / "client" / "skills"
         target.mkdir(parents=True, exist_ok=True)
-        if source.is_dir():
-            for item in source.glob("*.md"):
-                if not (target / item.name).exists():
-                    shutil.copy2(item, target / item.name)
-                if parse_skill_pack_text(item.read_text(encoding="utf-8")) is not None:
-                    builtin_resources["skills"].add(item.name)
-        # 管理员下发的默认 Skill：播种到每个新 Session（同名不覆盖用户已有）
+        # Skill 分发唯一通道：管理员在管理面「默认 Skill」维护（default_skills 表）。
+        # 文件系统 skills/ 目录不再自动播种——是否下发由管理员决定。
         for item in self.store.default_skills():
             dest = target / item["name"]
             if not dest.exists():

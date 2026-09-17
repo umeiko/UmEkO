@@ -191,6 +191,9 @@ description: 导出为指定格式的操作指引
 1. ...'></textarea>
     <table><thead><tr><th>名称</th><th>大小</th><th>更新时间</th><th>操作</th></tr></thead>
       <tbody id="ds-body"></tbody></table>
+    <h3 style="margin-top:18px">服务器技能库 <span class="muted">（源文件，不自动下发；点「导入并下发」才对用户生效）</span></h3>
+    <table><thead><tr><th>名称</th><th>大小</th><th>状态</th></tr></thead>
+      <tbody id="ds-lib-body"></tbody></table>
   </div>
 
   <div id="page-config" class="split hidden">
@@ -289,7 +292,8 @@ function showMain(user) {
 }
 // ---------- 默认 Skill ----------
 async function loadDefaultSkills() {
-  const items = await api("GET", "/admin/v1/default-skills");
+  const data = await api("GET", "/admin/v1/default-skills");
+  const items = data.skills || [];
   $("ds-body").innerHTML = items.length ? items.map(s => `<tr>
     <td style="font-family:ui-monospace,monospace">${s.name}</td>
     <td class="muted">${s.size} 字符</td>
@@ -298,7 +302,24 @@ async function loadDefaultSkills() {
       <button onclick="editDefaultSkill('${s.name}')">编辑</button>
       <button class="danger" onclick="delDefaultSkill('${s.name}')">删除</button>
     </div></td></tr>`).join("")
-    : `<tr><td colspan="4" class="muted">暂无默认 Skill。上传后对新 Session 生效。</td></tr>`;
+    : `<tr><td colspan="4" class="muted">暂无已下发的默认 Skill。</td></tr>`;
+  // 服务器技能库（源文件，不自动下发）
+  const lib = data.library || [];
+  $("ds-lib-body").innerHTML = lib.length ? lib.map(s => `<tr>
+    <td style="font-family:ui-monospace,monospace">${s.name}</td>
+    <td class="muted">${s.size} 字符</td>
+    <td>${s.imported
+      ? `<span class="tag current">已导入</span>`
+      : `<button class="primary" onclick="importLibSkill('${s.name}')">导入并下发</button>`}</td>
+  </tr>`).join("")
+    : `<tr><td colspan="3" class="muted">服务器 skills/ 目录暂无可用技能文件。</td></tr>`;
+}
+async function importLibSkill(name) {
+  try {
+    await api("POST", `/admin/v1/default-skills/import/${encodeURIComponent(name)}`);
+    toast(`已导入 ${name}，对新 Session 生效`);
+    loadDefaultSkills();
+  } catch (e) { toast(e.message, true); }
 }
 function fillDefaultSkillExample() {
   $("ds-name").value = "export-guide.md";
