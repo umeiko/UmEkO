@@ -423,8 +423,8 @@ class AgentService:
         target = root / "client" / "skills"
         target.mkdir(parents=True, exist_ok=True)
         # Skill 分发唯一通道：管理员在管理面「默认 Skill」维护（default_skills 表）。
-        # 文件系统 skills/ 目录不再自动播种——是否下发由管理员决定。
-        for item in self.store.default_skills():
+        # 文件系统 skills/ 目录不再自动播种——是否下发由管理员决定；停用项不下发。
+        for item in self.store.default_skills(enabled_only=True):
             dest = target / item["name"]
             if not dest.exists():
                 dest.write_text(item["content"], encoding="utf-8")
