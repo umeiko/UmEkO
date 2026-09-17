@@ -130,14 +130,7 @@
   <link rel="stylesheet" href="/static/hljs-github.min.css">
   <style>
   /* 叠加式代码编辑器：pre 高亮层 + 透明 textarea 输入层 */
-  .code-wrap { position: relative; margin-top: 10px; border: 1px solid var(--line);
-    border-radius: 8px; background: #fff; overflow: hidden; }
-  .code-wrap pre { margin: 0; padding: 12px; font: 12.5px/1.55 ui-monospace, "Cascadia Code", monospace;
-    white-space: pre-wrap; word-break: break-word; min-height: 320px; max-height: 65vh; overflow: auto; }
-  .code-wrap textarea { position: absolute; inset: 0; padding: 12px; border: 0; outline: none; resize: none;
-    font: 12.5px/1.55 ui-monospace, "Cascadia Code", monospace; white-space: pre-wrap; word-break: break-word;
-    color: transparent; background: transparent; caret-color: var(--ink); min-height: 320px; max-height: 65vh; overflow: auto; }
-  .code-wrap textarea::selection { background: #087f6822; }
+
   /* 三栏技能布局 */
   .skill-split { display: grid; grid-template-columns: 260px minmax(0, 1fr) 300px;
     gap: 14px; align-items: start; }
@@ -172,12 +165,20 @@
   .file-name { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
   .badge-mini { font-size: 10px; padding: 1px 6px; border-radius: 8px; margin-left: auto; border: 1px solid var(--line); color: var(--muted); }
   .badge-mini.on { border-color: #087f6844; color: var(--accent-dark); background: #edf7f3; }
-  /* 编辑器：pre 高亮层 + 透明 textarea 输入层叠加 */
-  .code-wrap { position: relative; }
-  .code-wrap pre code { font: 12.5px/1.6 ui-monospace, "Cascadia Code", monospace; white-space: pre-wrap; word-break: break-word; }
-  .code-wrap textarea { position: absolute; inset: 0; padding: 14px; border: 0; outline: none; resize: none;
-    font: 12.5px/1.6 ui-monospace, "Cascadia Code", monospace; white-space: pre-wrap; word-break: break-word;
-    color: transparent; background: transparent; caret-color: var(--ink); overflow: hidden; }
+  /* 编辑器：透明 textarea 在上（滚动主体），pre 高亮层在下同步滚动 */
+  .code-wrap { position: relative; overflow: hidden; }
+  .code-wrap pre, .code-wrap textarea {
+    margin: 0; padding: 14px; border: 0;
+    font: 12.5px/1.6 ui-monospace, "Cascadia Code", monospace;
+    white-space: pre-wrap; word-break: break-word;
+    tab-size: 4;
+  }
+  .code-wrap pre { position: absolute; inset: 0; overflow: hidden; pointer-events: none;
+    background: transparent; scrollbar-gutter: stable; padding-right: 28px; }
+  .code-wrap pre code { background: transparent; padding: 0; }
+  .code-wrap textarea { position: relative; display: block; width: 100%; height: 100%;
+    outline: none; resize: none; overflow: auto;
+    color: transparent; background: transparent; caret-color: var(--ink); }
   .code-wrap textarea::selection { background: #087f6822; }
   .code-wrap.readonly textarea { caret-color: transparent; }
   .sk-menu { position: fixed; z-index: 50; width: 160px; padding: 5px; border: 1px solid var(--line);
@@ -262,9 +263,9 @@
             <button onclick="saveSkillFile()" class="primary">保存</button>
           </span>
         </div>
-        <div class="code-wrap" style="flex:1;min-height:0;margin:0 16px 16px;border:1px solid var(--line);border-radius:8px;background:#fff;overflow:hidden;display:flex">
-          <pre id="sk-codeview" style="flex:1;margin:0;padding:14px;overflow:auto"><code id="sk-code-el"></code></pre>
-          <textarea id="sk-content" spellcheck="false" style="position:absolute"></textarea>
+        <div class="code-wrap" style="flex:1;min-height:0;margin:0 16px 16px;border:1px solid var(--line);border-radius:8px;background:#fff">
+          <textarea id="sk-content" spellcheck="false"></textarea>
+          <pre id="sk-codeview" aria-hidden="true"><code id="sk-code-el"></code></pre>
         </div>
       </div>
     </div>
@@ -558,7 +559,7 @@ document.addEventListener("DOMContentLoaded", () => {
     if (window.hljs) codeEl.innerHTML = hljs.highlight(editor.value, {language: lang}).value;
     else codeEl.textContent = editor.value;
   });
-  // 滚动同步
+  // 滚动同步：textarea 滚动主体 → pre 高亮层跟随（pre 不接收鼠标事件）
   editor.addEventListener("scroll", () => {
     const pre = document.getElementById("sk-codeview");
     if (pre) { pre.scrollTop = editor.scrollTop; pre.scrollLeft = editor.scrollLeft; }
