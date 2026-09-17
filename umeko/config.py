@@ -65,6 +65,18 @@ def _load_vision_model(proxy: str | None = None) -> ModelConfig | None:
     return None
 
 
+def _load_text_model(proxy: str | None) -> ModelConfig:
+    """主模型配置：环境变量缺失时降级为占位配置（服务可启动，/health 可达，
+    WebUI/管理面可用；模型调用会在运行时报错并提示去管理面配置 Provider）。
+    这让 exe 双击即起，首次配置走管理面而非手工编辑 .env。"""
+    return ModelConfig(
+        name=os.getenv("TEXT_MODEL_NAME") or "unconfigured",
+        api_key=os.getenv("TEXT_MODEL_API_KEY") or "",
+        base_url=os.getenv("TEXT_MODEL_BASE_URL") or "https://invalid.unconfigured",
+        proxy=proxy,
+    )
+
+
 def load_settings(env_path: str | Path | None = None) -> Settings:
     if env_path is None:
         # 冻结（离线包）时优先读 exe 旁边的 .env，其次 CWD；源码运行维持 ./.env
@@ -77,12 +89,7 @@ def load_settings(env_path: str | Path | None = None) -> Settings:
     load_dotenv(env_path)
     model_proxy = (os.getenv("MODEL_PROXY") or "").strip() or None
     return Settings(
-        text_model=ModelConfig(
-            name=_require("TEXT_MODEL_NAME"),
-            api_key=_require("TEXT_MODEL_API_KEY"),
-            base_url=_require("TEXT_MODEL_BASE_URL"),
-            proxy=model_proxy,
-        ),
+        text_model=_load_text_model(model_proxy),
         context_window=max(1, int(os.getenv("TEXT_MODEL_CONTEXT_WINDOW", "128000"))),
         vision_model=_load_vision_model(model_proxy),
         text_model_vision=os.getenv("TEXT_MODEL_VISION", "").lower()
