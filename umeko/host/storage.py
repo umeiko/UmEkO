@@ -98,6 +98,11 @@ class Store:
               path TEXT NOT NULL,
               created_at TEXT NOT NULL
             );
+            CREATE TABLE IF NOT EXISTS default_skills (
+              name TEXT PRIMARY KEY,
+              content TEXT NOT NULL,
+              updated_at TEXT NOT NULL
+            );
             """)
             # 旧库迁移：users 补 role 列（管理员入口，role='admin'）
             cols = {row["name"] for row in db.execute("PRAGMA table_info(users)")}
@@ -755,6 +760,34 @@ class Store:
             if p.is_file():
                 mapping[row["file_id"]] = p
         return mapping
+
+    # ---------- 默认 Skill（管理员下发） ----------
+
+    def upsert_default_skill(self, name: str, content: str) -> None:
+        with self.connect() as db:
+            db.execute(
+                "INSERT INTO default_skills(name,content,updated_at) VALUES(?,?,?) "
+                "ON CONFLICT(name) DO UPDATE SET content=excluded.content, updated_at=excluded.updated_at",
+                (name, content, _now()),
+            )
+
+    def delete_default_skill(self, name: str) -> None:
+        with self.connect() as db:
+            db.execute("DELETE FROM default_skills WHERE name=?", (name,))
+
+    def default_skills(self) -> list[dict]:
+        with self.connect() as db:
+            rows = db.execute(
+                "SELECT name,content,updated_at FROM default_skills ORDER BY name"
+            ).fetchall()
+        return [dict(row) for row in rows]
+
+    def default_skill(self, name: str) -> str | None:
+        with self.connect() as db:
+            row = db.execute(
+                "SELECT content FROM default_skills WHERE name=?", (name,)
+            ).fetchone()
+        return row["content"] if row else None
 
     def context_messages(self, session_id: str) -> tuple[str | None, list[dict]]:
         with self.connect() as db:

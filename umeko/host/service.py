@@ -319,17 +319,30 @@ class AgentService:
         else:
             target.unlink()
 
-    def save_workspace_file(self, session_id: str, filename: str, content: bytes) -> Path:
+    def save_workspace_file(
+        self, session_id: str, filename: str, content: bytes,
+        relative_dir: str = "",
+    ) -> Path:
         clean_name = Path(filename).name.strip()
         if not clean_name:
             raise ValueError("文件名不能为空")
+        # relative_dir：workspace 内的目标子目录（拖拽到具体目录时传入），
+        # 经 _workspace_path 校验，防越界；为空 = workspace 根
+        workspace = self.session_workspace(session_id)
+        if relative_dir:
+            target_dir = self._workspace_path(
+                session_id, relative_dir, must_exist=True, allow_root=False
+            )
+            if not target_dir.is_dir():
+                raise ValueError(f"目标目录不存在：{relative_dir}")
+        else:
+            target_dir = workspace
         stem = Path(clean_name).stem
         suffix = Path(clean_name).suffix
-        workspace = self.session_workspace(session_id)
-        path = workspace / clean_name
+        path = target_dir / clean_name
         counter = 1
         while path.exists():
-            path = workspace / f"{stem}_{counter}{suffix}"
+            path = target_dir / f"{stem}_{counter}{suffix}"
             counter += 1
         path.write_bytes(content)
         return path
@@ -416,6 +429,13 @@ class AgentService:
                     shutil.copy2(item, target / item.name)
                 if parse_skill_pack_text(item.read_text(encoding="utf-8")) is not None:
                     builtin_resources["skills"].add(item.name)
+        # 管理员下发的默认 Skill：播种到每个新 Session（同名不覆盖用户已有）
+        for item in self.store.default_skills():
+            dest = target / item["name"]
+            if not dest.exists():
+                dest.write_text(item["content"], encoding="utf-8")
+            if parse_skill_pack_text(item["content"]) is not None:
+                builtin_resources["skills"].add(item["name"])
 
         session = Session(
             effective,

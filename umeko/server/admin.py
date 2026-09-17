@@ -14,7 +14,7 @@ from pathlib import Path
 
 from fastapi import FastAPI, HTTPException, Request, Response
 from fastapi.responses import HTMLResponse, JSONResponse
-from pydantic import BaseModel
+from pydantic import BaseModel, Field
 
 from ..config import Settings
 from ..host.service import AgentService
@@ -42,6 +42,10 @@ class _PasswordSet(BaseModel):
 
 class _RoleSet(BaseModel):
     role: str
+
+
+class _DefaultSkillIn(BaseModel):
+    content: str = Field(min_length=1, max_length=200_000)
 
 
 class _ProviderIn(BaseModel):
@@ -274,5 +278,39 @@ def create_admin_app(settings: Settings, service: AgentService, store: Store) ->
         if result.get("activated"):
             result["applied"] = service.reload_config()
         return result
+
+    # ---------- 默认 Skill（管理员下发，出现在用户的 Skills 列表） ----------
+
+    @app.get("/admin/v1/default-skills")
+    def list_default_skills() -> list[dict]:
+        return [
+            {"name": item["name"], "updated_at": item["updated_at"],
+             "size": len(item["content"])}
+            for item in store.default_skills()
+        ]
+
+    @app.get("/admin/v1/default-skills/{name}")
+    def get_default_skill(name: str) -> dict:
+        content = store.default_skill(name)
+        if content is None:
+            raise HTTPException(404, "默认 Skill 不存在")
+        return {"name": name, "content": content}
+
+    @app.put("/admin/v1/default-skills/{name}", status_code=201)
+    def upload_default_skill(name: str, payload: _DefaultSkillIn) -> dict:
+        """上传/更新默认 Skill；对新 Session 生效（在线 Session 不回填）。"""
+        clean = Path(name).name
+        if not clean.endswith(".md") or clean != name or "/" in name or "\\" in name:
+            raise HTTPException(400, "名称必须是 xxx.md 形式（不带路径）")
+        try:
+            service._validate_resource(payload.content)
+        except ValueError as exc:
+            raise HTTPException(400, str(exc)) from exc
+        store.upsert_default_skill(name, payload.content)
+        return {"name": name, "updated": True}
+
+    @app.delete("/admin/v1/default-skills/{name}", status_code=204)
+    def delete_default_skill(name: str) -> None:
+        store.delete_default_skill(name)
 
     return app

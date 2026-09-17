@@ -123,7 +123,11 @@ def build_tree(
     节点 path 为相对 root 的 posix 路径；根节点 path 为 "."。
     """
     budget = budget or TreeBudget()
-    label = root.name if _prefix == "" and _depth == 0 else _prefix.rstrip("/")
+    if _depth == 0:
+        label = root.name  # 顶层：直接用目录名
+    else:
+        # 子层：prefix 已含父路径（"workspace/"），拼接自身名字
+        label = f"{_prefix}{root.name}"
     node = TreeNode(name=root.name, path=label or ".", is_dir=True)
     if _depth >= budget.max_depth:
         node.children_truncated = True

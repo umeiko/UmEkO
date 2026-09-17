@@ -148,6 +148,7 @@
       <button id="tab-users" class="active" onclick="showTab('users')">用户</button>
       <button id="tab-sessions" onclick="showTab('sessions')">Session</button>
       <button id="tab-config" onclick="showTab('config')">Provider / Model</button>
+      <button id="tab-dskills" onclick="showTab('dskills'); loadDefaultSkills()">默认 Skill</button>
     </div>
     <div class="who">
       <span class="name" id="who"></span>
@@ -170,6 +171,26 @@
     <div class="muted" id="sess-for">从「用户」页选择一个用户查看其 Session。</div>
     <table><thead><tr><th>标题</th><th>更新于</th><th>内存态</th><th>上下文</th><th>操作</th></tr></thead>
     <tbody id="sess-body"></tbody></table>
+  </div>
+
+  <div id="page-dskills" class="card hidden">
+    <div class="muted">管理员下发的默认 Skill：会自动出现在<strong>新创建</strong>的 Session 的 Skills 列表中，供用户一键挂载。已有 Session 不回填。名称必须是 <code>xxx.md</code>，内容需含 front matter（name / description）。</div>
+    <div class="row">
+      <input id="ds-name" placeholder="名称，如 export-guide.md" style="width:280px">
+      <button class="primary" onclick="uploadDefaultSkill()">上传 / 更新</button>
+      <button onclick="fillDefaultSkillExample()">填入样例</button>
+      <input type="file" id="ds-file" accept=".md" style="display:none" onchange="loadSkillFile(this)">
+      <button onclick="document.getElementById('ds-file').click()">从文件选择</button>
+    </div>
+    <textarea id="ds-content" class="paste" placeholder='---
+name: export-guide
+description: 导出为指定格式的操作指引
+---
+
+## 步骤
+1. ...'></textarea>
+    <table><thead><tr><th>名称</th><th>大小</th><th>更新时间</th><th>操作</th></tr></thead>
+      <tbody id="ds-body"></tbody></table>
   </div>
 
   <div id="page-config" class="split hidden">
@@ -266,13 +287,74 @@ function showMain(user) {
   $("login").classList.add("hidden"); $("main").classList.remove("hidden");
   $("who").textContent = user.username; loadUsers(); loadProviders();
 }
+// ---------- 默认 Skill ----------
+async function loadDefaultSkills() {
+  const items = await api("GET", "/admin/v1/default-skills");
+  $("ds-body").innerHTML = items.length ? items.map(s => `<tr>
+    <td style="font-family:ui-monospace,monospace">${s.name}</td>
+    <td class="muted">${s.size} 字符</td>
+    <td class="muted">${s.updated_at.slice(0, 16).replace("T", " ")}</td>
+    <td><div class="row">
+      <button onclick="editDefaultSkill('${s.name}')">编辑</button>
+      <button class="danger" onclick="delDefaultSkill('${s.name}')">删除</button>
+    </div></td></tr>`).join("")
+    : `<tr><td colspan="4" class="muted">暂无默认 Skill。上传后对新 Session 生效。</td></tr>`;
+}
+function fillDefaultSkillExample() {
+  $("ds-name").value = "export-guide.md";
+  $("ds-content").value = `---
+name: export-guide
+description: 将当前工作成果导出为指定格式的操作指引
+---
+
+## 触发条件
+用户要求导出、下载或转换文件格式时。
+
+## 步骤
+1. 先用 list_dir 确认要导出的文件；
+2. 根据目标格式选择转换方式；
+3. 产物写入 generate/ 目录，并把路径告诉用户。`;
+}
+function loadSkillFile(input) {
+  const file = input.files?.[0];
+  if (!file) return;
+  $("ds-name").value = file.name;
+  const reader = new FileReader();
+  reader.onload = () => { $("ds-content").value = reader.result; };
+  reader.readAsText(file);
+  input.value = "";
+}
+async function uploadDefaultSkill() {
+  const name = $("ds-name").value.trim();
+  const content = $("ds-content").value;
+  if (!name.endsWith(".md")) return toast("名称必须是 xxx.md", true);
+  if (!content.trim()) return toast("内容不能为空", true);
+  try {
+    await api("PUT", `/admin/v1/default-skills/${encodeURIComponent(name)}`, {content});
+    toast("已上传，对新 Session 生效");
+    loadDefaultSkills();
+  } catch (e) { toast(e.message, true); }
+}
+async function editDefaultSkill(name) {
+  try {
+    const item = await api("GET", `/admin/v1/default-skills/${encodeURIComponent(name)}`);
+    $("ds-name").value = name;
+    $("ds-content").value = item.content;
+    $("ds-content").scrollIntoView({behavior: "smooth"});
+  } catch (e) { toast(e.message, true); }
+}
+async function delDefaultSkill(name) {
+  if (!confirm(`删除默认 Skill ${name}？已播种的 Session 不受影响。`)) return;
+  try { await api("DELETE", `/admin/v1/default-skills/${encodeURIComponent(name)}`); toast("已删除"); loadDefaultSkills(); }
+  catch (e) { toast(e.message, true); }
+}
 async function login() {
   try { showMain(await api("POST", "/admin/login", {username: $("l-user").value, password: $("l-pass").value})); }
   catch (e) { toast(e.message, true); }
 }
 async function logout() { await api("POST", "/admin/logout"); showLogin(); }
 function showTab(name) {
-  for (const t of ["users", "sessions", "config"]) {
+  for (const t of ["users", "sessions", "config", "dskills"]) {
     $("tab-" + t).classList.toggle("active", t === name);
     $("page-" + t).classList.toggle("hidden", t !== name);
   }
