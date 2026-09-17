@@ -1346,6 +1346,13 @@ function renderTreeNodes(nodes, parent) {
       button.addEventListener("click", () => previewFile(node.path, button));
       button.addEventListener("dblclick", event => {
         event.preventDefault();
+        // HTML 双击 = 新标签页整页渲染（相对路径图片由 raw 端点解析）
+        if (node.name.toLowerCase().endsWith(".html")) {
+          window.open(
+            `/v1/sessions/${sessionId}/workspace/files/raw/${node.path}`,
+            "_blank", "noopener");
+          return;
+        }
         toggleWorkspaceAttachment(node.path, attach);
       });
       const attach = document.createElement("button");
@@ -1659,6 +1666,19 @@ async function previewFile(path, button) {
       } else if (ext === "csv") {
         renderCsvPreview(text);
         ui.csvView.classList.remove("hidden");
+      } else if (ext === "html" || ext === "htm") {
+        // HTML：源码高亮 + 顶部提示条（双击/按钮可在新标签页整页渲染）
+        ui.codeView.textContent = text;
+        ui.codeView.classList.remove("hidden");
+        const banner = document.createElement("p");
+        banner.className = "preview-note";
+        const link = document.createElement("a");
+        link.href = `/v1/sessions/${sessionId}/workspace/files/raw/${path}`;
+        link.target = "_blank";
+        link.rel = "noopener";
+        link.textContent = t("preview.openHtml");
+        banner.append(link);
+        ui.codeView.parentElement.insertBefore(banner, ui.codeView);
       } else {
         hljsHighlight(text, ext);
         ui.codeView.classList.remove("hidden");
