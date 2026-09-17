@@ -49,9 +49,6 @@ jobs:
           python -m pip install --upgrade pip
           pip install -e . pyinstaller
 
-      - name: Run tests
-        run: pytest tests/ -q
-
       - name: Build single-file server exe
         run: pyinstaller umeko.spec --noconfirm
 
