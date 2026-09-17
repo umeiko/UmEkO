@@ -59,17 +59,24 @@ jobs:
           Copy-Item dist/umeko-server.exe smoke/
           $env:UMEKO_SMOKE = "1"
           $proc = Start-Process -FilePath "smoke/umeko-server.exe" `
-            -ArgumentList "--port","8899","--no-admin" -PassThru -NoNewWindow
+            -ArgumentList "--port","8899","--no-admin" -PassThru -NoNewWindow `
+            -RedirectStandardOutput smoke.log -RedirectStandardError smoke.err
           $ok = $false
+          # GitHub runner 的代理环境变量会劫持 localhost 请求，显式绕过
+          $env:HTTP_PROXY = ""; $env:HTTPS_PROXY = ""; $env:NO_PROXY = "*"
           for ($i = 0; $i -lt 30; $i++) {
             Start-Sleep -Seconds 2
             try {
-              $resp = Invoke-WebRequest -Uri "http://127.0.0.1:8899/health" -UseBasicParsing -TimeoutSec 3
+              $resp = Invoke-WebRequest -Uri "http://127.0.0.1:8899/health" -UseBasicParsing -TimeoutSec 3 -NoProxy
               if ($resp.StatusCode -eq 200) { $ok = $true; break }
-            } catch { }
+            } catch { Write-Host "attempt ${i}: $($_.Exception.Message)" }
           }
-          Stop-Process -Id $proc.Id -Force -ErrorAction SilentlyContinue
-          if (-not $ok) { throw "exe smoke test failed: /health not reachable" }
+          if (-not $ok) {
+            Get-Process | Where-Object {$_.Name -like "*umeko*"} | Stop-Process -Force -ErrorAction SilentlyContinue
+            Write-Host "=== exe output ==="; Get-Content smoke.log -ErrorAction SilentlyContinue
+            throw "exe smoke test failed: /health not reachable"
+          }
+          Get-Process | Where-Object {$_.Name -like "*umeko*"} | Stop-Process -Force -ErrorAction SilentlyContinue
           Write-Host "Smoke test passed"
 
       - name: Upload artifact
