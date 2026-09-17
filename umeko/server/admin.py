@@ -467,6 +467,83 @@ def create_admin_app(settings: Settings, service: AgentService, store: Store) ->
         if target.is_file():
             target.unlink()
 
+    # ---------- 技能源文件（skills/*.md 直接管理） ----------
+
+    @app.get("/admin/v1/skill-source/{name}")
+    def get_skill_source(name: str) -> dict:
+        target = (app_dir() / "skills" / name).resolve()
+        try:
+            target.relative_to((app_dir() / "skills").resolve())
+        except ValueError:
+            raise HTTPException(400, "非法路径")
+        if not target.is_file():
+            raise HTTPException(404, "源文件不存在")
+        return {"name": name, "content": target.read_text(encoding="utf-8")}
+
+    @app.put("/admin/v1/skill-source/{name}", status_code=201)
+    def put_skill_source(name: str, payload: _DefaultSkillIn) -> dict:
+        """新建/覆盖技能库源文件（.md，须带合法 front matter）。"""
+        clean = Path(name).name
+        if clean != name or not clean.endswith(".md"):
+            raise HTTPException(400, "名称须为 xxx.md（不带路径）")
+        try:
+            service._validate_resource(payload.content)
+        except ValueError as exc:
+            raise HTTPException(400, str(exc)) from exc
+        base = app_dir() / "skills"
+        base.mkdir(parents=True, exist_ok=True)
+        (base / clean).write_text(payload.content, encoding="utf-8")
+        return {"name": clean, "saved": True}
+
+    @app.delete("/admin/v1/skill-source/{name}", status_code=204)
+    def delete_skill_source(name: str) -> None:
+        target = (app_dir() / "skills" / name).resolve()
+        try:
+            target.relative_to((app_dir() / "skills").resolve())
+        except ValueError:
+            raise HTTPException(400, "非法路径")
+        if target.is_file():
+            target.unlink()
+
+    @app.get("/admin/v1/skill-library")
+    def skill_library_tree() -> dict:
+        """技能库树：包（.md + 同名目录脚本）。一个 Skill = 文件夹 + 同名 .md。"""
+        base = app_dir() / "skills"
+        packs = []
+        if base.is_dir():
+            names = set()
+            for f in sorted(base.glob("*.md")):
+                pack = f.stem
+                names.add(pack)
+                scripts = []
+                pack_dir = base / pack
+                if pack_dir.is_dir():
+                    for sf in sorted(pack_dir.glob("*.py")):
+                        scripts.append({"name": sf.name, "size": sf.stat().st_size})
+                db = store.default_skill(f.name)
+                entry = None
+                for item in store.default_skills():
+                    if item["name"] == f.name:
+                        entry = item
+                        break
+                packs.append({
+                    "name": pack, "md": f.name, "md_size": f.stat().st_size,
+                    "scripts": scripts,
+                    "imported": entry is not None,
+                    "enabled": bool(entry["enabled"]) if entry else None,
+                    "stale": entry is not None and entry["content"] != f.read_text(encoding="utf-8"),
+                })
+            # 只有目录没有 md 的（孤儿脚本目录）
+            for d in sorted(base.iterdir()):
+                if d.is_dir() and d.name not in names and list(d.glob("*.py")):
+                    packs.append({
+                        "name": d.name, "md": None, "md_size": 0,
+                        "scripts": [{"name": sf.name, "size": sf.stat().st_size}
+                                    for sf in sorted(d.glob("*.py"))],
+                        "imported": False, "enabled": None, "stale": False,
+                    })
+        return {"packs": packs}
+
     @app.get("/admin/v1/skill-scripts-template")
     def skill_script_template() -> dict:
         """统一契约的脚本模板（面板可下载/新建时预填）。"""

@@ -127,6 +127,66 @@
     border-radius: 8px; }
   .hidden { display: none !important; }
 </style>
+  <link rel="stylesheet" href="/static/hljs-github.min.css">
+  <style>
+  /* 叠加式代码编辑器：pre 高亮层 + 透明 textarea 输入层 */
+  .code-wrap { position: relative; margin-top: 10px; border: 1px solid var(--line);
+    border-radius: 8px; background: #fff; overflow: hidden; }
+  .code-wrap pre { margin: 0; padding: 12px; font: 12.5px/1.55 ui-monospace, "Cascadia Code", monospace;
+    white-space: pre-wrap; word-break: break-word; min-height: 320px; max-height: 65vh; overflow: auto; }
+  .code-wrap textarea { position: absolute; inset: 0; padding: 12px; border: 0; outline: none; resize: none;
+    font: 12.5px/1.55 ui-monospace, "Cascadia Code", monospace; white-space: pre-wrap; word-break: break-word;
+    color: transparent; background: transparent; caret-color: var(--ink); min-height: 320px; max-height: 65vh; overflow: auto; }
+  .code-wrap textarea::selection { background: #087f6822; }
+  /* 三栏技能布局 */
+  .skill-split { display: grid; grid-template-columns: 260px minmax(0, 1fr) 300px;
+    gap: 14px; align-items: start; }
+  @media (max-width: 1100px) { .skill-split { grid-template-columns: 220px minmax(0, 1fr); } }
+  .sk-file { width: 100%; text-align: left; border: 0; background: transparent;
+    border-radius: 6px; padding: 5px 8px; cursor: pointer; display: flex; gap: 7px;
+    align-items: center; font: 12.5px ui-monospace, monospace; color: var(--ink); }
+  .sk-file:hover { background: #f2efe6; }
+  .sk-file.active { background: #fff; color: var(--accent-dark); font-weight: 650; }
+  .sk-file .icon { color: var(--muted); width: 14px; display: inline-block; }
+  .sk-file .badge-mini { font-size: 10px; padding: 1px 6px; border-radius: 8px;
+    margin-left: auto; }
+  .sk-dir-head { font-size: 13px; font-weight: 650; padding: 4px 8px; margin-top: 6px;
+    display: flex; align-items: center; gap: 7px; }
+  .sk-dir-head .icon { color: var(--muted); }
+  </style>
+  <link rel="stylesheet" href="/static/hljs-github.min.css">
+  <style>
+  /* 复用用户面文件树组件（app.css 同款） */
+  .tree-dir { margin: 1px 0; }
+  .tree-dir > summary { display: flex; min-width: 0; align-items: center; gap: 5px; padding: 4px 6px; border: 0; border-radius: 6px; list-style: none; font-weight: 650; cursor: pointer; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+  .tree-dir > summary:hover { color: var(--accent-dark); background: #e7f2ec; }
+  .tree-dir > summary.drag-target { color: var(--accent-dark); background: #dceee7; outline: 1px dashed var(--accent); }
+  .tree-dir > summary::-webkit-details-marker { display: none; }
+  .tree-dir > summary::before { content: "▸"; color: var(--muted); transition: transform .12s ease; }
+  .tree-dir[open] > summary::before { transform: rotate(90deg); }
+  .tree-children { min-width: 0; padding-left: 10px; border-left: 1px solid #ded9cc; margin-left: 9px; }
+  .tree-file { width: 100%; min-width: 0; display: flex; align-items: center; gap: 7px; padding: 4px 7px; border: 0; border-radius: 6px; color: var(--ink); background: transparent; font: inherit; text-align: left; cursor: pointer; }
+  .tree-file:hover, .tree-file.active { color: var(--accent-dark); background: #dfece7; }
+  .tree-empty { padding: 8px; color: var(--muted); }
+  .file-icon { width: 15px; flex: 0 0 15px; color: var(--muted); text-align: center; }
+  .file-name { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+  .badge-mini { font-size: 10px; padding: 1px 6px; border-radius: 8px; margin-left: auto; border: 1px solid var(--line); color: var(--muted); }
+  .badge-mini.on { border-color: #087f6844; color: var(--accent-dark); background: #edf7f3; }
+  /* 编辑器：pre 高亮层 + 透明 textarea 输入层叠加 */
+  .code-wrap { position: relative; }
+  .code-wrap pre code { font: 12.5px/1.6 ui-monospace, "Cascadia Code", monospace; white-space: pre-wrap; word-break: break-word; }
+  .code-wrap textarea { position: absolute; inset: 0; padding: 14px; border: 0; outline: none; resize: none;
+    font: 12.5px/1.6 ui-monospace, "Cascadia Code", monospace; white-space: pre-wrap; word-break: break-word;
+    color: transparent; background: transparent; caret-color: var(--ink); overflow: hidden; }
+  .code-wrap textarea::selection { background: #087f6822; }
+  .code-wrap.readonly textarea { caret-color: transparent; }
+  .sk-menu { position: fixed; z-index: 50; width: 160px; padding: 5px; border: 1px solid var(--line);
+    border-radius: 9px; background: #fff; box-shadow: 0 12px 38px #17211e35; }
+  .sk-menu button { width: 100%; padding: 7px 9px; border: 0; border-radius: 5px; color: var(--ink);
+    background: transparent; font: 12px/1.2 inherit; text-align: left; cursor: pointer; }
+  .sk-menu button:hover { background: #e8f1ed; }
+  .sk-menu .danger-menu-item { color: #a13e34; }
+  </style>
 </head>
 <body class="auth">
 <div id="toast"></div>
@@ -174,48 +234,40 @@
     <tbody id="sess-body"></tbody></table>
   </div>
 
-  <div id="page-dskills" class="card hidden">
-    <div class="muted">管理员下发的默认 Skill：会自动出现在<strong>新创建</strong>的 Session 的 Skills 列表中，供用户一键挂载。已有 Session 不回填。名称必须是 <code>xxx.md</code>，内容需含 front matter（name / description）。</div>
-    <div class="row">
-      <input id="ds-name" placeholder="名称，如 export-guide.md" style="width:280px">
-      <button class="primary" onclick="uploadDefaultSkill()">上传 / 更新</button>
-      <button onclick="fillDefaultSkillExample()">填入样例</button>
-      <input type="file" id="ds-file" accept=".md" style="display:none" onchange="loadSkillFile(this)">
-      <button onclick="document.getElementById('ds-file').click()">从文件选择</button>
-    </div>
-    <textarea id="ds-content" class="paste auto-grow" placeholder='---
-name: export-guide
-description: 导出为指定格式的操作指引
----
+  <div id="page-dskills" class="card hidden" style="padding:0;overflow:hidden;display:flex;height:calc(100vh - 90px)">
 
-## 步骤
-1. ...'></textarea>
-    <table><thead><tr><th>名称</th><th>状态</th><th>大小</th><th>更新时间</th><th>操作</th></tr></thead>
-      <tbody id="ds-body"></tbody></table>
-    <h3 style="margin-top:18px">服务器技能库 <span class="muted">（skills/ 目录的源文件模板。导入 = 拷贝一份到上方列表；之后的启停/编辑只作用于那份拷贝，源文件不变；源文件更新后会标「源文件已更新」，可重新导入覆盖）</span></h3>
-    <table><thead><tr><th>名称</th><th>大小</th><th>状态</th></tr></thead>
-      <tbody id="ds-lib-body"></tbody></table>
+    <!-- 左：技能库文件树（复用用户面 tree 组件样式） -->
+    <aside style="width:300px;flex:none;border-right:1px solid var(--line);display:flex;flex-direction:column">
+      <div style="padding:12px 12px 6px;display:flex;align-items:center;justify-content:space-between">
+        <strong style="font-size:13px">Skills <span class="muted" id="sk-count"></span></strong>
+        <div style="display:flex;gap:6px">
+          <button onclick="newSkillMd()" title="新增 Skill（.md）">＋</button>
+          <button onclick="newSkillScript()" title="在选中包内新建脚本">＋py</button>
+        </div>
+      </div>
+      <div id="sk-tree" style="flex:1;overflow:auto;padding:4px 8px 10px;font:12.5px/1.5 ui-monospace,'Cascadia Code',monospace"></div>
+      <div class="drop-hint" style="margin:0 10px 10px">拖拽 .md / .py 到此处或包节点上传</div>
+    </aside>
 
-    <h3 style="margin-top:18px">技能包脚本 <span class="muted">（skills/&lt;包名&gt;/ 目录下的 .py，由 run_skill_script 工具在沙箱中执行。选中技能库中的包后管理其脚本）</span></h3>
-    <div class="row">
-      <select id="ss-pack" style="width:240px"><option value="">选择技能包…</option></select>
-      <button id="ss-refresh" onclick="loadSkillScripts()">刷新脚本</button>
-      <button class="primary" onclick="newSkillScript()">＋ 新建脚本</button>
-      <button onclick="downloadScriptTemplate()">下载脚本模板</button>
+    <!-- 右：编辑器 -->
+    <div style="flex:1;min-width:0;display:flex;flex-direction:column">
+      <div id="sk-empty" style="padding:40px;color:var(--muted);text-align:center">选择左侧文件开始编辑。一个 Skill = 同名 .md（提示词）+ 同名文件夹（脚本资产）。</div>
+      <div id="sk-editor" style="display:none;flex-direction:column;flex:1;min-height:0">
+        <div style="padding:12px 16px 8px;display:flex;align-items:center;gap:10px;flex-wrap:wrap">
+          <strong id="sk-title" style="font-size:15px;font-family:ui-monospace,monospace"></strong>
+          <span class="muted" id="sk-sub" style="font-size:12px"></span>
+          <span style="margin-left:auto;display:flex;gap:8px">
+            <span class="tag" id="sk-state-tag"></span>
+            <button onclick="toggleSkillPreview()" id="sk-preview-toggle">预览模式</button>
+            <button onclick="saveSkillFile()" class="primary">保存</button>
+          </span>
+        </div>
+        <div class="code-wrap" style="flex:1;min-height:0;margin:0 16px 16px;border:1px solid var(--line);border-radius:8px;background:#fff;overflow:hidden;display:flex">
+          <pre id="sk-codeview" style="flex:1;margin:0;padding:14px;overflow:auto"><code id="sk-code-el"></code></pre>
+          <textarea id="sk-content" spellcheck="false" style="position:absolute"></textarea>
+        </div>
+      </div>
     </div>
-    <div class="row">
-      <input id="ss-name" placeholder="脚本名，如 render_report.py" style="width:260px">
-      <button class="primary" onclick="saveSkillScript()">保存脚本</button>
-      <button onclick="testSkillScript()">▶ 测试运行</button>
-      <input type="file" id="ss-file" accept=".py" style="display:none" onchange="loadScriptFile(this)">
-      <button onclick="document.getElementById('ss-file').click()">从文件选择</button>
-      <span class="muted">测试参数 JSON：</span>
-      <input id="ss-test-args" value="{}" style="width:260px;flex:1">
-    </div>
-    <textarea id="ss-content" class="paste auto-grow" placeholder="# Python 脚本（统一契约：stdin JSON → stdout 一行 JSON，stderr 进度）"></textarea>
-    <table><thead><tr><th>脚本</th><th>大小</th><th>操作</th></tr></thead>
-      <tbody id="ss-body"></tbody></table>
-    <pre id="ss-test-out" class="example hidden"></pre>
   </div>
 
   <div id="page-config" class="split hidden">
@@ -312,222 +364,326 @@ function showMain(user) {
   $("login").classList.add("hidden"); $("main").classList.remove("hidden");
   $("who").textContent = user.username; loadUsers(); loadProviders();
 }
-// ---------- 默认 Skill ----------
-async function loadDefaultSkills() {
-  const data = await api("GET", "/admin/v1/default-skills");
-  const items = data.skills || [];
-  $("ds-body").innerHTML = items.length ? items.map(s => `<tr>
-    <td><a href="javascript:void(0)" style="font-family:ui-monospace,monospace;color:var(--accent)" onclick="previewDefaultSkill('${s.name}')">${s.name}</a></td>
-    <td>${s.enabled ? `<span class="tag current">启用</span>` : `<span class="tag">停用</span>`}</td>
-    <td class="muted">${s.size} 字符</td>
-    <td class="muted">${s.updated_at.slice(0, 16).replace("T", " ")}</td>
-    <td><div class="row">
-      <button onclick="previewDefaultSkill('${s.name}')">预览</button>
-      <button onclick="editDefaultSkill('${s.name}')">编辑</button>
-      <button onclick="toggleDefaultSkill('${s.name}', ${s.enabled})">${s.enabled ? "停用" : "启用"}</button>
-      <button class="danger" onclick="delDefaultSkill('${s.name}')">删除</button>
-    </div></td></tr>`).join("")
-    : `<tr><td colspan="5" class="muted">暂无已下发的默认 Skill。</td></tr>`;
-  // 服务器技能库（源文件，不自动下发）——状态反映上方已下发列表的启停
-  const lib = data.library || [];
-  const packSel = $("ss-pack");
-  if (packSel) {
-    const current = packSel.value;
-    packSel.innerHTML = '<option value="">选择技能包…</option>' +
-      lib.map(l => `<option value="${l.name.replace(/\.md$/, "")}">${l.name.replace(/\.md$/, "")}</option>`).join("");
-    if ([...packSel.options].some(o => o.value === current)) packSel.value = current;
+// ---------- 技能库（Workspace 式文件树） ----------
+let skTree = [];            // [{name, md, scripts:[], imported, enabled, stale}]
+let skSelected = null;      // {pack, kind: 'md'|'script', name}
+let skPreviewMode = false;
+
+function fileIcon(name) {
+  const ext = name.split(".").pop().toLowerCase();
+  if (ext === "md" || ext === "markdown") return "M";
+  if (ext === "py") return "py";
+  if (["xml", "json", "yaml", "yml"].includes(ext)) return "<>";
+  return "·";
+}
+
+async function loadSkillLibrary() {
+  const data = await api("GET", "/admin/v1/skill-library");
+  skTree = data.packs || [];
+  $("sk-count").textContent = skTree.length ? `(${skTree.length})` : "";
+  renderSkillTree();
+}
+
+function renderSkillTree() {
+  const tree = $("sk-tree");
+  tree.replaceChildren();
+  if (!skTree.length) {
+    const empty = document.createElement("p");
+    empty.className = "tree-empty";
+    empty.textContent = "技能库为空。点 ＋ 新增或拖入 .md。";
+    tree.append(empty);
+    return;
   }
-  $("ds-lib-body").innerHTML = lib.length ? lib.map(s => `<tr>
-    <td style="font-family:ui-monospace,monospace">${s.name}</td>
-    <td class="muted">${s.size} 字符</td>
-    <td>${s.imported
-      ? (s.enabled
-          ? `<span class="tag current">已启用${s.stale ? " · 源文件已更新" : ""}</span>`
-          : `<span class="tag">已停用${s.stale ? " · 源文件已更新" : ""}</span>`)
-        + ` <button onclick="importLibSkill('${s.name}')">重新导入覆盖</button>`
-      : `<button class="primary" onclick="importLibSkill('${s.name}')">导入并下发</button>`}</td>
-  </tr>`).join("")
-    : `<tr><td colspan="3" class="muted">服务器 skills/ 目录暂无可用技能文件。</td></tr>`;
+  for (const pack of skTree) {
+    const dir = document.createElement("details");
+    dir.className = "tree-dir";
+    dir.open = true;
+    const summary = document.createElement("summary");
+    summary.textContent = pack.name;
+    summary.title = pack.md ? `${pack.md} + ${pack.scripts.length} 个脚本` : "（无 .md，仅脚本）";
+    summary.addEventListener("contextmenu", e => {
+      e.preventDefault();
+      openSkMenu(pack, null, e.clientX, e.clientY);
+    });
+    bindSkDrop(summary, pack);
+    dir.append(summary);
+    const children = document.createElement("div");
+    children.className = "tree-children";
+    if (pack.md) children.append(skFileNode(pack, "md", pack.md));
+    for (const sc of pack.scripts) children.append(skFileNode(pack, "script", sc.name));
+    if (!pack.md && !pack.scripts.length) {
+      const empty = document.createElement("p");
+      empty.className = "tree-empty";
+      empty.textContent = "（空）";
+      children.append(empty);
+    }
+    dir.append(children);
+    tree.append(dir);
+  }
 }
-async function toggleDefaultSkill(name, enabled) {
-  try {
-    const r = await api("POST", `/admin/v1/default-skills/${encodeURIComponent(name)}/toggle`);
-    toast(r.enabled ? `已启用 ${name}` : `已停用 ${name}（新 Session 不再下发）`);
-    loadDefaultSkills();
-  } catch (e) { toast(e.message, true); }
+
+function skFileNode(pack, kind, name) {
+  const btn = document.createElement("button");
+  btn.className = "tree-file";
+  btn.type = "button";
+  const icon = document.createElement("span");
+  icon.className = "file-icon";
+  icon.textContent = fileIcon(name);
+  const label = document.createElement("span");
+  label.className = "file-name";
+  label.textContent = name;
+  btn.append(icon, label);
+  if (kind === "md") {
+    const badge = document.createElement("span");
+    badge.className = "badge-mini" + (pack.enabled ? " on" : "");
+    badge.textContent = pack.imported ? (pack.enabled ? "下发中" : "已停用") : "未导入";
+    if (pack.stale) badge.textContent += "·旧";
+    btn.append(badge);
+  }
+  btn.addEventListener("click", () => openSkillFile(pack, kind, name, btn));
+  btn.addEventListener("contextmenu", e => {
+    e.preventDefault(); e.stopPropagation();
+    openSkMenu(pack, {kind, name}, e.clientX, e.clientY);
+  });
+  return btn;
 }
-async function previewDefaultSkill(name) {
-  try {
-    const item = await api("GET", `/admin/v1/default-skills/${encodeURIComponent(name)}`);
-    const editor = $("ds-content");
-    $("ds-name").value = name;
-    editor.value = item.content;
-    editor.readOnly = true;
-    autoGrowEditor(editor);
-    editor.scrollIntoView({behavior: "smooth"});
-    editor.title = "只读预览中——点「编辑」解除";
-  } catch (e) { toast(e.message, true); }
+
+function bindSkDrop(element, pack) {
+  element.addEventListener("dragover", e => {
+    if (!e.dataTransfer?.types.includes("Files")) return;
+    e.preventDefault(); e.stopPropagation();
+    element.classList.add("drag-target");
+    e.dataTransfer.dropEffect = "copy";
+  });
+  element.addEventListener("dragleave", () => element.classList.remove("drag-target"));
+  element.addEventListener("drop", e => {
+    e.preventDefault(); e.stopPropagation(); element.classList.remove("drag-target");
+    const files = [...(e.dataTransfer?.files || [])];
+    if (!files.length) return;
+    uploadSkillFiles(files, pack);
+  });
 }
+
+async function uploadSkillFiles(files, pack) {
+  for (const file of files) {
+    if (file.name.endsWith(".md")) {
+      const content = await file.text();
+      try {
+        await api("PUT", `/admin/v1/default-skills/${encodeURIComponent(file.name)}`, {content});
+        await api("PUT", `/admin/v1/skill-source/${encodeURIComponent(file.name)}`, {content});
+        toast(`已上传 ${file.name}`);
+      } catch (e) { toast(`${file.name}: ${e.message}`, true); }
+    } else if (file.name.endsWith(".py")) {
+      const content = await file.text();
+      try {
+        await api("PUT", `/admin/v1/skill-scripts/${encodeURIComponent(pack.name)}/${encodeURIComponent(file.name)}`, {content});
+        toast(`已上传 ${pack.name}/${file.name}`);
+      } catch (e) { toast(`${file.name}: ${e.message}`, true); }
+    } else {
+      toast(`跳过 ${file.name}（仅支持 .md / .py）`, true);
+    }
+  }
+  await loadSkillLibrary();
+}
+
 document.addEventListener("DOMContentLoaded", () => {
-  const editor = document.getElementById("ds-content");
-  if (editor) editor.addEventListener("input", () => autoGrowEditor(editor));
+  const tree = document.getElementById("sk-tree");
+  if (!tree) return;
+  tree.addEventListener("dragover", e => {
+    if (!e.dataTransfer?.types.includes("Files")) return;
+    e.preventDefault();
+    tree.style.outline = "2px dashed var(--accent)";
+    e.dataTransfer.dropEffect = "copy";
+  });
+  tree.addEventListener("dragleave", () => tree.style.outline = "");
+  tree.addEventListener("drop", e => {
+    e.preventDefault(); tree.style.outline = "";
+    const files = [...(e.dataTransfer?.files || [])];
+    if (!files.length) return;
+    const onlyMd = files.every(f => f.name.endsWith(".md"));
+    if (onlyMd) {
+      uploadSkillFiles(files, {name: files[0].name.replace(/\.md$/, "")});
+    } else if (skSelected?.pack) {
+      uploadSkillFiles(files, {name: skSelected.pack});
+    } else {
+      toast("拖 .py 前请先选中一个包（或拖到包节点上）", true);
+    }
+  });
 });
-function autoGrowEditor(el) {
-  el.style.height = "auto";
-  el.style.height = Math.min(Math.max(el.scrollHeight + 4, 180), 900) + "px";
-}
-async function importLibSkill(name) {
-  try {
-    await api("POST", `/admin/v1/default-skills/import/${encodeURIComponent(name)}`);
-    toast(`已导入 ${name}，对新 Session 生效`);
-    loadDefaultSkills();
-  } catch (e) { toast(e.message, true); }
+
+async function openSkillFile(pack, kind, name, btn) {
+  document.querySelectorAll("#sk-tree .tree-file.active").forEach(n => n.classList.remove("active"));
+  btn.classList.add("active");
+  skSelected = {pack: pack.name, kind, name};
+  skPreviewMode = false;
+  $("sk-preview-toggle").textContent = "预览模式";
+  $("sk-preview-toggle").classList.remove("primary");
+  $("sk-empty").style.display = "none";
+  $("sk-editor").style.display = "flex";
+  $("sk-title").textContent = name;
+  let content = "";
+  if (kind === "md") {
+    const item = await api("GET", `/admin/v1/skill-source/${encodeURIComponent(name)}`);
+    content = item.content;
+    const p = skTree.find(x => x.name === pack.name);
+    $("sk-sub").textContent = p?.stale
+      ? "源文件与下发拷贝不一致（保存可同步）"
+      : (p?.imported ? (p?.enabled ? "该 Skill 下发中" : "该 Skill 已停用") : "未导入下发");
+    $("sk-state-tag").textContent = "Markdown · 提示词";
+  } else {
+    const item = await api("GET", `/admin/v1/skill-scripts/${encodeURIComponent(pack.name)}/${encodeURIComponent(name)}`);
+    content = item.content;
+    $("sk-sub").textContent = `${pack.name} 包脚本 · 由 run_skill_script 沙箱执行`;
+    $("sk-state-tag").textContent = "Python · 确定性脚本";
+  }
+  setSkillEditorContent(content);
 }
 
-// ---------- 技能包脚本 ----------
-async function loadSkillScripts() {
-  const pack = $("ss-pack").value;
-  if (!pack) return toast("先选择技能包", true);
-  const data = await api("GET", `/admin/v1/skill-scripts/${encodeURIComponent(pack)}`);
-  $("ss-body").innerHTML = data.scripts.length ? data.scripts.map(sc => `<tr>
-    <td style="font-family:ui-monospace,monospace">${sc.name}</td>
-    <td class="muted">${sc.size} 字符</td>
-    <td><div class="row">
-      <button onclick="editSkillScript('${sc.name}')">编辑</button>
-      <button class="danger" onclick="delSkillScript('${sc.name}')">删除</button>
-    </div></td></tr>`).join("")
-    : `<tr><td colspan="3" class="muted">该包暂无脚本。「＋ 新建脚本」或「下载脚本模板」开始。</td></tr>`;
+function setSkillEditorContent(text) {
+  const editor = $("sk-content");
+  const codeEl = $("sk-code-el");
+  editor.value = text;
+  const lang = skSelected?.kind === "script" ? "python" : "markdown";
+  if (window.hljs) codeEl.innerHTML = hljs.highlight(text, {language: lang}).value;
+  else codeEl.textContent = text;
 }
-async function editSkillScript(name) {
-  const pack = $("ss-pack").value;
-  try {
-    const item = await api("GET", `/admin/v1/skill-scripts/${encodeURIComponent(pack)}/${encodeURIComponent(name)}`);
-    $("ss-name").value = name;
-    const editor = $("ss-content");
-    editor.value = item.content;
-    autoGrowEditor(editor);
-    editor.scrollIntoView({behavior: "smooth"});
-  } catch (e) { toast(e.message, true); }
-}
-async function newSkillScript() {
-  const pack = $("ss-pack").value;
-  if (!pack) return toast("先选择技能包", true);
-  try {
-    const tpl = await api("GET", "/admin/v1/skill-scripts-template");
-    $("ss-name").value = tpl.name;
-    const editor = $("ss-content");
-    editor.value = tpl.content;
-    autoGrowEditor(editor);
-    editor.scrollIntoView({behavior: "smooth"});
-    toast("已填入统一契约模板，按需修改后保存");
-  } catch (e) { toast(e.message, true); }
-}
-async function downloadScriptTemplate() {
-  try {
-    const tpl = await api("GET", "/admin/v1/skill-scripts-template");
-    const blob = new Blob([tpl.content], {type: "text/x-python"});
-    const a = document.createElement("a");
-    a.href = URL.createObjectURL(blob);
-    a.download = tpl.name;
-    a.click();
-    URL.revokeObjectURL(a.href);
-  } catch (e) { toast(e.message, true); }
-}
-function loadScriptFile(input) {
-  const file = input.files?.[0];
-  if (!file) return;
-  $("ss-name").value = file.name;
-  const reader = new FileReader();
-  reader.onload = () => { $("ss-content").value = reader.result; autoGrowEditor($("ss-content")); };
-  reader.readAsText(file);
-  input.value = "";
-}
-async function saveSkillScript() {
-  const pack = $("ss-pack").value;
-  const name = $("ss-name").value.trim();
-  if (!pack) return toast("先选择技能包", true);
-  if (!name.endsWith(".py")) return toast("脚本名须为 xxx.py", true);
-  try {
-    await api("PUT", `/admin/v1/skill-scripts/${encodeURIComponent(pack)}/${encodeURIComponent(name)}`,
-      {content: $("ss-content").value});
-    toast("已保存（含语法校验）");
-    loadSkillScripts();
-  } catch (e) { toast(e.message, true); }
-}
-async function testSkillScript() {
-  const pack = $("ss-pack").value;
-  const name = $("ss-name").value.trim();
-  if (!pack || !name.endsWith(".py")) return toast("先选择包并填脚本名", true);
-  const out = $("ss-test-out");
-  out.classList.remove("hidden");
-  out.textContent = "执行中…（临时目录沙箱，超时强杀）";
-  try {
-    const r = await api("POST",
-      `/admin/v1/skill-scripts/${encodeURIComponent(pack)}/${encodeURIComponent(name)}/test`,
-      {args: $("ss-test-args").value, timeout: 10});
-    out.textContent = r.output;
-  } catch (e) { out.textContent = "测试失败：" + e.message; }
-}
-async function delSkillScript(name) {
-  const pack = $("ss-pack").value;
-  if (!confirm(`删除脚本 ${pack}/${name}？`)) return;
-  try {
-    await api("DELETE", `/admin/v1/skill-scripts/${encodeURIComponent(pack)}/${encodeURIComponent(name)}`);
-    toast("已删除"); loadSkillScripts();
-  } catch (e) { toast(e.message, true); }
-}
-function fillDefaultSkillExample() {
-  $("ds-name").value = "export-guide.md";
-  $("ds-content").value = `---
-name: export-guide
-description: 将当前工作成果导出为指定格式的操作指引
----
 
-## 触发条件
-用户要求导出、下载或转换文件格式时。
+// 输入时同步高亮层
+document.addEventListener("DOMContentLoaded", () => {
+  const editor = document.getElementById("sk-content");
+  const codeEl = document.getElementById("sk-code-el");
+  if (!editor || !codeEl) return;
+  editor.addEventListener("input", () => {
+    const lang = skSelected?.kind === "script" ? "python" : "markdown";
+    if (window.hljs) codeEl.innerHTML = hljs.highlight(editor.value, {language: lang}).value;
+    else codeEl.textContent = editor.value;
+  });
+  // 滚动同步
+  editor.addEventListener("scroll", () => {
+    const pre = document.getElementById("sk-codeview");
+    if (pre) { pre.scrollTop = editor.scrollTop; pre.scrollLeft = editor.scrollLeft; }
+  });
+});
 
-## 步骤
-1. 先用 list_dir 确认要导出的文件；
-2. 根据目标格式选择转换方式；
-3. 产物写入 generate/ 目录，并把路径告诉用户。`;
+function toggleSkillPreview() {
+  skPreviewMode = !skPreviewMode;
+  const editor = $("sk-content");
+  editor.readOnly = skPreviewMode;
+  editor.style.caretColor = skPreviewMode ? "transparent" : "";
+  $("sk-preview-toggle").textContent = skPreviewMode ? "编辑模式" : "预览模式";
+  $("sk-preview-toggle").classList.toggle("primary", skPreviewMode);
+  editor.title = skPreviewMode ? "只读预览中" : "";
 }
-function loadSkillFile(input) {
-  const file = input.files?.[0];
-  if (!file) return;
-  $("ds-name").value = file.name;
-  const reader = new FileReader();
-  reader.onload = () => { $("ds-content").value = reader.result; };
-  reader.readAsText(file);
-  input.value = "";
+
+async function saveSkillFile() {
+  if (!skSelected) return;
+  const content = $("sk-content").value;
+  if (skSelected.kind === "md") {
+    try {
+      await api("PUT", `/admin/v1/default-skills/${encodeURIComponent(skSelected.name)}`, {content});
+      await api("PUT", `/admin/v1/skill-source/${encodeURIComponent(skSelected.name)}`, {content});
+      toast("已保存（下发拷贝与源文件同步更新）");
+    } catch (e) { toast(e.message, true); }
+  } else {
+    try {
+      await api("PUT", `/admin/v1/skill-scripts/${encodeURIComponent(skSelected.pack)}/${encodeURIComponent(skSelected.name)}`, {content});
+      toast("已保存（含语法校验）");
+    } catch (e) { toast(e.message, true); }
+  }
+  await loadSkillLibrary();
 }
-async function uploadDefaultSkill() {
-  const name = $("ds-name").value.trim();
-  const content = $("ds-content").value;
-  if (!name.endsWith(".md")) return toast("名称必须是 xxx.md", true);
-  if (!content.trim()) return toast("内容不能为空", true);
-  try {
-    await api("PUT", `/admin/v1/default-skills/${encodeURIComponent(name)}`, {content});
-    toast("已上传，对新 Session 生效");
-    loadDefaultSkills();
-  } catch (e) { toast(e.message, true); }
+
+function newSkillMd() {
+  const name = prompt("Skill 名称（将创建 <名称>.md 与同名文件夹）：", "my-skill");
+  if (!name) return;
+  const clean = name.trim().replace(/\.md$/, "");
+  if (!clean) return;
+  openSkillFileRaw(clean);
 }
-async function editDefaultSkill(name) {
-  try {
-    const item = await api("GET", `/admin/v1/default-skills/${encodeURIComponent(name)}`);
-    $("ds-name").value = name;
-    const editor = $("ds-content");
-    editor.value = item.content;
-    editor.readOnly = false;
-    editor.title = "";
-    autoGrowEditor(editor);
-    editor.scrollIntoView({behavior: "smooth"});
-  } catch (e) { toast(e.message, true); }
+function newSkillScript() {
+  const packName = skSelected?.pack;
+  if (!packName) return toast("先在左侧选中一个包", true);
+  const name = prompt("脚本名（xxx.py）：", "my_script.py");
+  if (!name) return;
+  if (!name.trim().endsWith(".py")) return toast("须为 xxx.py", true);
+  openSkillFileRaw(packName, name.trim());
 }
-async function delDefaultSkill(name) {
-  if (!confirm(`删除默认 Skill ${name}？已播种的 Session 不受影响。`)) return;
-  try { await api("DELETE", `/admin/v1/default-skills/${encodeURIComponent(name)}`); toast("已删除"); loadDefaultSkills(); }
-  catch (e) { toast(e.message, true); }
+async function openSkillFileRaw(packName, scriptName) {
+  skSelected = scriptName
+    ? {pack: packName, kind: "script", name: scriptName}
+    : {pack: packName, kind: "md", name: `${packName}.md`};
+  skPreviewMode = false;
+  $("sk-preview-toggle").textContent = "预览模式";
+  $("sk-preview-toggle").classList.remove("primary");
+  $("sk-empty").style.display = "none";
+  $("sk-editor").style.display = "flex";
+  $("sk-title").textContent = skSelected.name;
+  $("sk-sub").textContent = "新建（未保存）";
+  $("sk-state-tag").textContent = skSelected.kind === "script" ? "Python · 确定性脚本" : "Markdown · 提示词";
+  let tpl = "";
+  if (skSelected.kind === "md") {
+    tpl = `---\nname: ${packName}\ndescription: 一句话说明与触发场景\n---\n\n# ${packName}\n\n操作指引正文。\n`;
+  } else {
+    tpl = (await api("GET", "/admin/v1/skill-scripts-template")).content;
+  }
+  setSkillEditorContent(tpl);
 }
+
+let skMenuEl = null;
+function closeSkMenu() { skMenuEl?.remove(); skMenuEl = null; }
+document.addEventListener("click", closeSkMenu);
+function openSkMenu(pack, file, x, y) {
+  closeSkMenu();
+  const menu = document.createElement("div");
+  menu.className = "sk-menu";
+  const add = (label, fn, cls) => {
+    const b = document.createElement("button");
+    b.textContent = label;
+    if (cls) b.className = cls;
+    b.onclick = () => { closeSkMenu(); fn(); };
+    menu.append(b);
+  };
+  if (!file) {
+    add("＋ 新建脚本", () => { skSelected = {pack: pack.name, kind: "script"}; newSkillScript(); });
+    if (pack.imported) {
+      add(pack.enabled ? "停用下发" : "启用下发", () => toggleDefaultSkill(pack.md, pack.enabled));
+      if (pack.stale) add("重新导入覆盖", () => importLibSkill(pack.md));
+    } else if (pack.md) {
+      add("导入并下发", () => importLibSkill(pack.md));
+    }
+  } else {
+    add("编辑", () => {
+      const btn = [...document.querySelectorAll("#sk-tree .tree-file")]
+        .find(n => n.textContent.includes(file.name));
+      if (btn) btn.click();
+    });
+    add("删除", async () => {
+      if (!confirm(`删除 ${pack.name}/${file.name}？`)) return;
+      try {
+        if (file.kind === "md") {
+          await api("DELETE", `/admin/v1/skill-source/${encodeURIComponent(file.name)}`);
+        } else {
+          await api("DELETE", `/admin/v1/skill-scripts/${encodeURIComponent(pack.name)}/${encodeURIComponent(file.name)}`);
+        }
+        toast("已删除");
+        if (skSelected?.name === file.name) {
+          $("sk-editor").style.display = "none";
+          $("sk-empty").style.display = "";
+          skSelected = null;
+        }
+        loadSkillLibrary();
+      } catch (e) { toast(e.message, true); }
+    }, "danger-menu-item");
+  }
+  document.body.append(menu);
+  menu.style.left = `${Math.min(x, innerWidth - 170)}px`;
+  menu.style.top = `${Math.min(y, innerHeight - 160)}px`;
+  skMenuEl = menu;
+}
+
+// 兼容旧入口
+async function loadDefaultSkills() { await loadSkillLibrary(); }
+
 async function login() {
   try { showMain(await api("POST", "/admin/login", {username: $("l-user").value, password: $("l-pass").value})); }
   catch (e) { toast(e.message, true); }
@@ -778,5 +934,6 @@ document.addEventListener("keydown", e => {
   if (e.key === "Enter" && !$("login").classList.contains("hidden")) login();
 });
 </script>
+<script src="/static/hljs.min.js"></script>
 </body>
 </html>
