@@ -1267,15 +1267,37 @@ function bindTreeEntry(element, node, {dropDirectory = false} = {}) {
   }
   if (dropDirectory) {
     element.addEventListener("dragover", event => {
-      if (!event.dataTransfer.types.includes("application/x-flowchart-path")) return;
+      const hasFiles = event.dataTransfer?.types.includes("Files");
+      const hasMove = event.dataTransfer?.types.includes("application/x-flowchart-path");
+      if (!hasFiles && !hasMove) return;
       event.preventDefault(); event.stopPropagation(); element.classList.add("drag-target");
-      event.dataTransfer.dropEffect = "move";
+      event.dataTransfer.dropEffect = hasFiles ? "copy" : "move";
     });
-    element.addEventListener("dragleave", () => element.classList.remove("drag-target"));
+    element.addEventListener("dragleave", () => {
+      element.classList.remove("drag-target");
+      // 兜底：拖拽目标移出整棵树时清掉外层 dropzone 高亮（子元素 drop 会 stopPropagation，
+      // 外层 dragleave 计数可能残留 drag-over）
+      if (!element.matches(":hover") && ui.filebar?.classList.contains("drag-over")) {
+        setTimeout(() => {
+          if (!ui.filebar.matches(":hover")) ui.filebar.classList.remove("drag-over");
+        }, 120);
+      }
+    });
     element.addEventListener("drop", event => {
+      event.preventDefault(); event.stopPropagation(); element.classList.remove("drag-target");
+      // 目录 drop 拦截了冒泡，外层 filebar 的 drop 收不到 → 主动清它的拖放高亮
+      ui.filebar?.classList.remove("drag-over");
+      // 外部文件拖入具体目录 → 上传到该目录
+      if (event.dataTransfer?.types.includes("Files")) {
+        const files = [...(event.dataTransfer.files || [])];
+        if (files.length) {
+          uploadWorkspaceFiles(files, node.path).catch(error => setStatus(error.message));
+        }
+        return;
+      }
+      // 内部拖拽 → 移动
       const source = event.dataTransfer.getData("application/x-flowchart-path");
       if (!source) return;
-      event.preventDefault(); event.stopPropagation(); element.classList.remove("drag-target");
       transferWorkspace(source, entryJoin(node.path, entryName(source)), "move").catch(error => setStatus(error.message));
     });
   }
@@ -1548,6 +1570,29 @@ function resetPreviewViews() {
   ui.resourceEditor.classList.add("hidden");
 }
 
+// 预览策略：可预览的文本/文档后缀；二进制一律不进预览（防炸页面）
+const BINARY_EXTS = new Set([
+  "zip", "7z", "rar", "tar", "gz", "bz2", "xz", "tgz", "jar", "war",
+  "exe", "dll", "so", "dylib", "bin", "o", "a", "lib", "msi", "apk",
+  "pdf", "doc", "docx", "xls", "xlsx", "ppt", "pptx", "odt", "ods",
+  "mp3", "mp4", "avi", "mov", "mkv", "wav", "flac", "webm",
+  "ttf", "otf", "woff", "woff2", "eot", "ico", "psd", "ai",
+  "db", "sqlite", "sqlite3", "pyc", "class", "wasm",
+]);
+const PREVIEW_MAX_BYTES = 2 * 1024 * 1024;  // 预览文本上限 2MB，超出提示下载
+
+function previewBinary(ext) { return BINARY_EXTS.has(ext); }
+
+function hljsHighlight(text, ext) {
+  const code = ui.codeView;
+  if (window.hljs) {
+    const language = hljs.getLanguage(ext) ? ext : undefined;
+    code.innerHTML = hljs.highlight(text, {language}).value;
+  } else {
+    code.textContent = text;
+  }
+}
+
 async function previewFile(path, button) {
   if (previewCollapsed) setPreviewCollapsed(false);  // 用户在文件树浏览，自动展开
   selectedFile = path;
@@ -1575,7 +1620,36 @@ async function previewFile(path, button) {
       image.alt = name;
       image.src = `${url}&t=${Date.now()}`;
       ui.canvas.append(image);
+    } else if (previewBinary(ext)) {
+      // 二进制文件不进预览：提示并提供下载
+      ui.canvas.replaceChildren();
+      ui.canvas.classList.remove("hidden");
+      ui.canvas.classList.add("empty");
+      const note = document.createElement("p");
+      note.className = "preview-note";
+      note.textContent = t("preview.binary", {ext: ext.toUpperCase()});
+      const hint = document.createElement("p");
+      hint.className = "preview-note muted";
+      hint.textContent = t("preview.binaryHint");
+      ui.canvas.append(note, hint);
     } else {
+      // 文本预览：先探大小（该端点不支持 HEAD，用 Range GET 只拉 1 字节拿总长）
+      const size = await new Promise((resolve) => {
+        fetch(url, {headers: {Range: "bytes=0-0"}})
+          .then(r => {
+            const total = r.headers.get("Content-Range");  // "bytes 0-0/3000002"
+            resolve(total ? Number(total.split("/")[1]) : 0);
+          })
+          .catch(() => resolve(0));
+      });
+      if (size > PREVIEW_MAX_BYTES) {
+        ui.codeView.textContent = t("preview.tooLarge", {
+          size: (size / 1024 / 1024).toFixed(1),
+        });
+        ui.codeView.classList.remove("hidden");
+        setStatus(t("preview.tooLargeShort"), true);
+        return;
+      }
       const response = await fetch(url);
       if (!response.ok) throw new Error(t("error.readFailed", {status: response.status}));
       const text = await response.text();
@@ -1586,7 +1660,7 @@ async function previewFile(path, button) {
         renderCsvPreview(text);
         ui.csvView.classList.remove("hidden");
       } else {
-        ui.codeView.textContent = text;
+        hljsHighlight(text, ext);
         ui.codeView.classList.remove("hidden");
       }
     }
@@ -1777,17 +1851,18 @@ async function uploadAttachmentFiles(files) {
   await refreshTree();
 }
 
-async function uploadWorkspaceFiles(files) {
+async function uploadWorkspaceFiles(files, targetDir = "") {
+  const dirQuery = targetDir ? `&path=${encodeURIComponent(targetDir)}` : "";
   for (const file of files) {
     setStatus(t("upload.saving", {name: file.name}));
-    await api(`/v1/sessions/${sessionId}/workspace/files?filename=${encodeURIComponent(file.name)}`, {
+    await api(`/v1/sessions/${sessionId}/workspace/files?filename=${encodeURIComponent(file.name)}${dirQuery}`, {
       method: "POST",
       headers: { "Content-Type": file.type || "application/octet-stream" },
       body: file,
     });
   }
   await refreshTree();
-  setStatus(t("upload.savedToOutput"), true);
+  setStatus(targetDir ? t("upload.savedToDir", {dir: targetDir}) : t("upload.savedToOutput"), true);
 }
 
 ui.file.addEventListener("change", async () => {
@@ -1833,6 +1908,13 @@ function bindDropZone(element, onFiles) {
 
 bindDropZone(ui.filebar, uploadWorkspaceFiles);
 bindDropZone(ui.composer, uploadAttachmentFiles);
+// 全局兜底：拖拽结束/取消（含 OS 层取消、Esc）后清掉所有 dropzone 高亮
+for (const eventName of ["dragend", "drop"]) {
+  window.addEventListener(eventName, () => {
+    document.querySelectorAll(".drag-over").forEach(node => node.classList.remove("drag-over"));
+    document.querySelectorAll(".drag-target").forEach(node => node.classList.remove("drag-target"));
+  }, true);  // capture：在 stopPropagation 的子 handler 之前也能收到
+}
 
 function setRunControls(running, stopping = false) {
   ui.send.classList.toggle("hidden", running);

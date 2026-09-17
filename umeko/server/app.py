@@ -482,19 +482,25 @@ def create_app(
         tags=["workspace"],
     )
     async def upload_workspace_file(
-        session_id: str, request: Request, filename: str = Query(min_length=1)
+        session_id: str, request: Request,
+        filename: str = Query(min_length=1),
+        path: str = Query(default=""),
     ) -> WorkspaceFileView:
         content = await request.body()
         if not content:
             raise HTTPException(400, "文件内容不能为空")
         try:
-            path = service.save_workspace_file(session_id, filename, content)
+            saved = service.save_workspace_file(
+                session_id, filename, content, relative_dir=path
+            )
         except ValueError as exc:
             raise HTTPException(400, str(exc)) from exc
+        except FileNotFoundError as exc:
+            raise HTTPException(400, f"目标目录不存在：{path}") from exc
         return WorkspaceFileView(
-            path=path.relative_to(get_session(session_id).root).as_posix(),
-            filename=path.name,
-            size=path.stat().st_size,
+            path=saved.relative_to(get_session(session_id).root).as_posix(),
+            filename=saved.name,
+            size=saved.stat().st_size,
         )
 
     @app.get("/v1/sessions", tags=["sessions"])
