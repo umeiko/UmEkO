@@ -393,6 +393,16 @@ class AgentService:
             shutil.rmtree(final_target, ignore_errors=True)
             detail = (result.stderr or result.stdout or "").strip().splitlines()
             raise ValueError("解压失败：" + (detail[-1] if detail else f"7z 退出码 {result.returncode}"))
+        # 去掉"单根包裹"：压缩包里唯一顶层条目是一个目录时（如 Windows 右键压缩
+        # WZ/ 文件夹得到 WZ.zip），把该目录的内容提升一层，避免 WZ/WZ/ 嵌套。
+        # 此时 final_target 下只有 wrapper 一个条目，内层条目移上来无名字冲突。
+        top = [p for p in final_target.iterdir()]
+        if len(top) == 1 and top[0].is_dir():
+            wrapper = top[0]
+            inner = list(wrapper.iterdir())
+            for item in inner:
+                shutil.move(str(item), str(final_target / item.name))
+            wrapper.rmdir()  # 已空
         # 安全校验：解压产物必须全部落在 workspace 内
         for p in final_target.rglob("*"):
             try:
