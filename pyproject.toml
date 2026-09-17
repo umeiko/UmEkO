@@ -1,6 +1,6 @@
 [project]
 name = "umeko"
-version = "0.1.0"
+version = "0.1.1"
 description = "UMEKO — Unified Multi-agent Execution Kernel & Orchestrator（统一多智能体执行内核与编排器）：通用 Agent 基座"
 readme = "README.md"
 requires-python = ">=3.10"
