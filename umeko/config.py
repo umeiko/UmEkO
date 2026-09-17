@@ -90,7 +90,7 @@ def load_settings(env_path: str | Path | None = None) -> Settings:
         max_subagent_tool_iterations=max(
             1, int(os.getenv("MAX_SUBAGENT_TOOL_ITERATIONS", "24"))
         ),
-        max_tool_iterations=max(1, int(os.getenv("MAX_TOOL_ITERATIONS", "8"))),
+        max_tool_iterations=max(1, int(os.getenv("MAX_TOOL_ITERATIONS", "32"))),
     )
 
 
