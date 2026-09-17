@@ -17,9 +17,9 @@ __pycache__/
 build/
 dist/
 
-# 运行时生成的技能包
-skills/
-!skills/.gitkeep
+# 运行时生成的技能库（仅根目录 skills/；umeko/skills 是源码包，必须入库）
+/skills/
+!/skills/.gitkeep
 
 # 系统/编辑器
 .DS_Store
