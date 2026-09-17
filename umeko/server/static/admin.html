@@ -174,10 +174,12 @@
     tab-size: 4;
   }
   .code-wrap pre { position: absolute; inset: 0; overflow: hidden; pointer-events: none;
-    background: transparent; scrollbar-gutter: stable; padding-right: 28px; }
-  .code-wrap pre code { background: transparent; padding: 0; }
+    background: transparent; }
+  /* 压掉 hljs 主题给 .hljs 的默认样式（overlay 对齐关键） */
+  .code-wrap pre code.hljs { display: inline; overflow: visible; padding: 0;
+    background: transparent; }
   .code-wrap textarea { position: relative; display: block; width: 100%; height: 100%;
-    outline: none; resize: none; overflow: auto;
+    outline: none; resize: none; overflow-y: auto; overflow-x: hidden;
     color: transparent; background: transparent; caret-color: var(--ink); }
   .code-wrap textarea::selection { background: #087f6822; }
   .code-wrap.readonly textarea { caret-color: transparent; }
@@ -686,18 +688,32 @@ function setSkillEditorContent(text) {
   const lang = skSelected?.kind === "script" ? "python" : "markdown";
   if (window.hljs) codeEl.innerHTML = hljs.highlight(text, {language: lang}).value;
   else codeEl.textContent = text;
+  codeEl.append(document.createTextNode("\n"));  // inline 化后末尾换行不占高，补一行对齐 textarea
   const pre = document.getElementById("sk-codeview");
   if (pre) pre.scrollTop = 0;
+  syncOverlayMetrics();
 }
+
+function syncOverlayMetrics() {
+  // 精确对齐：pre 的右内边距 = textarea 滚动条宽 + 其右内边距，两层换行点一致
+  const editor = document.getElementById("sk-content");
+  const pre = document.getElementById("sk-codeview");
+  if (!editor || !pre) return;
+  const bar = editor.offsetWidth - editor.clientWidth;
+  pre.style.paddingRight = `${bar + parseFloat(getComputedStyle(editor).paddingRight)}px`;
+}
+window.addEventListener("resize", syncOverlayMetrics);
 
 document.addEventListener("DOMContentLoaded", () => {
   const editor = document.getElementById("sk-content");
   const codeEl = document.getElementById("sk-code-el");
   if (!editor || !codeEl) return;
+  syncOverlayMetrics();
   editor.addEventListener("input", () => {
     const lang = skSelected?.kind === "script" ? "python" : "markdown";
     if (window.hljs) codeEl.innerHTML = hljs.highlight(editor.value, {language: lang}).value;
     else codeEl.textContent = editor.value;
+    codeEl.append(document.createTextNode("\n"));
   });
   editor.addEventListener("scroll", () => {
     const pre = document.getElementById("sk-codeview");
