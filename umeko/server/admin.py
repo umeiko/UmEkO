@@ -84,6 +84,10 @@ class _ScriptTestIn(BaseModel):
     timeout: int = 10
 
 
+class _RuntimeConfigIn(BaseModel):
+    max_tool_iterations: int | None = None  # None=清空回默认；0=无限
+
+
 class _ProviderIn(BaseModel):
     name: str
     base_url: str
@@ -466,6 +470,36 @@ def create_admin_app(settings: Settings, service: AgentService, store: Store) ->
             raise HTTPException(400, "非法路径")
         if target.is_file():
             target.unlink()
+
+    # ---------- 运行参数（app_config 覆盖层，当前：最大工具轮次） ----------
+
+    @app.get("/admin/v1/runtime-config")
+    def get_runtime_config() -> dict:
+        overrides = store.config()
+        mti = overrides.get("MAX_TOOL_ITERATIONS")
+        return {
+            "max_tool_iterations": int(mti) if mti else None,  # None=用默认
+        }
+
+    @app.put("/admin/v1/runtime-config")
+    def set_runtime_config(payload: _RuntimeConfigIn) -> dict:
+        """设置运行参数后立即驱逐全部在线 Session 生效。max_tool_iterations=0 表示无限。"""
+        updates = {}
+        mti = payload.max_tool_iterations
+        if mti is None:
+            updates["MAX_TOOL_ITERATIONS"] = ""  # 置空 = 移除覆盖，回到默认
+        elif mti >= 0:
+            updates["MAX_TOOL_ITERATIONS"] = str(mti)
+        else:
+            raise HTTPException(400, "max_tool_iterations 不能为负（0=无限，空=默认）")
+        for key, value in updates.items():
+            store.set_config({key: value})
+        result = service.reload_config()
+        result["max_tool_iterations"] = (
+            "无限" if payload.max_tool_iterations == 0
+            else service.settings.max_tool_iterations
+        )
+        return result
 
     # ---------- 技能源文件（skills/*.md 直接管理） ----------
 
