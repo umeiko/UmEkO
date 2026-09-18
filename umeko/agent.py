@@ -368,7 +368,11 @@ class UmekoAgent:
         if images and self._vision:
             override = self._multimodal_message(user_input, images)
 
-        for _ in range(self._settings.max_tool_iterations):
+        # max_tool_iterations = 0 表示不限轮次（管理面可配；取消仍可随时中断）
+        _max_iter = self._settings.max_tool_iterations
+        _iterations = 0
+        while _max_iter == 0 or _iterations < _max_iter:
+            _iterations += 1
             if self._should_cancel and self._should_cancel():
                 return self._cancelled_reply()
             messages = self._messages

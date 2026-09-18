@@ -113,7 +113,7 @@ CONFIGURABLE_KEYS = (
     "TEXT_MODEL_NAME", "TEXT_MODEL_API_KEY", "TEXT_MODEL_BASE_URL",
     "TEXT_MODEL_VISION", "TEXT_MODEL_CONTEXT_WINDOW",
     "VISION_MODEL_NAME", "VISION_MODEL_API_KEY", "VISION_MODEL_BASE_URL",
-    "MODEL_PROXY",
+    "MODEL_PROXY", "MAX_TOOL_ITERATIONS",
 )
 SECRET_KEYS = frozenset({"TEXT_MODEL_API_KEY", "VISION_MODEL_API_KEY"})
 
@@ -150,7 +150,7 @@ def apply_overrides(settings: Settings, overrides: dict[str, str]) -> Settings:
     except (TypeError, ValueError):
         context_window = settings.context_window
     vision_flag = o.get("TEXT_MODEL_VISION")
-    return replace(
+    result = replace(
         settings,
         text_model=text_model,
         vision_model=vision,
@@ -161,3 +161,11 @@ def apply_overrides(settings: Settings, overrides: dict[str, str]) -> Settings:
             else vision_flag.lower() in ("1", "true", "yes")
         ),
     )
+    # 主 Agent 最大工具轮次：0 = 无限（管理面可配）
+    mti = o.get("MAX_TOOL_ITERATIONS")
+    if mti is not None:
+        try:
+            result = replace(result, max_tool_iterations=max(0, int(mti)))
+        except ValueError:
+            pass  # 非法值忽略，保持原设置
+    return result

@@ -344,6 +344,15 @@
           <label class="checkline"><input id="nm-vision" type="checkbox">具备视觉能力</label>
           <button class="primary" onclick="addModel()">添加模型</button>
         </div>
+        <div style="border-top:1px solid var(--line);margin-top:16px;padding-top:12px">
+          <strong style="font-size:13px">运行参数</strong>
+          <div class="row" style="margin-top:8px">
+            <span class="muted" style="font-size:12px">主 Agent 最大工具轮次：</span>
+            <input id="rc-max-iter" type="number" min="0" step="1" placeholder="默认 32" style="width:120px">
+            <button class="primary" onclick="saveRuntimeConfig()">保存</button>
+            <span class="muted" style="font-size:11.5px">0 = 无限 · 留空 = 默认（32）· 保存后立即驱逐在线 Session 生效</span>
+          </div>
+        </div>
       </div>
     </div>
   </div>
@@ -372,8 +381,24 @@ function showLogin() {
 function showMain(user) {
   document.body.className = "console";
   $("login").classList.add("hidden"); $("main").classList.remove("hidden");
-  $("who").textContent = user.username; loadUsers(); loadProviders();
+  $("who").textContent = user.username; loadUsers(); loadProviders(); loadRuntimeConfig();
 }
+// ---------- 运行参数 ----------
+async function loadRuntimeConfig() {
+  try {
+    const cfg = await api("GET", "/admin/v1/runtime-config");
+    $("rc-max-iter").value = cfg.max_tool_iterations ?? "";
+  } catch (_) { /* 面板未渲染时忽略 */ }
+}
+async function saveRuntimeConfig() {
+  const raw = $("rc-max-iter").value.trim();
+  const payload = raw === "" ? {max_tool_iterations: null} : {max_tool_iterations: Math.max(0, parseInt(raw) || 0)};
+  try {
+    await api("PUT", "/admin/v1/runtime-config", payload);
+    toast(raw === "0" ? "已设为无限轮次" : raw === "" ? "已恢复默认（32）" : `已设为 ${raw} 轮`);
+  } catch (e) { toast(e.message, true); }
+}
+
 // ---------- 技能库（Skill 列表 + 单包文件树 + 编辑器） ----------
 let skTree = [];            // [{name, md, scripts:[], imported, enabled, stale}]
 let skActivePack = null;    // 当前选中的包名
