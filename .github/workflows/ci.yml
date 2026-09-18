@@ -47,20 +47,22 @@ jobs:
       - name: Install dependencies
         run: |
           python -m pip install --upgrade pip
-          pip install -e . pyinstaller
+          pip install -e ".[dev]"
 
       - name: Build single-file server exe
         run: pyinstaller umeko.spec --noconfirm
 
-      - name: Smoke test (python entry, same code path as exe)
+      - name: Smoke test the exe
         shell: pwsh
         run: |
           $env:HTTP_PROXY = ""; $env:HTTPS_PROXY = ""; $env:NO_PROXY = "*"
           $env:PYTHONUTF8 = "1"
-          # 直接在 shell 里后台启动：输出直接进 console 日志，可见失败原因
-          $env:UMEKO_ADMIN_PASSWORD = "ci-admin-pw"
-          python -m umeko.server --port 8899 --no-admin 2>&1 | Tee-Object -FilePath smoke-py.log &
-          $proc = $null
+          # exe 后台启动，输出重定向（绝对路径）进日志
+          New-Item -ItemType Directory -Force -Path smoke | Out-Null
+          Copy-Item dist/umeko-server.exe smoke/
+          $proc = Start-Process -FilePath "smoke/umeko-server.exe" `
+            -ArgumentList "--port","8899","--no-admin" -PassThru -NoNewWindow `
+            -RedirectStandardOutput "$PWD/smoke/out.log" -RedirectStandardError "$PWD/smoke/err.log"
           Start-Sleep -Seconds 5
           $ok = $false
           for ($i = 0; $i -lt 30; $i++) {
@@ -70,12 +72,13 @@ jobs:
               if ($resp.StatusCode -eq 200) { $ok = $true; break }
             } catch { Write-Host "attempt ${i}: $($_.Exception.Message)" }
           }
-          Get-Process | Where-Object {$_.Name -like "*python*"} | Stop-Process -Force -ErrorAction SilentlyContinue
+          if ($proc -and -not $proc.HasExited) { Stop-Process -Id $proc.Id -Force -ErrorAction SilentlyContinue }
           if (-not $ok) {
-            Write-Host "=== server log ==="; Get-Content smoke-py.log -ErrorAction SilentlyContinue
-            throw "smoke test failed: /health not reachable"
+            Write-Host "=== exe stdout ==="; Get-Content smoke/out.log -ErrorAction SilentlyContinue
+            Write-Host "=== exe stderr ==="; Get-Content smoke/err.log -ErrorAction SilentlyContinue
+            throw "exe smoke test failed: /health not reachable"
           }
-          Write-Host "Smoke test passed (python entry; exe verified locally per release notes)"
+          Write-Host "Smoke test passed"
 
       - name: Upload artifact
         uses: actions/upload-artifact@v4
