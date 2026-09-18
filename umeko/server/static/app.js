@@ -232,8 +232,17 @@ function addMessage(text, role = "assistant", files = []) {
     node.append(refs);
   }
   ui.messages.append(node);
-  ui.messages.scrollTop = ui.messages.scrollHeight;
+  followMessages();
   return node;
+}
+
+function messagesNearBottom() {
+  // 用户是否停在消息区底部附近（80px 容差）；上翻查看历史时返回 false，停止自动跟随
+  const el = ui.messages;
+  return el.scrollHeight - el.scrollTop - el.clientHeight < 80;
+}
+function followMessages() {
+  if (messagesNearBottom()) ui.messages.scrollTop = ui.messages.scrollHeight;
 }
 
 function toolLabel(name) {
@@ -307,7 +316,7 @@ function addAgentAction(name, agent = "main", request = null, beforeNode = null)
   node.append(icon, text);
   if (beforeNode?.parentNode === ui.messages) ui.messages.insertBefore(node, beforeNode);
   else ui.messages.append(node);
-  ui.messages.scrollTop = ui.messages.scrollHeight;
+  followMessages();
   const action = {
     node, icon, text, name, agent, request, result: null,
     liveReasoning: "", liveOutput: "",
@@ -2031,7 +2040,7 @@ function followRun(runId, runSessionId = sessionId) {
     const tail = lines.at(-1) || t("run.reasoningFallback");
     const visible = tail.length > 110 ? `…${tail.slice(-110)}` : tail;
     ensureReasoningLine().textContent = t("run.reasoningLine", {text: visible});
-    ui.messages.scrollTop = ui.messages.scrollHeight;
+    followMessages();
   });
   stream.addEventListener("usage.delta", event => {
     if (sessionId !== runSessionId) return;
@@ -2119,7 +2128,7 @@ function followRun(runId, runSessionId = sessionId) {
       checkAction.text.textContent = t("subagent.toolLine", {tool: toolLabel("image_reasoning"), text: visibleLatest});
       checkAction.node.title = latest;
     }
-    ui.messages.scrollTop = ui.messages.scrollHeight;
+    followMessages();
   });
   stream.addEventListener("subagent.delta", event => {
     if (sessionId !== runSessionId) return;
@@ -2139,7 +2148,7 @@ function followRun(runId, runSessionId = sessionId) {
       ).slice(-12000);
       if (activeToolDetail === subagentTaskAction) renderToolDetail(subagentTaskAction);
     }
-    ui.messages.scrollTop = ui.messages.scrollHeight;
+    followMessages();
   });
   stream.addEventListener("subagent.tool.started", event => {
     if (sessionId !== runSessionId) return;
@@ -2275,6 +2284,8 @@ ui.composer.addEventListener("submit", async event => {
   }
   const attachmentsForRun = [...pendingFiles];
   addMessage(input, "user", attachmentsForRun);
+  // 用户主动发消息：强制滚到底部（后续流式自动跟随由此解锁）
+  ui.messages.scrollTop = ui.messages.scrollHeight;
   ui.prompt.value = "";
   setRunControls(true);
   setStatus(t("run.submitted"));
