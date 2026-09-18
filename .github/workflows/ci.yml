@@ -57,8 +57,11 @@ jobs:
         run: |
           $env:HTTP_PROXY = ""; $env:HTTPS_PROXY = ""; $env:NO_PROXY = "*"
           $env:PYTHONUTF8 = "1"
-          $proc = Start-Process -FilePath "python" `
-            -ArgumentList "-m","umeko.server","--port","8899","--no-admin" -PassThru -NoNewWindow
+          # 直接在 shell 里后台启动：输出直接进 console 日志，可见失败原因
+          $env:UMEKO_ADMIN_PASSWORD = "ci-admin-pw"
+          python -m umeko.server --port 8899 --no-admin 2>&1 | Tee-Object -FilePath smoke-py.log &
+          $proc = $null
+          Start-Sleep -Seconds 5
           $ok = $false
           for ($i = 0; $i -lt 30; $i++) {
             Start-Sleep -Seconds 2
@@ -67,8 +70,11 @@ jobs:
               if ($resp.StatusCode -eq 200) { $ok = $true; break }
             } catch { Write-Host "attempt ${i}: $($_.Exception.Message)" }
           }
-          Stop-Process -Id $proc.Id -Force -ErrorAction SilentlyContinue
-          if (-not $ok) { throw "smoke test failed: /health not reachable" }
+          Get-Process | Where-Object {$_.Name -like "*python*"} | Stop-Process -Force -ErrorAction SilentlyContinue
+          if (-not $ok) {
+            Write-Host "=== server log ==="; Get-Content smoke-py.log -ErrorAction SilentlyContinue
+            throw "smoke test failed: /health not reachable"
+          }
           Write-Host "Smoke test passed (python entry; exe verified locally per release notes)"
 
       - name: Upload artifact
