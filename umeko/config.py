@@ -77,6 +77,12 @@ def _load_text_model(proxy: str | None) -> ModelConfig:
     )
 
 
+def model_config_unconfigured(settings) -> bool:
+    """主模型是否为占位配置（无 .env 启动）。"""
+    tm = settings.text_model
+    return not tm.api_key or "unconfigured" in tm.base_url
+
+
 def load_settings(env_path: str | Path | None = None) -> Settings:
     if env_path is None:
         # 冻结（离线包）时优先读 exe 旁边的 .env，其次 CWD；源码运行维持 ./.env

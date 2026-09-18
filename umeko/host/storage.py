@@ -145,8 +145,8 @@ class Store:
 
     def create_user(self, username: str, password: str, role: str = "user") -> dict:
         username = username.strip()
-        if len(username) < 3 or len(password) < 8:
-            raise ValueError("用户名至少 3 个字符，密码至少 8 个字符")
+        if len(username) < 3 or len(password) < 4:
+            raise ValueError("用户名至少 3 个字符，密码至少 4 个字符")
         if role not in {"user", "admin"}:
             raise ValueError("role 只能是 user 或 admin")
         user = {
@@ -515,10 +515,13 @@ class Store:
         return dict(rows[0])
 
     def seed_providers_from_settings(self, settings) -> bool:
-        """注册表为空时用 .env 生效配置播种：default Provider + 主/视觉模型。"""
+        """注册表为空时用 .env 生效配置播种 Provider；.env 未配置（占位值）则跳过，
+        留待管理员在管理面录入。"""
         if self.list_providers():
             return False
         tm = settings.text_model
+        if not tm.api_key or "unconfigured" in tm.base_url:
+            return False  # 无真实配置，不播种
         pid = self.create_provider("default", tm.base_url, tm.api_key, tm.proxy)["id"]
         mid = self.add_model(pid, tm.name, settings.text_model_vision)["id"]
         vm = settings.vision_model
