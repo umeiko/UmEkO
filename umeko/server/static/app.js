@@ -269,12 +269,42 @@ function prettyToolData(value, emptyText) {
   catch (_error) { return value; }
 }
 
+function renderToolImages(action) {
+  // 图像类工具（image_reasoning / read_image）的参数里带图片路径 → 缩略图预览
+  const section = document.getElementById("tool-images-section");
+  const wrap = document.getElementById("tool-images");
+  if (!section || !wrap) return;
+  let paths = [];
+  try {
+    const req = typeof action.request === "string" ? JSON.parse(action.request) : action.request;
+    paths = (req && (req.image_paths || (req.path ? [req.path] : []))) || [];
+  } catch (_) { paths = []; }
+  const valid = paths.filter(p => typeof p === "string" && p.trim());
+  section.classList.toggle("hidden", !valid.length);
+  wrap.replaceChildren();
+  for (const path of valid) {
+    const link = document.createElement("a");
+    link.href = `/v1/sessions/${sessionId}/workspace/files/raw/${path}`;
+    link.target = "_blank";
+    link.rel = "noopener";
+    link.title = path;
+    const img = new Image();
+    img.alt = path;
+    img.loading = "lazy";
+    img.src = `${link.href}?t=${Date.now()}`;
+    img.onerror = () => { link.remove(); };
+    link.append(img);
+    wrap.append(link);
+  }
+}
+
 function renderToolDetail(action) {
   if (!action) return;
   const owner = action.agent === "subagent" ? t("agent.sub") : t("agent.main");
   const status = action.result === null ? t("tool.statusRunning") : t("tool.statusDone");
   ui.toolDetailTitle.textContent = toolLabel(action.name);
   ui.toolDetailMeta.textContent = `${owner} · ${action.name} · ${status}`;
+  renderToolImages(action);
   ui.toolDetailRequest.textContent = prettyToolData(action.request, t("tool.noParams"));
   let liveResult = "";
   const isSubagentTask = action.name === "subagent_task";

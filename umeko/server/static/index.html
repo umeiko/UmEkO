@@ -138,6 +138,10 @@
         <div><p class="eyebrow">TOOL CALL</p><h2 id="tool-detail-title" data-i18n="tool.detail">工具调用详情</h2><p id="tool-detail-meta" class="tool-detail-meta"></p></div>
         <button id="tool-detail-close" class="tool-detail-close" type="button" data-i18n-aria="tool.closeAria" aria-label="关闭工具调用详情">×</button>
       </header>
+      <section id="tool-images-section" class="tool-detail-section hidden">
+        <div class="tool-detail-section-head"><span data-i18n="tool.images">涉及图片</span><small data-i18n="tool.imagesSub">点击放大</small></div>
+        <div id="tool-images" class="tool-images"></div>
+      </section>
       <section class="tool-detail-section">
         <div class="tool-detail-section-head"><span data-i18n="tool.request">模型请求</span><small data-i18n="tool.requestSub">传给工具的参数</small></div>
         <pre id="tool-detail-request" tabindex="0"></pre>

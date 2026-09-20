@@ -311,3 +311,8 @@ pre { margin: 0; padding: 14px; max-height: 300px; overflow: auto; border-top: 1
   .workspace.preview-collapsed .preview { display: block; }
   .workspace.preview-collapsed .preview-expand-tab { display: none; }
 }
+
+.tool-images { display: flex; flex-wrap: wrap; gap: 10px; }
+.tool-images a { display: block; max-width: 220px; border: 1px solid var(--line); border-radius: 8px; background: #fff; padding: 4px; }
+.tool-images img { display: block; width: 100%; height: auto; border-radius: 5px; cursor: zoom-in; }
+.tool-images a:hover { border-color: var(--accent); }
