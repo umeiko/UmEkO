@@ -180,17 +180,31 @@ def _item_html(item):
                  "{className:'noimg',textContent:'图片加载失败'}))\"></div>"
                  ).replace("{SRC}", image)
     checks = []
-    for key, label in (("consistency", "图文一致"), ("quality", "图片质量"),
-                       ("compliance", "合规检查")):
-        text = item.get(key)
-        if not text:
-            continue
-        cls = "bad" if any(
-            w in text for w in ("不一致", "不可读", "风险", "不符", "缺失", "模糊")
-        ) else "ok"
-        checks.append(
-            '<div class="check"><span class="k">{}</span>'
-            '<span class="v {}">{}</span></div>'.format(label, cls, _esc(text)))
+    # 新格式：checks 数组（按检查项维度，含编号/名称/状态/依据）；兼容旧三字段
+    check_items = item.get("checks")
+    if isinstance(check_items, list) and check_items:
+        for c in check_items:
+            cid = _esc(c.get("id", ""))
+            name = _esc(c.get("name", ""))
+            text = _esc(c.get("note", ""))
+            st = _esc(c.get("status", ""))
+            cls = "bad" if st in ("FAIL", "WARN") else "ok"
+            checks.append(
+                '<div class="check"><span class="k">{} {}</span>'
+                '<span class="v {}">[{}] {}</span></div>'.format(
+                    cid, name, cls, st, text))
+    else:
+        for key, label in (("consistency", "图文一致"), ("quality", "图片质量"),
+                           ("compliance", "合规检查")):
+            text = item.get(key)
+            if not text:
+                continue
+            cls = "bad" if any(
+                w in text for w in ("不一致", "不可读", "风险", "不符", "缺失", "模糊")
+            ) else "ok"
+            checks.append(
+                '<div class="check"><span class="k">{}</span>'
+                '<span class="v {}">{}</span></div>'.format(label, cls, _esc(text)))
     detail = item.get("detail")
     detail_html = '<div class="detail">{}</div>'.format(_esc(detail)) if detail else ""
     return (

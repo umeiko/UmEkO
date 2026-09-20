@@ -755,6 +755,8 @@ def build_file_tools(
             description=(
                 "读取指定技能包的完整操作指引并遵照执行。"
                 "技能包名须来自 list_skill_packs。"
+                "也支持 包名/附属文件.md 形式读取包内附属文档"
+                "（如检查项清单等数据文件，清单见 list_skill_packs 输出）。"
             ),
             parameters={
                 "type": "object",
