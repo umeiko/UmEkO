@@ -414,6 +414,16 @@ class AgentService:
 
     # ---------- Session 生命周期 ----------
 
+    def _skills_library_dir(self) -> Path:
+        """服务器技能库目录（与 run_skill_script / 管理面同源）。"""
+        import os as _os
+
+        from .. import runtime as _runtime
+        env = _os.getenv("UMEKO_SKILL_DIR")
+        if env:
+            return Path(env)
+        return _runtime.app_dir() / "skills"
+
     def create_session(
         self,
         *,
@@ -440,6 +450,12 @@ class AgentService:
                 dest.write_text(item["content"], encoding="utf-8")
             if parse_skill_pack_text(item["content"]) is not None:
                 builtin_resources["skills"].add(item["name"])
+            # 包目录（附属 md/py/脚本）一并播种：skills/<包名>/* → client/skills/<包名>/
+            pack_dir = self._skills_library_dir() / Path(item["name"]).stem
+            if pack_dir.is_dir():
+                dest_dir = target / Path(item["name"]).stem
+                if not dest_dir.exists():
+                    shutil.copytree(pack_dir, dest_dir)
 
         session = Session(
             effective,

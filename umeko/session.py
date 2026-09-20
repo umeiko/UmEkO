@@ -72,9 +72,12 @@ class Session:
         packs = load_skill_packs(self._skill_dir)
         if not packs:
             return "skills 目录下没有可用的技能包。"
-        return "可用技能包：\n" + "\n".join(
-            f"- {p.name}：{p.description}" for p in packs.values()
-        )
+        lines = []
+        for p in packs.values():
+            members = self._pack_members(p.name)
+            lines.append(f"- {p.name}：{p.description}"
+                         + (f"（附属文件：{members}）" if members else ""))
+        return "可用技能包：\n" + "\n".join(lines)
 
     def active_skill_packs(self) -> list[SkillPack]:
         """返回当前已启用的合法 Skill。"""
@@ -82,16 +85,56 @@ class Session:
         return [packs[name] for name in sorted(self._active_skill_names) if name in packs]
 
     def use_skill(self, name: str) -> str:
-        """读取技能包完整指引（use_skill 工具的 handler）。"""
+        """读取技能包完整指引（use_skill 工具的 handler）。
+
+        支持 `包名/附属文件.md` 形式读取包内附属文档（如检查项清单等数据文件）；
+        附属文件不要求 front matter，纯内容注入。
+        """
+        if "/" in name:
+            pack_name, _, member = name.partition("/")
+            if not self._skill_dir:
+                return "错误：当前会话没有技能目录"
+            pack_dir = (self._skill_dir / pack_name).resolve()
+            target = (pack_dir / member).resolve()
+            if not target.is_file():
+                return f"错误：技能包 {pack_name} 中不存在文件 {member}"
+            try:
+                target.relative_to(pack_dir)
+            except ValueError:
+                return "错误：非法路径"
+            try:
+                pack = get_skill_pack(pack_name, self._skill_dir)
+            except ValueError as e:
+                return f"错误：{e}"
+            self._active_skill_names.add(pack.name)
+            content = target.read_text(encoding="utf-8")
+            return (
+                f"以下是技能包 {pack.name} 的附属文档 {member}，请按需使用：\n\n"
+                f"{content}"
+            )
         try:
             pack = get_skill_pack(name, self._skill_dir)
         except ValueError as e:
             return f"错误：{e}"
         self._active_skill_names.add(pack.name)
+        members = self._pack_members(pack.name)
+        suffix = (f"\n\n（该技能包还包含附属文件：{members}；"
+                  f"use_skill <包名>/<文件名> 可读取）") if members else ""
         return (
             f"以下是技能包 {pack.name} 的操作指引，请严格遵照执行：\n\n"
-            f"{pack.instructions}"
+            f"{pack.instructions}{suffix}"
         )
+
+    def _pack_members(self, pack_name: str) -> str:
+        """包内附属文件清单（md + py），供 use_skill/list 提示。"""
+        if not self._skill_dir:
+            return ""
+        pack_dir = self._skill_dir / pack_name
+        if not pack_dir.is_dir():
+            return ""
+        members = [p.name for p in sorted(pack_dir.iterdir())
+                   if p.suffix in (".md", ".py") and p.is_file()]
+        return "、".join(members)
 
     def unuse_skill(self, name: str) -> None:
         """卸载此前显式启用的 Skill。"""
