@@ -92,26 +92,16 @@ class Session:
         """
         if "/" in name:
             pack_name, _, member = name.partition("/")
-            if not self._skill_dir:
-                return "错误：当前会话没有技能目录"
-            pack_dir = (self._skill_dir / pack_name).resolve()
-            target = (pack_dir / member).resolve()
-            if not target.is_file():
-                return f"错误：技能包 {pack_name} 中不存在文件 {member}"
-            try:
-                target.relative_to(pack_dir)
-            except ValueError:
-                return "错误：非法路径"
             try:
                 pack = get_skill_pack(pack_name, self._skill_dir)
             except ValueError as e:
                 return f"错误：{e}"
+            from .skills.pack_reader import read_pack_file
+            result = read_pack_file(pack_name, member)
+            if result.startswith("错误："):
+                return result
             self._active_skill_names.add(pack.name)
-            content = target.read_text(encoding="utf-8")
-            return (
-                f"以下是技能包 {pack.name} 的附属文档 {member}，请按需使用：\n\n"
-                f"{content}"
-            )
+            return result
         try:
             pack = get_skill_pack(name, self._skill_dir)
         except ValueError as e:

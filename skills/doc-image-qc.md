@@ -34,7 +34,7 @@ description: 图文 Markdown 大文档的图片质检流水线。触发场景：
 >    该图的文字）、alt 文本。
 > 3. 写入 `generate/qc-manifest.md`：每图一节，含图片引用路径（**原样保留**，
 >    如 `images/p0014_003.png`）、所在行号、关联描述原文。不写质检结论。
-> 4. 按 `doc-image-qc/checks.md` 的分组（通用/原理图/组网图/界面截图）给每张图
+> 4. 按 `checks.md`（read_pack_file 可读）的分组（通用/原理图/组网图/界面截图）给每张图
 >    标注适用检查项（依据 alt 文本与上下文判断图片类型，可多选）。
 > 5. 汇报：图片总数、清单路径、本地/外链/缺失分类。
 
@@ -46,8 +46,8 @@ description: 图文 Markdown 大文档的图片质检流水线。触发场景：
 
 > 任务：质检图片 `<图片引用路径>`（相对 Markdown 同目录解析）。
 > 1. `read_document generate/qc-manifest.md`，只看该图片对应小节的关联描述。
-> 2. `image_reasoning` 检查该图。**检查项以附属文档 `doc-image-qc/checks.md` 为准**
->    （use_skill doc-image-qc/checks.md 可读）：通用项 C1-C3 对所有图必检；
+> 2. `image_reasoning` 检查该图。**检查项以附属文档 checks.md 为准**
+>    （用 `read_pack_file` 工具读：pack=`doc-image-qc`，member=`checks.md`）：通用项 C1-C3 对所有图必检；
 >    原理图类加 S1-S3，组网图类加 N1-N2，界面截图类加 U1-U4——按清单阶段 1
 >    标注的分组选取。每项独立给 PASS/WARN/FAIL 结论与一句话依据，不要泛泛而谈。
 > 3. 把该图的结论**追加**到 `generate/qc-report.json`（先 `read_document` 读现有
