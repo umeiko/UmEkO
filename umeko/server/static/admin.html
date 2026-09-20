@@ -112,6 +112,10 @@
     align-items: center; margin-top: 12px; }
   .form-grid label { color: var(--muted); font-size: 12px; }
   .form-grid input { width: 100%; font: 13px/1.4 ui-monospace, monospace; }
+  /* 禁用输入的显眼状态（无限模式盖住数字框） */
+  input:disabled { background: #e8e4d8 !important; color: #b0aca0 !important;
+    border: 1.5px dashed #a8a294 !important; box-shadow: none !important;
+    text-decoration: line-through; }
   .checkline { display: inline-flex; align-items: center; gap: 6px;
     color: var(--muted); font-size: 12px; cursor: pointer; }
   .checkline input { width: auto; }
@@ -390,12 +394,18 @@ async function loadRuntimeConfig() {
     const cfg = await api("GET", "/admin/v1/runtime-config");
     const unlimited = cfg.max_tool_iterations === 0;
     $("rc-unlimited").checked = unlimited;
-    $("rc-max-iter").value = (!unlimited && cfg.max_tool_iterations) ? cfg.max_tool_iterations : "";
-    $("rc-max-iter").disabled = unlimited;
+    const num = $("rc-max-iter");
+    num.disabled = unlimited;
+    if (unlimited) { num.value = ""; num.placeholder = "∞ 无限"; num.title = "无限轮次生效中"; }
+    else { num.value = cfg.max_tool_iterations ? cfg.max_tool_iterations : ""; num.placeholder = "默认 32"; num.title = ""; }
   } catch (_) { /* 面板未渲染时忽略 */ }
 }
 function toggleUnlimited() {
-  $("rc-max-iter").disabled = $("rc-unlimited").checked;
+  const on = $("rc-unlimited").checked;
+  const num = $("rc-max-iter");
+  num.disabled = on;
+  if (on) { num.dataset.prev = num.value; num.value = ""; num.placeholder = "∞ 无限"; num.title = "无限轮次生效中"; }
+  else { num.value = num.dataset.prev || ""; num.placeholder = "默认 32"; num.title = ""; }
 }
 async function saveRuntimeConfig() {
   const unlimited = $("rc-unlimited").checked;
