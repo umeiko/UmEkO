@@ -450,12 +450,9 @@ class AgentService:
                 dest.write_text(item["content"], encoding="utf-8")
             if parse_skill_pack_text(item["content"]) is not None:
                 builtin_resources["skills"].add(item["name"])
-            # 包目录（附属 md/py/脚本）一并播种：skills/<包名>/* → client/skills/<包名>/
-            pack_dir = self._skills_library_dir() / Path(item["name"]).stem
-            if pack_dir.is_dir():
-                dest_dir = target / Path(item["name"]).stem
-                if not dest_dir.exists():
-                    shutil.copytree(pack_dir, dest_dir)
+            # 渐进式播种：只播种主 md；附属文档/脚本不落盘会话——
+            # Agent 用 read_pack_file 按需读服务器库最新版，run_skill_script
+            # 也从服务器库执行。省会话磁盘，且附属文件更新即刻可见。
 
         session = Session(
             effective,

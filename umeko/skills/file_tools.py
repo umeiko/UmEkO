@@ -18,6 +18,7 @@ from ..session import Session
 from ..tree import build_tree, render_text
 from .base import Skill
 from .script_runner import run_skill_script
+from .pack_reader import read_pack_file
 
 _MAX_DOC_BYTES = 200 * 1024
 _MAX_FIND_RESULTS = 20
@@ -854,6 +855,27 @@ def build_file_tools(
                 ),
             )
         )
+    # 技能包附属文件按需读取（渐进式播种：会话只有主 md，附属内容即时读服务器库）
+    skills.append(
+        Skill(
+            name="read_pack_file",
+            description=(
+                "读取技能包附属文件的内容（如检查项清单等数据文档），内容直接"
+                "进入当前上下文，无需预先下载。包名与文件名来自 list_skill_packs "
+                "或技能指引中标注的附属文件清单。读取的是服务器最新版。"
+            ),
+            parameters={
+                "type": "object",
+                "properties": {
+                    "pack": {"type": "string", "description": "技能包名（如 doc-image-qc）"},
+                    "member": {"type": "string", "description": "包内文件名（如 checks.md）"},
+                },
+                "required": ["pack", "member"],
+            },
+            handler=lambda pack, member: read_pack_file(pack, member),
+        )
+    )
+
     # 技能包脚本执行器（框架机制，无领域知识）：skills/<pack>/<script>.py
     skills.append(
         Skill(
