@@ -471,6 +471,36 @@ def create_admin_app(settings: Settings, service: AgentService, store: Store) ->
         if target.is_file():
             target.unlink()
 
+    # ---------- 技能包成员文件（checks.md 等 read_pack_file 运行时输入） ----------
+
+    _MEMBER_EXTS = {".md", ".markdown", ".json", ".yaml", ".yml", ".txt", ".csv"}
+
+    @app.put("/admin/v1/skill-members/{pack}/{member_name}", status_code=201)
+    def put_skill_member(pack: str, member_name: str, payload: _DefaultSkillIn) -> dict:
+        """新建/覆盖技能包成员文件（文本类；.py 脚本走 skill-scripts 端点）。"""
+        if "/" in pack or "\\" in pack or ".." in pack:
+            raise HTTPException(400, "非法包名")
+        clean = Path(member_name).name
+        if clean != member_name or Path(clean).suffix.lower() not in _MEMBER_EXTS:
+            raise HTTPException(400, "成员文件须为 .md/.json/.yaml/.txt/.csv（不带路径）")
+        pack_dir = app_dir() / "skills" / pack
+        pack_dir.mkdir(parents=True, exist_ok=True)
+        (pack_dir / clean).write_text(payload.content, encoding="utf-8")
+        return {"name": clean, "size": len(payload.content)}
+
+    @app.delete("/admin/v1/skill-members/{pack}/{member_name}", status_code=204)
+    def delete_skill_member(pack: str, member_name: str) -> None:
+        base = app_dir() / "skills"
+        target = (base / pack / member_name).resolve()
+        try:
+            target.relative_to(base.resolve())
+        except ValueError:
+            raise HTTPException(400, "非法路径")
+        if target.suffix == ".py":
+            raise HTTPException(400, "脚本请走 skill-scripts 删除")
+        if target.is_file():
+            target.unlink()
+
     # ---------- 运行参数（app_config 覆盖层，当前：最大工具轮次） ----------
 
     @app.get("/admin/v1/runtime-config")
@@ -541,20 +571,30 @@ def create_admin_app(settings: Settings, service: AgentService, store: Store) ->
 
     @app.get("/admin/v1/skill-library")
     def skill_library_tree() -> dict:
-        """技能库树：包（.md + 同名目录脚本）。一个 Skill = 文件夹 + 同名 .md。"""
+        """技能库树：包（.md + 同名目录脚本/成员文件）。一个 Skill = 文件夹 + 同名 .md。
+
+        成员文件（checks.md 等）是 read_pack_file 的运行时输入，与脚本一同列出并带修改时间。
+        """
         base = app_dir() / "skills"
+
+        def dir_entries(pack_dir):
+            scripts, members = [], []
+            if pack_dir.is_dir():
+                for sf in sorted(pack_dir.iterdir()):
+                    if not sf.is_file():
+                        continue
+                    stat = sf.stat()
+                    item = {"name": sf.name, "size": stat.st_size, "mtime": int(stat.st_mtime)}
+                    (scripts if sf.suffix == ".py" else members).append(item)
+            return scripts, members
+
         packs = []
         if base.is_dir():
             names = set()
             for f in sorted(base.glob("*.md")):
                 pack = f.stem
                 names.add(pack)
-                scripts = []
-                pack_dir = base / pack
-                if pack_dir.is_dir():
-                    for sf in sorted(pack_dir.glob("*.py")):
-                        scripts.append({"name": sf.name, "size": sf.stat().st_size})
-                db = store.default_skill(f.name)
+                scripts, members = dir_entries(base / pack)
                 entry = None
                 for item in store.default_skills():
                     if item["name"] == f.name:
@@ -562,20 +602,22 @@ def create_admin_app(settings: Settings, service: AgentService, store: Store) ->
                         break
                 packs.append({
                     "name": pack, "md": f.name, "md_size": f.stat().st_size,
-                    "scripts": scripts,
+                    "md_mtime": int(f.stat().st_mtime),
+                    "scripts": scripts, "members": members,
                     "imported": entry is not None,
                     "enabled": bool(entry["enabled"]) if entry else None,
                     "stale": entry is not None and entry["content"] != f.read_text(encoding="utf-8"),
                 })
-            # 只有目录没有 md 的（孤儿脚本目录）
+            # 只有目录没有 md 的（孤儿脚本/成员目录）
             for d in sorted(base.iterdir()):
-                if d.is_dir() and d.name not in names and list(d.glob("*.py")):
-                    packs.append({
-                        "name": d.name, "md": None, "md_size": 0,
-                        "scripts": [{"name": sf.name, "size": sf.stat().st_size}
-                                    for sf in sorted(d.glob("*.py"))],
-                        "imported": False, "enabled": None, "stale": False,
-                    })
+                if d.is_dir() and d.name not in names:
+                    scripts, members = dir_entries(d)
+                    if scripts or members:
+                        packs.append({
+                            "name": d.name, "md": None, "md_size": 0, "md_mtime": None,
+                            "scripts": scripts, "members": members,
+                            "imported": False, "enabled": None, "stale": False,
+                        })
         return {"packs": packs}
 
     @app.get("/admin/v1/skill-scripts-template")

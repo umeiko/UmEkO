@@ -11,6 +11,7 @@ const ui = {
   contextMenu: document.querySelector("#context-menu"),
   contextMenuCompact: document.querySelector("#context-menu-compact"),
   contextMenuClear: document.querySelector("#context-menu-clear"),
+  contextMenuClearChat: document.querySelector("#context-menu-clear-chat"),
   status: document.querySelector("#status"),
   statusDot: document.querySelector("#status-dot"),
   canvas: document.querySelector("#canvas"),
@@ -270,15 +271,18 @@ function prettyToolData(value, emptyText) {
 }
 
 function renderToolImages(action) {
-  // 图像类工具（image_reasoning / read_image）的参数里带图片路径 → 缩略图预览
+  // 仅图像类工具（image_reasoning / read_image）做缩略图预览；
+  // read_document 等通用文件工具即使 path 指向图片也不预览
   const section = document.getElementById("tool-images-section");
   const wrap = document.getElementById("tool-images");
   if (!section || !wrap) return;
   let paths = [];
-  try {
-    const req = typeof action.request === "string" ? JSON.parse(action.request) : action.request;
-    paths = (req && (req.image_paths || (req.path ? [req.path] : []))) || [];
-  } catch (_) { paths = []; }
+  if (action.name === "image_reasoning" || action.name === "read_image") {
+    try {
+      const req = typeof action.request === "string" ? JSON.parse(action.request) : action.request;
+      paths = (req && (req.image_paths || (req.path ? [req.path] : []))) || [];
+    } catch (_) { paths = []; }
+  }
   const valid = paths.filter(p => typeof p === "string" && p.trim());
   section.classList.toggle("hidden", !valid.length);
   wrap.replaceChildren();
@@ -712,8 +716,28 @@ async function refreshSessionTabs() {
     const menu = document.createElement("div"); menu.className = "session-menu session-floating-menu hidden";
     const rename = document.createElement("button"); rename.type = "button"; rename.textContent = t("fileMenu.rename");
     rename.addEventListener("click", () => { menu.classList.add("hidden"); openRenameSession(item); });
+    const duplicate = document.createElement("button"); duplicate.type = "button"; duplicate.textContent = t("session.duplicate");
+    duplicate.addEventListener("click", async () => {
+      menu.classList.add("hidden");
+      setStatus(t("session.duplicating"));
+      try {
+        const view = await api(`/v1/sessions/${item.id}/clone`, {method: "POST"});
+        await refreshSessionTabs();
+        await loadSession(view.id);
+        setStatus(t("session.duplicated", {title: view.title}), true);
+      } catch (error) { setStatus(error.message); }
+    });
     const remove = document.createElement("button"); remove.type = "button"; remove.textContent = t("session.delete");
     remove.addEventListener("click", () => { menu.classList.add("hidden"); openDeleteSession(item); });
+    // 右键标签页 = 打开同一菜单（复制/改名/删除）
+    button.addEventListener("contextmenu", event => {
+      event.preventDefault();
+      document.querySelectorAll(".session-floating-menu").forEach(node => { if (node !== menu) node.classList.add("hidden"); });
+      menu.classList.toggle("hidden", false);
+      const rect = button.getBoundingClientRect();
+      menu.style.top = `${rect.bottom + 6}px`;
+      menu.style.left = `${Math.max(8, Math.min(rect.right - 132, window.innerWidth - 140))}px`;
+    });
     more.addEventListener("click", event => {
       event.stopPropagation();
       document.querySelectorAll(".session-floating-menu").forEach(node => { if (node !== menu) node.classList.add("hidden"); });
@@ -726,7 +750,7 @@ async function refreshSessionTabs() {
       }
     });
     menu.addEventListener("click", event => event.stopPropagation());
-    menu.append(rename, remove); wrapper.append(button, more); ui.sessionTabs.append(wrapper); document.body.append(menu);
+    menu.append(rename, duplicate, remove); wrapper.append(button, more); ui.sessionTabs.append(wrapper); document.body.append(menu);
   }
   return sessions;
 }
@@ -1111,6 +1135,7 @@ function fileIcon(name) {
   if (["png", "jpg", "jpeg", "gif", "webp", "bmp", "svg"].includes(ext)) return "◫";
   if (["md", "markdown"].includes(ext)) return "M";
   if (["xml", "json", "yaml", "yml"].includes(ext)) return "<>";
+  if (["zip", "7z", "rar", "tar", "gz", "bz2", "xz", "tgz", "wim", "jar", "war"].includes(ext)) return "▤";
   return "·";
 }
 
@@ -1288,6 +1313,114 @@ ui.tree.addEventListener("contextmenu", event => {
   event.preventDefault(); openFileMenu({path: "workspace", name: "workspace", type: "directory"}, event.clientX, event.clientY);
 });
 
+// ---------- 文件树多选（Ctrl 点选 / Shift 连选） ----------
+const treeSelection = new Set();
+let treeSelAnchor = null;
+let treeSelBar = null;
+
+function visibleTreeFiles() {
+  // 可见（未折叠）文件按钮，按 DOM 顺序
+  return [...ui.tree.querySelectorAll(".tree-file")]
+    .filter(b => !b.closest("details:not([open])"));
+}
+
+function applyTreeSelection() {
+  const present = new Set();
+  for (const b of ui.tree.querySelectorAll(".tree-file")) {
+    const on = treeSelection.has(b.dataset.path);
+    b.closest(".tree-file-row")?.classList.toggle("selected", on);
+    if (on) present.add(b.dataset.path);
+  }
+  //  prune 已不存在的路径
+  for (const p of [...treeSelection]) if (!present.has(p)) treeSelection.delete(p);
+  renderTreeSelBar();
+}
+
+function renderTreeSelBar() {
+  if (!treeSelection.size) {
+    treeSelBar?.remove(); treeSelBar = null;
+    return;
+  }
+  if (!treeSelBar) {
+    treeSelBar = document.createElement("div");
+    treeSelBar.className = "tree-sel-bar";
+    const count = document.createElement("span");
+    count.className = "sel-count";
+    const attachBtn = document.createElement("button");
+    attachBtn.type = "button"; attachBtn.dataset.act = "attach";
+    const delBtn = document.createElement("button");
+    delBtn.type = "button"; delBtn.className = "danger"; delBtn.dataset.act = "delete";
+    const clearBtn = document.createElement("button");
+    clearBtn.type = "button"; clearBtn.dataset.act = "clear";
+    treeSelBar.append(count, attachBtn, delBtn, clearBtn);
+    treeSelBar.addEventListener("click", event => {
+      const act = event.target.closest("button")?.dataset.act;
+      if (act === "attach") attachSelectedFiles().catch(e => setStatus(e.message));
+      else if (act === "delete") deleteSelectedFiles().catch(e => setStatus(e.message));
+      else if (act === "clear") clearTreeSelection();
+    });
+    ui.tree.parentElement.insertBefore(treeSelBar, ui.tree);
+  }
+  treeSelBar.querySelector(".sel-count").textContent = t("tree.selCount", {count: treeSelection.size});
+  treeSelBar.querySelector('[data-act="attach"]').textContent = t("tree.attachSel");
+  treeSelBar.querySelector('[data-act="delete"]').textContent = t("tree.deleteSel");
+  treeSelBar.querySelector('[data-act="clear"]').textContent = t("tree.selClear");
+}
+
+function toggleTreeSelect(path) {
+  if (treeSelection.has(path)) treeSelection.delete(path);
+  else treeSelection.add(path);
+  treeSelAnchor = path;
+  applyTreeSelection();
+}
+
+function selectTreeRange(path) {
+  const files = visibleTreeFiles().map(b => b.dataset.path);
+  const anchorIdx = treeSelAnchor ? files.indexOf(treeSelAnchor) : -1;
+  const targetIdx = files.indexOf(path);
+  if (anchorIdx < 0 || targetIdx < 0) { toggleTreeSelect(path); return; }
+  const [a, b] = anchorIdx < targetIdx ? [anchorIdx, targetIdx] : [targetIdx, anchorIdx];
+  treeSelection.clear();
+  for (let i = a; i <= b; i++) treeSelection.add(files[i]);
+  applyTreeSelection();
+}
+
+function clearTreeSelection() {
+  treeSelection.clear(); treeSelAnchor = null;
+  applyTreeSelection();
+}
+
+async function attachSelectedFiles() {
+  const paths = [...treeSelection];
+  clearTreeSelection();
+  for (const p of paths) await attachWorkspacePath(p);
+}
+
+async function deleteSelectedFiles() {
+  const paths = [...treeSelection];
+  if (!paths.length) return;
+  if (!confirm(t("file.deleteConfirmMulti", {count: paths.length}))) return;
+  let lastError = null, done = 0;
+  for (const p of paths) {
+    try {
+      await api(`/v1/sessions/${sessionId}/workspace/entries?path=${encodeURIComponent(p)}`, {method: "DELETE"});
+      treeSelection.delete(p); done++;
+      if (selectedFile === p) { selectedFile = null; clearPreview(); }
+      if (fileClipboard?.path === p || fileClipboard?.path.startsWith(`${p}/`)) fileClipboard = null;
+    } catch (error) { lastError = error; }
+  }
+  clearTreeSelection();
+  await refreshTree();
+  if (lastError) setStatus(lastError.message);
+  else setStatus(t("file.deletedMulti", {count: done}), true);
+}
+
+document.addEventListener("keydown", event => {
+  if (event.key === "Escape" && treeSelection.size) clearTreeSelection();
+});
+
+// ---------- 多选结束 ----------
+
 function bindTreeEntry(element, node, {dropDirectory = false} = {}) {
   const root = isWorkspaceRoot(node.path);
   element.dataset.path = node.path;
@@ -1382,16 +1515,22 @@ function renderTreeNodes(nodes, parent) {
       button.append(icon, name);
       bindTreeEntry(button, node);
       if (fileClipboard?.operation === "move" && fileClipboard.path === node.path) button.classList.add("clipboard-cut");
-      button.addEventListener("click", () => previewFile(node.path, button));
-      button.addEventListener("dblclick", event => {
-        event.preventDefault();
-        // HTML 双击 = 新标签页整页渲染（相对路径图片由 raw 端点解析）
-        if (node.name.toLowerCase().endsWith(".html")) {
-          window.open(
-            `/v1/sessions/${sessionId}/workspace/files/raw/${node.path}`,
-            "_blank", "noopener");
+      button.addEventListener("click", event => {
+        if (event.ctrlKey || event.metaKey) {
+          event.preventDefault();
+          toggleTreeSelect(node.path);
           return;
         }
+        if (event.shiftKey) {
+          event.preventDefault(); // 阻止文本选中
+          selectTreeRange(node.path);
+          return;
+        }
+        if (treeSelection.size) clearTreeSelection();
+        previewFile(node.path, button);
+      });
+      button.addEventListener("dblclick", event => {
+        event.preventDefault();
         toggleWorkspaceAttachment(node.path, attach);
       });
       const attach = document.createElement("button");
@@ -1461,6 +1600,7 @@ async function refreshTree(targetSessionId = sessionId) {
   }
   ui.tree.scrollTop = scrollTop;
   updateWorkspaceAttachButtons();
+  applyTreeSelection();
 }
 
 function escapeHtml(text) {
@@ -1614,6 +1754,8 @@ function resetPreviewViews() {
   ui.csvView.classList.add("hidden");
   ui.codeView.classList.add("hidden");
   ui.resourceEditor.classList.add("hidden");
+  // 清掉上一轮动态插入的截断提示条（class=preview-note 且非页面内置）
+  document.querySelectorAll(".canvas > .preview-note[data-trunc]").forEach(n => n.remove());
 }
 
 // 预览策略：可预览的文本/文档后缀；二进制一律不进预览（防炸页面）
@@ -1626,16 +1768,32 @@ const BINARY_EXTS = new Set([
   "db", "sqlite", "sqlite3", "pyc", "class", "wasm",
 ]);
 const PREVIEW_MAX_BYTES = 2 * 1024 * 1024;  // 预览文本上限 2MB，超出提示下载
+const PREVIEW_HLJS_MAX_CHARS = 120 * 1024;  // 语法高亮上限 120K 字符，超出用纯文本（高亮大文件会卡死）
+const PREVIEW_DOM_MAX_CHARS = 400 * 1024;   // 进 DOM 上限 400K 字符，超出截断提示（防长单行撑爆渲染）
+const PREVIEW_MD_MAX_CHARS = 400 * 1024;    // markdown 渲染上限，超出截断
 
 function previewBinary(ext) { return BINARY_EXTS.has(ext); }
 
 function hljsHighlight(text, ext) {
   const code = ui.codeView;
-  if (window.hljs) {
+  let truncated = false;
+  if (text.length > PREVIEW_DOM_MAX_CHARS) {
+    text = text.slice(0, PREVIEW_DOM_MAX_CHARS);
+    truncated = true;
+  }
+  if (window.hljs && text.length <= PREVIEW_HLJS_MAX_CHARS) {
     const language = hljs.getLanguage(ext) ? ext : undefined;
     code.innerHTML = hljs.highlight(text, {language}).value;
   } else {
     code.textContent = text;
+  }
+  if (truncated) {
+    const note = document.createElement("p");
+    note.className = "preview-note";
+    note.style.marginTop = "10px";
+    note.dataset.trunc = "1";
+    note.textContent = t("preview.domTruncated");
+    code.parentElement.insertBefore(note, code.nextSibling);
   }
 }
 
@@ -1688,6 +1846,7 @@ async function previewFile(path, button) {
           })
           .catch(() => resolve(0));
       });
+      // 探测失败（size=0）也照常走预览，但下面有 DOM 层截断兜底，不会卡死
       if (size > PREVIEW_MAX_BYTES) {
         ui.codeView.textContent = t("preview.tooLarge", {
           size: (size / 1024 / 1024).toFixed(1),
@@ -1700,24 +1859,20 @@ async function previewFile(path, button) {
       if (!response.ok) throw new Error(t("error.readFailed", {status: response.status}));
       const text = await response.text();
       if (["md", "markdown"].includes(ext)) {
-        ui.markdownView.innerHTML = renderMarkdown(text);
+        const sliced = text.length > PREVIEW_MD_MAX_CHARS
+          ? text.slice(0, PREVIEW_MD_MAX_CHARS) : text;
+        ui.markdownView.innerHTML = renderMarkdown(sliced);
+        if (sliced.length < text.length) {
+          const note = document.createElement("p");
+          note.className = "preview-note";
+          note.style.marginTop = "10px";
+          note.textContent = t("preview.domTruncated");
+          ui.markdownView.parentElement.insertBefore(note, ui.markdownView.nextSibling);
+        }
         ui.markdownView.classList.remove("hidden");
       } else if (ext === "csv") {
         renderCsvPreview(text);
         ui.csvView.classList.remove("hidden");
-      } else if (ext === "html" || ext === "htm") {
-        // HTML：源码高亮 + 顶部提示条（双击/按钮可在新标签页整页渲染）
-        ui.codeView.textContent = text;
-        ui.codeView.classList.remove("hidden");
-        const banner = document.createElement("p");
-        banner.className = "preview-note";
-        const link = document.createElement("a");
-        link.href = `/v1/sessions/${sessionId}/workspace/files/raw/${path}`;
-        link.target = "_blank";
-        link.rel = "noopener";
-        link.textContent = t("preview.openHtml");
-        banner.append(link);
-        ui.codeView.parentElement.insertBefore(banner, ui.codeView);
       } else {
         hljsHighlight(text, ext);
         ui.codeView.classList.remove("hidden");
@@ -2428,6 +2583,28 @@ ui.contextMenuClear.addEventListener("click", async () => {
     renderContextStats(stats);
     addMessage(t("context.clearedMessage"), "progress");
     setStatus(t("context.cleared"), true);
+  } catch (error) {
+    setStatus(error.message);
+  } finally {
+    ui.compactContext.disabled = Boolean(activeRunId);
+  }
+});
+
+ui.contextMenuClearChat.addEventListener("click", async () => {
+  closeContextMenu();
+  if (!sessionId || activeRunId) return;
+  if (!confirm(t("context.clearChatConfirm"))) return;
+  const targetSessionId = sessionId;
+  ui.compactContext.disabled = true;
+  setStatus(t("context.clearChatClearing"));
+  try {
+    await api(`/v1/sessions/${targetSessionId}/chat/clear`, {method: "POST"});
+    if (targetSessionId !== sessionId) return;
+    ui.messages.replaceChildren();
+    renderContextStats({used: 0, limit: contextLimit, exact: false, ratio: 0});
+    addMessage(t("context.clearChatDone"), "progress");
+    setStatus(t("context.clearChatDoneStatus"), true);
+    await refreshTree();
   } catch (error) {
     setStatus(error.message);
   } finally {

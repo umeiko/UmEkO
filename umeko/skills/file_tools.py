@@ -293,6 +293,144 @@ class ImageQueue(Protocol):
     def add(self, path: str) -> str: ...
 
 
+# ---------------- 7z 压缩包工具 ----------------
+
+_ARCHIVE_SUFFIXES = {".zip", ".7z", ".rar", ".tar", ".gz", ".bz2", ".xz", ".tgz", ".wim"}
+
+
+def _seven_zip_binary() -> Path:
+    import os
+
+    seven_zip = Path(os.environ.get("SEVENZIP_PATH", r"C:\Program Files\7-Zip\7z.exe"))
+    if not seven_zip.is_file():
+        raise ValueError(
+            "未找到 7-Zip（默认路径 C:\\Program Files\\7-Zip\\7z.exe），"
+            "请安装或用环境变量 SEVENZIP_PATH 指定 7z.exe 位置。"
+        )
+    return seven_zip
+
+
+def _run_7z(args: list[str], timeout: int = 300) -> str:
+    """执行 7z 命令并返回 stdout；非零退出码抛 ValueError。"""
+    import subprocess
+
+    try:
+        result = subprocess.run(
+            [str(_seven_zip_binary()), *args],
+            capture_output=True, text=True, timeout=timeout, encoding="utf-8", errors="replace",
+            creationflags=getattr(subprocess, "CREATE_NO_WINDOW", 0),
+        )
+    except subprocess.TimeoutExpired as exc:
+        raise ValueError(f"7z 操作超时（{timeout}s），已中止。") from exc
+    if result.returncode != 0:
+        detail = (result.stderr or result.stdout or "").strip().splitlines()
+        raise ValueError("7z 失败：" + (detail[-1] if detail else f"退出码 {result.returncode}"))
+    return result.stdout or ""
+
+
+def archive_tool(
+    operation: str,
+    path: str,
+    root: Path | None = None,
+    readable_roots: Iterable[Path] | None = None,
+    display_root: Path | None = None,
+    output_dir: Path | None = None,
+    should_cancel: CancelCheck = None,
+) -> str:
+    """压缩包三合一工具（7z 后端）：list 看包内文件树 / extract 解压 / create 压缩。
+
+    安全边界：读侧路径须在可读根内；解压/压缩目标限定在 Session 目录内；
+    解压后逐条目校验无路径穿越；输出按估算 token 截断。
+    """
+    raise_if_cancelled(should_cancel)
+    op = (operation or "").strip().lower()
+    if op not in ("list", "extract", "create"):
+        return "错误：operation 只支持 list（看包内文件树）/ extract（解压）/ create（压缩）。"
+    # 解析源路径（list/extract 读压缩包；create 读文件或目录）
+    src = Path(path)
+    try:
+        if src.is_absolute():
+            resolved = resolve_readable_path(path, root, readable_roots)
+        else:
+            resolved = (display_root / src).resolve() if display_root is not None else src.resolve()
+    except ValueError as e:
+        return f"错误：{e}"
+    if not resolved.exists():
+        return f"错误：路径不存在：{path}"
+
+    import shutil
+
+    try:
+        if op == "list":
+            if resolved.suffix.lower() not in _ARCHIVE_SUFFIXES:
+                return f"错误：不是支持的压缩包格式（{resolved.name}）。支持：{'、'.join(sorted(_ARCHIVE_SUFFIXES))}"
+            out = _run_7z(["l", "-ba", str(resolved)], timeout=120)
+            lines = out.splitlines()
+            head = "\n".join(lines[:_MAX_LIST_ENTRIES * 2])  # l 输出每条约2行
+            if len(lines) > _MAX_LIST_ENTRIES * 2:
+                head += f"\n…（共 {len(lines)} 行输出，已截断；可用更小的包或分卷查看）"
+            return f"{resolved.name} 包内清单：\n{head}"
+
+        if op == "extract":
+            if resolved.suffix.lower() not in _ARCHIVE_SUFFIXES:
+                return f"错误：不是支持的压缩包格式（{resolved.name}）。支持：{'、'.join(sorted(_ARCHIVE_SUFFIXES))}"
+            # 与界面「解压到此处」一致：解压到压缩包同级目录（workspace/x.zip → workspace/x/）
+            base = resolved.parent
+            target = base / f"{resolved.stem}"
+            counter = 1
+            while target.exists():
+                target = base / f"{resolved.stem}_{counter}"
+                counter += 1
+            target.mkdir(parents=True)
+            try:
+                _run_7z(["x", "-y", f"-o{target}", str(resolved)])
+            except ValueError:
+                shutil.rmtree(target, ignore_errors=True)
+                raise
+            # 单根包裹提升（WZ.zip → WZ/WZ/* 提升一层）
+            top = list(target.iterdir())
+            if len(top) == 1 and top[0].is_dir():
+                wrapper = top[0]
+                for item in wrapper.iterdir():
+                    shutil.move(str(item), str(target / item.name))
+                wrapper.rmdir()
+            # 路径穿越校验：产物必须都在目标目录内
+            for p in target.rglob("*"):
+                try:
+                    p.resolve().relative_to(base.resolve())
+                except ValueError:
+                    shutil.rmtree(target, ignore_errors=True)
+                    return "错误：压缩包内含越界路径，已中止并清理。"
+            n_files = sum(1 for p in target.rglob("*") if p.is_file())
+            if display_root is not None and display_root in target.parents:
+                rel = target.relative_to(display_root).as_posix()
+            else:
+                rel = str(target)
+            return f"已解压 {resolved.name} → {rel}（{n_files} 个文件）。下一步可用 list_dir 查看结构。"
+
+        # create
+        if output_dir is None:
+            return "错误：当前环境不支持创建压缩包（无写入边界）。"
+        if resolved.is_dir():
+            default_name = f"{resolved.name}.zip"
+        else:
+            default_name = f"{resolved.stem}.zip"
+        dest = output_dir / default_name
+        counter = 1
+        while dest.exists():
+            dest = output_dir / f"{resolved.stem}_{counter}.zip"
+            counter += 1
+        try:
+            _run_7z(["a", "-tzip", str(dest), str(resolved)])
+        except ValueError:
+            dest.unlink(missing_ok=True)
+            raise
+        rel = f"generate/{dest.relative_to(output_dir).as_posix()}" if output_dir in dest.parents else str(dest)
+        return f"已压缩 → {rel}（{dest.stat().st_size} 字节）。"
+    except ValueError as e:
+        return f"错误：{e}"
+
+
 class CommandRunner(Protocol):
     """run_command 工具的执行后端（由界面层注入，见 chat_cli）。
 
@@ -855,6 +993,44 @@ def build_file_tools(
                 ),
             )
         )
+    # 压缩包三合一（7z 后端）：主/子 Agent 均可用，不依赖 run_command
+    skills.append(
+        Skill(
+            name="archive_tool",
+            description=(
+                "压缩包工具（7-Zip 后端），三个操作："
+                "list=查看压缩包内文件清单（不解压）；"
+                "extract=把压缩包解压到 workspace 下的同名目录（自动防路径穿越，"
+                "单根包裹自动提升一层）；"
+                "create=把文件或目录压缩为 zip 放到 generate/。"
+                "支持 zip/7z/rar/tar/gz/bz2/xz/tgz。"
+                "收到压缩包（如上传的 zip/7z）时：先 list 看结构，再 extract 解压后处理。"
+            ),
+            parameters={
+                "type": "object",
+                "properties": {
+                    "operation": {
+                        "type": "string",
+                        "enum": ["list", "extract", "create"],
+                        "description": "list=看包内文件树；extract=解压；create=压缩为 zip",
+                    },
+                    "path": {
+                        "type": "string",
+                        "description": "压缩包路径（list/extract）或要压缩的文件/目录路径（create），Session 相对路径如 workspace/a.zip",
+                    },
+                },
+                "required": ["operation", "path"],
+            },
+            handler=partial(
+                archive_tool,
+                root=readable_root, readable_roots=readable_roots,
+                display_root=readable_root,
+                output_dir=writable_root,
+                should_cancel=should_cancel,
+            ),
+        )
+    )
+
     # 技能包附属文件按需读取（渐进式播种：会话只有主 md，附属内容即时读服务器库）
     skills.append(
         Skill(

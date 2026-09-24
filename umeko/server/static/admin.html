@@ -472,7 +472,7 @@ function renderPackList() {
       sub.append(stale);
     }
     const files = document.createElement("span");
-    files.textContent = `${pack.scripts.length} 脚本`;
+    files.textContent = `${pack.scripts.length} 脚本` + (pack.members?.length ? ` · ${pack.members.length} 成员` : "");
     sub.append(files);
     item.append(name, sub);
     item.addEventListener("click", () => selectPack(pack.name));
@@ -593,9 +593,10 @@ function renderPackTree() {
     tree.append(empty);
     return;
   }
-  if (pack.md) tree.append(skFileNode(pack, "md", pack.md));
-  for (const sc of pack.scripts) tree.append(skFileNode(pack, "script", sc.name));
-  if (!pack.md && !pack.scripts.length) {
+  if (pack.md) tree.append(skFileNode(pack, "md", pack.md, {mtime: pack.md_mtime}));
+  for (const sc of pack.scripts) tree.append(skFileNode(pack, "script", sc.name, sc));
+  for (const m of (pack.members || [])) tree.append(skFileNode(pack, "member", m.name, m));
+  if (!pack.md && !pack.scripts.length && !(pack.members || []).length) {
     const empty = document.createElement("p");
     empty.className = "tree-empty";
     empty.textContent = "（空）点 ＋py 或拖入文件。";
@@ -603,7 +604,14 @@ function renderPackTree() {
   }
 }
 
-function skFileNode(pack, kind, name) {
+function fmtMtime(ts) {
+  if (!ts) return "";
+  const d = new Date(ts * 1000);
+  const p = n => String(n).padStart(2, "0");
+  return `${d.getFullYear()}-${p(d.getMonth() + 1)}-${p(d.getDate())} ${p(d.getHours())}:${p(d.getMinutes())}`;
+}
+
+function skFileNode(pack, kind, name, info) {
   const btn = document.createElement("button");
   btn.className = "tree-file";
   btn.type = "button";
@@ -613,7 +621,14 @@ function skFileNode(pack, kind, name) {
   const label = document.createElement("span");
   label.className = "file-name";
   label.textContent = name;
+  if (kind === "md") label.style.fontWeight = "700";
   btn.append(icon, label);
+  if (info?.mtime) {
+    const meta = document.createElement("span");
+    meta.style.cssText = "color:var(--muted);font-size:10px;margin-left:auto;flex-shrink:0";
+    meta.textContent = fmtMtime(info.mtime);
+    btn.append(meta);
+  }
   btn.addEventListener("click", () => openSkillFile(pack, kind, name, btn));
   btn.addEventListener("contextmenu", e => {
     e.preventDefault(); e.stopPropagation();
@@ -645,15 +660,18 @@ async function uploadIntoPack(files, packName) {
   for (const file of files) {
     const content = await file.text();
     try {
-      if (file.name.endsWith(".md")) {
+      if (file.name.endsWith(".py")) {
+        await api("PUT", `/admin/v1/skill-scripts/${encodeURIComponent(packName)}/${encodeURIComponent(file.name)}`, {content});
+        toast(`已上传 ${packName}/${file.name}`);
+      } else if (file.name === `${packName}.md`) {
         await api("PUT", `/admin/v1/skill-source/${encodeURIComponent(file.name)}`, {content});
         await api("PUT", `/admin/v1/default-skills/${encodeURIComponent(file.name)}`, {content});
         toast(`已更新 ${file.name}`);
-      } else if (file.name.endsWith(".py")) {
-        await api("PUT", `/admin/v1/skill-scripts/${encodeURIComponent(packName)}/${encodeURIComponent(file.name)}`, {content});
-        toast(`已上传 ${packName}/${file.name}`);
+      } else if (/\.(md|markdown|json|ya?ml|txt|csv)$/i.test(file.name)) {
+        await api("PUT", `/admin/v1/skill-members/${encodeURIComponent(packName)}/${encodeURIComponent(file.name)}`, {content});
+        toast(`已上传成员 ${packName}/${file.name}`);
       } else {
-        toast(`跳过 ${file.name}（仅 .md / .py）`, true);
+        toast(`跳过 ${file.name}（支持 .py / .md / .json / .yaml / .txt / .csv）`, true);
       }
     } catch (e) { toast(`${file.name}: ${e.message}`, true); }
   }
@@ -677,6 +695,8 @@ function openFileMenu(pack, file, x, y) {
     try {
       if (file.kind === "md") {
         await api("DELETE", `/admin/v1/skill-source/${encodeURIComponent(file.name)}`);
+      } else if (file.kind === "member") {
+        await api("DELETE", `/admin/v1/skill-members/${encodeURIComponent(pack.name)}/${encodeURIComponent(file.name)}`);
       } else {
         await api("DELETE", `/admin/v1/skill-scripts/${encodeURIComponent(pack.name)}/${encodeURIComponent(file.name)}`);
       }
@@ -716,6 +736,11 @@ async function openSkillFile(pack, kind, name, btn) {
       ? "源文件与下发拷贝不一致（保存可同步）"
       : (p?.imported ? (p?.enabled ? "该 Skill 下发中" : "该 Skill 已停用") : "未导入下发");
     $("sk-state-tag").textContent = "Markdown · 提示词";
+  } else if (kind === "member") {
+    const item = await api("GET", `/admin/v1/skill-scripts/${encodeURIComponent(pack.name)}/${encodeURIComponent(name)}`);
+    content = item.content;
+    $("sk-sub").textContent = `${pack.name} 包成员文件 · 由 read_pack_file 按需读取（运行时即时生效）`;
+    $("sk-state-tag").textContent = "成员文件";
   } else {
     const item = await api("GET", `/admin/v1/skill-scripts/${encodeURIComponent(pack.name)}/${encodeURIComponent(name)}`);
     content = item.content;
@@ -725,13 +750,19 @@ async function openSkillFile(pack, kind, name, btn) {
   setSkillEditorContent(content);
 }
 
+function skEditorLang() {
+  if (skSelected?.kind === "script") return "python";
+  const ext = (skSelected?.name || "").split(".").pop().toLowerCase();
+  return ({md: "markdown", markdown: "markdown", json: "json", yaml: "yaml", yml: "yaml"})[ext] || "plaintext";
+}
+
 function setSkillEditorContent(text) {
   const editor = $("sk-content");
   const codeEl = $("sk-code-el");
   editor.value = text;
   editor.readOnly = skPreviewMode;
   editor.scrollTop = 0;
-  const lang = skSelected?.kind === "script" ? "python" : "markdown";
+  const lang = skEditorLang();
   if (window.hljs) codeEl.innerHTML = hljs.highlight(text, {language: lang}).value;
   else codeEl.textContent = text;
   codeEl.append(document.createTextNode("\n"));  // inline 化后末尾换行不占高，补一行对齐 textarea
@@ -756,7 +787,7 @@ document.addEventListener("DOMContentLoaded", () => {
   if (!editor || !codeEl) return;
   syncOverlayMetrics();
   editor.addEventListener("input", () => {
-    const lang = skSelected?.kind === "script" ? "python" : "markdown";
+    const lang = skEditorLang();
     if (window.hljs) codeEl.innerHTML = hljs.highlight(editor.value, {language: lang}).value;
     else codeEl.textContent = editor.value;
     codeEl.append(document.createTextNode("\n"));
@@ -785,6 +816,11 @@ async function saveSkillFile() {
       await api("PUT", `/admin/v1/default-skills/${encodeURIComponent(skSelected.name)}`, {content});
       await api("PUT", `/admin/v1/skill-source/${encodeURIComponent(skSelected.name)}`, {content});
       toast("已保存（下发拷贝与源文件同步更新）");
+    } catch (e) { toast(e.message, true); }
+  } else if (skSelected.kind === "member") {
+    try {
+      await api("PUT", `/admin/v1/skill-members/${encodeURIComponent(skSelected.pack)}/${encodeURIComponent(skSelected.name)}`, {content});
+      toast("已保存成员文件（Agent 下次 read_pack_file 即读到新版）");
     } catch (e) { toast(e.message, true); }
   } else {
     try {

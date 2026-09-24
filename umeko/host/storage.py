@@ -698,6 +698,41 @@ class Store:
         if not result.rowcount:
             raise KeyError(session_id)
 
+    def clone_session(self, source_id: str, new_id: str, user_id: str, title: str) -> None:
+        """复制会话记录：messages（尊重 context_cutoff）、context_summary、session_files 映射、资源挂载。"""
+        now = _now()
+        with self.connect() as db:
+            src = db.execute(
+                "SELECT id FROM agent_sessions WHERE id=? AND user_id=?", (source_id, user_id)
+            ).fetchone()
+            if src is None:
+                raise KeyError(source_id)
+            db.execute(
+                "INSERT INTO agent_sessions(id,user_id,title,created_at,updated_at) VALUES(?,?,?,?,?)",
+                (new_id, user_id, title, now, now),
+            )
+            db.execute(
+                "INSERT INTO messages(session_id,role,content,attachments,created_at) "
+                "SELECT ?,role,content,attachments,created_at FROM messages "
+                "WHERE session_id=? AND id>(SELECT COALESCE(context_cutoff_id,0) FROM agent_sessions WHERE id=?)",
+                (new_id, source_id, source_id),
+            )
+            db.execute(
+                "UPDATE agent_sessions SET context_summary="
+                "(SELECT context_summary FROM agent_sessions WHERE id=?) WHERE id=?",
+                (source_id, new_id),
+            )
+            db.execute(
+                "INSERT INTO session_files(file_id,session_id,path,created_at) "
+                "SELECT 'file_'||lower(hex(randomblob(16))),?,path,created_at FROM session_files WHERE session_id=?",
+                (new_id, source_id),
+            )
+            db.execute(
+                "INSERT INTO resource_mounts(session_id,kind,name,created_at) "
+                "SELECT ?,kind,name,created_at FROM resource_mounts WHERE session_id=?",
+                (new_id, source_id),
+            )
+
     def delete_session(self, session_id: str, user_id: str):
         with self.connect() as db:
             result = db.execute("DELETE FROM agent_sessions WHERE id=? AND user_id=?", (session_id, user_id))
@@ -850,6 +885,17 @@ class Store:
                 "updated_at=? WHERE id=?",
                 (session_id, _now(), session_id),
             )
+
+    def clear_chat(self, session_id: str) -> int:
+        """删除全部消息记录与工具事件并重置上下文（等价于干净副本）。返回删除消息数。"""
+        with self.connect() as db:
+            cur = db.execute("DELETE FROM messages WHERE session_id=?", (session_id,))
+            db.execute("DELETE FROM tool_events WHERE session_id=?", (session_id,))
+            db.execute(
+                "UPDATE agent_sessions SET context_summary=NULL,context_cutoff_id=0,updated_at=? WHERE id=?",
+                (_now(), session_id),
+            )
+            return cur.rowcount
 
     def resource_mounts(self, session_id: str) -> dict[str, set[str]]:
         with self.connect() as db:

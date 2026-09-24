@@ -13,13 +13,23 @@
 本脚本：qc-report.json → qc-report.html（与被检 Markdown 同目录）
 args: {"data_path": "<qc-report.json 的 Session 相对路径>",
        "doc_dir": "<被检 Markdown 所在的 Session 相对目录>"}
+
+人类可读性要点：
+- 逐项 checks[] 渲染：每个检查项独立徽章按自身 PASS/WARN/FAIL 着色（不做文本猜测）
+- 逐图 × 检查项 verdict 矩阵总览
+- 缩略图点击放大（lightbox）
+- meta 容错：checked_at 缺失/异常显示"未记录"；vision_model 为工具名时显示"未记录"；
+  footer 生成时间取脚本本地运行时刻
 """
 
 from __future__ import annotations
 
+import datetime
 import html
 import json
+import re
 import sys
+import zipfile
 from pathlib import Path
 
 
@@ -68,7 +78,18 @@ _TEMPLATE = """<!DOCTYPE html>
     border-radius: 10px; margin-top: 2px; }}
   .sev.high {{ color: var(--fail); background: var(--fail-bg); }}
   .sev.mid {{ color: var(--warn); background: var(--warn-bg); }}
-  .sev.low {{ color: var(--accent-dark); background: var(--pass-bg); }}
+  table.matrix {{ width: 100%; border-collapse: collapse; background: var(--panel);
+    border: 1px solid var(--line); border-radius: 10px; overflow: hidden; font-size: 12.5px; }}
+  table.matrix th, table.matrix td {{ border: 1px solid var(--line); padding: 7px 10px;
+    text-align: center; }}
+  table.matrix th {{ background: #efece2; font-weight: 600; }}
+  table.matrix td.img {{ text-align: left; font: 600 12px ui-monospace, monospace; }}
+  .cell {{ display: inline-block; min-width: 34px; padding: 1px 6px; border-radius: 8px;
+    font-size: 11px; font-weight: 700; }}
+  .cell.PASS {{ color: var(--pass); background: var(--pass-bg); }}
+  .cell.WARN {{ color: var(--warn); background: var(--warn-bg); }}
+  .cell.FAIL {{ color: var(--fail); background: var(--fail-bg); }}
+  .cell.NA {{ color: var(--muted); background: #f0ede4; }}
   .item {{ background: var(--panel); border: 1px solid var(--line); border-radius: 12px;
     padding: 16px 18px; margin-bottom: 14px; }}
   .item-head {{ display: flex; align-items: center; gap: 10px; flex-wrap: wrap; }}
@@ -78,24 +99,62 @@ _TEMPLATE = """<!DOCTYPE html>
   .badge.PASS {{ color: var(--pass); background: var(--pass-bg); border: 1px solid #087f6833; }}
   .badge.WARN {{ color: var(--warn); background: var(--warn-bg); border: 1px solid #b8860b33; }}
   .badge.FAIL {{ color: var(--fail); background: var(--fail-bg); border: 1px solid #b3402a33; }}
-  .badge.MISSING, .badge.ERROR, .badge.SKIP {{ color: var(--muted); background: #f0ede4;
+  .badge.MISSING, .badge.ERROR, .badge.SKIP, .badge.NA {{ color: var(--muted); background: #f0ede4;
     border: 1px solid var(--line); }}
-  .item-body {{ display: grid; grid-template-columns: 220px 1fr; gap: 16px; margin-top: 12px; }}
+  .item-body {{ display: grid; grid-template-columns: 240px 1fr; gap: 16px; margin-top: 12px; }}
   @media (max-width: 720px) {{ .item-body {{ grid-template-columns: 1fr; }} }}
-  .thumb {{ width: 220px; border: 1px solid var(--line); border-radius: 8px;
+  .thumb {{ width: 240px; border: 1px solid var(--line); border-radius: 8px;
     background: #fff; padding: 6px; align-self: start; }}
-  .thumb img {{ width: 100%; height: auto; border-radius: 4px; display: block; }}
+  .thumb img {{ width: 100%; height: auto; border-radius: 4px; display: block; cursor: zoom-in; }}
   .thumb .noimg {{ color: var(--muted); font-size: 12px; text-align: center; padding: 28px 8px; }}
   .checks {{ display: grid; gap: 8px; align-content: start; }}
-  .check {{ display: grid; grid-template-columns: 76px 1fr; gap: 8px; font-size: 13px; }}
-  .check .k {{ color: var(--muted); }}
-  .check .v.ok {{ color: var(--ink); }}
+  .check {{ display: grid; grid-template-columns: auto 1fr; gap: 10px; font-size: 13px;
+    align-items: start; }}
+  .check .v {{ color: var(--ink); }}
   .check .v.bad {{ color: var(--fail); font-weight: 600; }}
+  .check .v.warn {{ color: var(--warn); font-weight: 600; }}
+  .cbadge {{ flex: none; font-size: 10.5px; font-weight: 700; padding: 1px 7px; border-radius: 8px;
+    margin-top: 2px; white-space: nowrap; }}
+  .cbadge.PASS {{ color: var(--pass); background: var(--pass-bg); }}
+  .cbadge.WARN {{ color: var(--warn); background: var(--warn-bg); }}
+  .cbadge.FAIL {{ color: var(--fail); background: var(--fail-bg); }}
+  .cbadge.NA {{ color: var(--muted); background: #f0ede4; }}
   .detail {{ margin-top: 4px; padding: 8px 12px; background: #f8f5ec; border-radius: 6px;
     font-size: 12.5px; color: #4a5a52; }}
   footer {{ margin-top: 34px; padding-top: 14px; border-top: 1px solid var(--line);
     color: var(--muted); font-size: 11.5px; display: flex; justify-content: space-between;
     flex-wrap: wrap; gap: 6px; }}
+  /* 筛选条 */
+  .filters {{ position: sticky; top: 0; z-index: 20; display: flex; flex-wrap: wrap; gap: 10px;
+    align-items: center; padding: 10px 14px; margin-bottom: 18px;
+    background: var(--panel); border: 1px solid var(--line); border-radius: 10px;
+    box-shadow: 0 4px 14px #26322e10; }}
+  .filters .fgroup {{ display: flex; align-items: center; gap: 4px; }}
+  .filters .flabel {{ font-size: 12px; color: var(--muted); margin-right: 2px; }}
+  .fbtn {{ border: 1px solid var(--line); background: #fff; color: var(--ink);
+    font: 600 12px/1 inherit; padding: 5px 12px; border-radius: 14px; cursor: pointer;
+    transition: all .12s ease; }}
+  .fbtn:hover {{ border-color: var(--accent); color: var(--accent-dark); }}
+  .fbtn.on {{ background: var(--accent); border-color: var(--accent); color: #fff; }}
+  .fbtn .cnt {{ font-weight: 400; opacity: .75; margin-left: 3px; font-size: 11px; }}
+  .filters .spacer {{ flex: 1; }}
+  .filters select {{ border: 1px solid var(--line); background: #fff; color: var(--ink);
+    font: 12px inherit; padding: 5px 8px; border-radius: 8px; cursor: pointer; }}
+  #filter-count {{ font-size: 12px; color: var(--muted); }}
+  /* 建议清单折叠 */
+  details.actions-wrap {{ background: transparent; border: 0; margin-bottom: 26px; }}
+  details.actions-wrap > summary {{ list-style: none; cursor: pointer; font-size: 16px;
+    font-weight: 700; margin-bottom: 12px; padding-left: 10px; border-left: 3px solid var(--accent);
+    display: flex; align-items: center; gap: 8px; user-select: none; }}
+  details.actions-wrap > summary::-webkit-details-marker {{ display: none; }}
+  details.actions-wrap > summary .chev {{ transition: transform .15s ease; font-size: 12px; color: var(--muted); }}
+  details.actions-wrap[open] > summary .chev {{ transform: rotate(90deg); }}
+  details.actions-wrap > summary .n-badge {{ font: 700 11px/1 inherit; color: var(--fail);
+    background: var(--fail-bg); border-radius: 10px; padding: 3px 9px; }}
+  #lightbox {{ position: fixed; inset: 0; background: rgba(20,26,23,.82); display: none;
+    align-items: center; justify-content: center; z-index: 99; cursor: zoom-out; }}
+  #lightbox img {{ max-width: 94vw; max-height: 92vh; border-radius: 8px;
+    box-shadow: 0 8px 40px rgba(0,0,0,.4); background: #fff; }}
 </style>
 </head>
 <body>
@@ -110,18 +169,88 @@ _TEMPLATE = """<!DOCTYPE html>
     </div>
   </header>
   {stats_html}
+  {filters_html}
   {actions_html}
+  {matrix_html}
   {items_html}
+  <p id="no-match" hidden style="text-align:center;color:var(--muted);padding:40px 0;">当前筛选条件下没有图片。</p>
   <footer>
-    <span>UMEKO · doc-image-qc · 报告与源文档同级存放，图片为相对路径引用</span>
-    <span>生成于 {checked_at} · 详尽数据见 qc-report.json</span>
+    <span>UMEKO · doc-image-qc · 报告与源文档同级存放，图片为相对路径引用（点击缩略图放大）</span>
+    <span>报告生成于 {generated_at} · 详尽数据见 qc-report.json</span>
   </footer>
 </div>
+<div id="lightbox" onclick="this.style.display='none'"><img id="lightbox-img" alt="放大查看"></div>
+<script>
+(function() {{
+  // ---------- lightbox ----------
+  document.addEventListener('click', function(e) {{
+    var im = e.target.closest('.thumb img');
+    if (im) {{
+      document.getElementById('lightbox-img').src = im.src;
+      document.getElementById('lightbox').style.display = 'flex';
+    }}
+  }});
+  document.addEventListener('keydown', function(e) {{
+    if (e.key === 'Escape') document.getElementById('lightbox').style.display = 'none';
+  }});
+
+  // ---------- 筛选 ----------
+  var statusSel = 'all';           // all | PASS | WARN | FAIL | OTHER
+  var checkSel = 'all';            // all | <check_id>
+  var items = Array.prototype.slice.call(document.querySelectorAll('.item'));
+
+  function applyFilters() {{
+    var visible = 0;
+    items.forEach(function(el) {{
+      var okS = (statusSel === 'all') || (el.dataset.status === statusSel);
+      var okC = (checkSel === 'all') || (el.dataset.checks.split(' ').indexOf(checkSel) >= 0);
+      var show = okS && okC;
+      el.hidden = !show;
+      if (show) visible++;
+    }});
+    document.getElementById('no-match').hidden = visible > 0;
+    document.getElementById('filter-count').textContent = visible + ' / ' + items.length;
+    // 矩阵行同步隐藏（若有矩阵）
+    document.querySelectorAll('table.matrix tbody tr').forEach(function(tr) {{
+      var img = tr.getAttribute('data-img') || '';
+      var el = items.filter(function(x) {{ return x.dataset.img === img; }})[0];
+      tr.hidden = el ? el.hidden : false;
+    }});
+  }}
+
+  // 状态按钮组（单选语义；再点一次 = 回到全部）
+  document.querySelectorAll('.fbtn[data-st]').forEach(function(btn) {{
+    btn.addEventListener('click', function() {{
+      var v = btn.getAttribute('data-st');
+      statusSel = (statusSel === v) ? 'all' : v;
+      document.querySelectorAll('.fbtn[data-st]').forEach(function(b) {{
+        b.classList.toggle('on', b.getAttribute('data-st') === statusSel);
+      }});
+      applyFilters();
+    }});
+  }});
+  // 检查项下拉
+  var checkDd = document.getElementById('check-filter');
+  if (checkDd) checkDd.addEventListener('change', function() {{
+    checkSel = checkDd.value;
+    applyFilters();
+  }});
+  // 重置
+  var resetBtn = document.getElementById('filter-reset');
+  if (resetBtn) resetBtn.addEventListener('click', function() {{
+    statusSel = 'all'; checkSel = 'all';
+    document.querySelectorAll('.fbtn[data-st]').forEach(function(b) {{ b.classList.remove('on'); }});
+    if (checkDd) checkDd.value = 'all';
+    applyFilters();
+  }});
+}})();
+</script>
 </body>
 </html>
 """
 
 _SEV_ORDER = {"FAIL": "high", "WARN": "mid"}
+_KNOWN_TOOL_NAMES = {"image_reasoning", "read_image"}
 
 
 def _esc(value):
@@ -146,6 +275,56 @@ def _stats_html(counts):
     return '<div class="stats">{}</div>'.format("".join(cells))
 
 
+def _filters_html(counts, items):
+    """筛选条：状态按钮组（按图级状态）+ 检查项下拉（按逐项 check_id）+ 重置 + 计数"""
+    def st_count(k):
+        return counts.get(k, 0)
+    other = sum(v for k, v in counts.items()
+                if k not in ("PASS", "WARN", "FAIL"))
+    # 检查项选项（从 checks[] 收集，保持出现顺序）
+    check_ids = []
+    check_names = {}
+    for item in items:
+        for c in item.get("checks") or []:
+            cid = str(c.get("id", ""))
+            if cid and cid not in check_ids:
+                check_ids.append(cid)
+                check_names[cid] = str(c.get("name", ""))
+    has_checks = bool(check_ids)
+    buttons = [
+        ('<button type="button" class="fbtn on" data-st="all">全部<span class="cnt">{}</span></button>'
+         .format(sum(counts.values()))),
+        ('<button type="button" class="fbtn" data-st="PASS" style="color:var(--pass)">通过<span class="cnt">{}</span></button>'
+         .format(st_count("PASS"))),
+        ('<button type="button" class="fbtn" data-st="WARN" style="color:var(--warn)">警告<span class="cnt">{}</span></button>'
+         .format(st_count("WARN"))),
+        ('<button type="button" class="fbtn" data-st="FAIL" style="color:var(--fail)">失败<span class="cnt">{}</span></button>'
+         .format(st_count("FAIL"))),
+    ]
+    if other:
+        buttons.append(
+            '<button type="button" class="fbtn" data-st="OTHER">其他<span class="cnt">{}</span></button>'
+            .format(other))
+    check_dd = ""
+    if has_checks:
+        opts = ['<option value="all">全部检查项</option>']
+        for cid in check_ids:
+            opts.append('<option value="{cid}">{cid} · {name}</option>'.format(
+                cid=_esc(cid), name=_esc(check_names[cid])))
+        check_dd = ('<span class="flabel">检查项</span>'
+                    '<select id="check-filter">{}</select>'.format("".join(opts)))
+    return (
+        '<div class="filters">'
+        '<span class="flabel">状态</span>'
+        '<div class="fgroup">{btns}</div>'
+        '{check_dd}'
+        '<span class="spacer"></span>'
+        '<button type="button" class="fbtn" id="filter-reset">重置</button>'
+        '<span id="filter-count">{n} / {n}</span>'
+        '</div>'
+    ).format(btns="".join(buttons), check_dd=check_dd, n=sum(counts.values()))
+
+
 def _actions_html(items):
     rows = []
     for item in items:
@@ -161,8 +340,45 @@ def _actions_html(items):
                 sev=sev, label=label, image=_esc(item.get("image")), text=_esc(text)))
     if not rows:
         return ""
-    return ('<div class="section"><h2>建议处理清单</h2>'
-            '<ul class="actions">{}</ul></div>').format("".join(rows))
+    n_fail = sum(1 for i in items if i.get("status") == "FAIL")
+    return (
+        '<details class="actions-wrap">'
+        '<summary><span class="chev">▶</span>建议处理清单'
+        '<span class="n-badge">{n} 项待处理</span></summary>'
+        '<ul class="actions">{rows}</ul>'
+        '</details>'
+    ).format(n=n_fail + sum(1 for i in items if i.get("status") == "WARN"), rows="".join(rows))
+
+
+def _matrix_html(items):
+    """逐图 × 检查项 verdict 矩阵（有 checks[] 时生成）"""
+    col_ids = []
+    col_names = {}
+    for item in items:
+        for c in item.get("checks") or []:
+            cid = str(c.get("id", ""))
+            if cid and cid not in col_ids:
+                col_ids.append(cid)
+                col_names[cid] = str(c.get("name", ""))
+    if not col_ids:
+        return ""
+    head = ('<tr><th style="text-align:left">图片</th>' +
+            "".join('<th title="{}">{}</th>'.format(_esc(col_names[c]), _esc(c))
+                    for c in col_ids) + "</tr>")
+    rows = []
+    for item in items:
+        cells = {str(c.get("id", "")): str(c.get("status", "NA"))
+                 for c in item.get("checks") or []}
+        tds = []
+        for cid in col_ids:
+            st = cells.get(cid, "NA")
+            if st not in ("PASS", "WARN", "FAIL"):
+                st = "NA"
+            tds.append('<td><span class="cell {st}">{st}</span></td>'.format(st=st))
+        rows.append('<tr data-img="{}"><td class="img">{}</td>{}</tr>'.format(
+            _esc(item.get("image", "")), _esc(item.get("image", "")), "".join(tds)))
+    return ('<div class="section"><h2>逐图 × 检查项 判定矩阵</h2>'
+            '<table class="matrix">{}{}</table></div>').format(head, "".join(rows))
 
 
 def _item_html(item):
@@ -180,41 +396,55 @@ def _item_html(item):
                  "{className:'noimg',textContent:'图片加载失败'}))\"></div>"
                  ).replace("{SRC}", image)
     checks = []
-    # 新格式：checks 数组（按检查项维度，含编号/名称/状态/依据）；兼容旧三字段
+    # 新格式：checks 数组（按检查项维度，含编号/名称/状态/依据）——徽章逐项着色
     check_items = item.get("checks")
     if isinstance(check_items, list) and check_items:
         for c in check_items:
             cid = _esc(c.get("id", ""))
             name = _esc(c.get("name", ""))
             text = _esc(c.get("note", ""))
-            st = _esc(c.get("status", ""))
-            cls = "bad" if st in ("FAIL", "WARN") else "ok"
+            st = _esc(c.get("status", "")) or "NA"
+            st_cls = st if st in ("PASS", "WARN", "FAIL", "NA") else "NA"
+            v_cls = {"FAIL": "bad", "WARN": "warn"}.get(st, "")
             checks.append(
-                '<div class="check"><span class="k">{} {}</span>'
-                '<span class="v {}">[{}] {}</span></div>'.format(
-                    cid, name, cls, st, text))
+                '<div class="check"><span class="cbadge {st_cls}">{cid} {st}</span>'
+                '<span class="v {v_cls}"><b>{name}</b>　{text}</span></div>'.format(
+                    st_cls=st_cls, cid=cid, st=st, v_cls=v_cls, name=name, text=text))
     else:
+        # 兼容旧三字段：无逐项状态，不做关键词猜测，中性渲染
         for key, label in (("consistency", "图文一致"), ("quality", "图片质量"),
                            ("compliance", "合规检查")):
             text = item.get(key)
             if not text:
                 continue
-            cls = "bad" if any(
-                w in text for w in ("不一致", "不可读", "风险", "不符", "缺失", "模糊")
-            ) else "ok"
             checks.append(
-                '<div class="check"><span class="k">{}</span>'
-                '<span class="v {}">{}</span></div>'.format(label, cls, _esc(text)))
+                '<div class="check"><span class="cbadge NA">{}</span>'
+                '<span class="v">{}</span></div>'.format(label, _esc(text)))
     detail = item.get("detail")
     detail_html = '<div class="detail">{}</div>'.format(_esc(detail)) if detail else ""
+    # 筛选 data 属性：图级状态 + 覆盖的检查项 id 列表
+    raw_status = str(item.get("status", "ERROR"))
+    status_key = raw_status if raw_status in ("PASS", "WARN", "FAIL") else "OTHER"
+    raw_checks = item.get("checks")
+    cids = " ".join(str(c.get("id", "")) for c in raw_checks) if isinstance(raw_checks, list) else ""
     return (
-        '<div class="item">'
+        '<div class="item" data-status="{sk}" data-checks="{cids}" data-img="{img}">'
         '<div class="item-head"><span class="badge {status}">{status}</span>'
         '<span class="name">{image}</span><span class="loc">{loc}</span></div>'
         '<div class="item-body">{thumb}<div class="checks">{checks}{detail}</div></div>'
         '</div>'
-    ).format(status=status, image=image, loc=loc, thumb=thumb,
-             checks="".join(checks), detail=detail_html)
+    ).format(sk=status_key, cids=_esc(cids), img=image, status=status, image=image, loc=loc,
+             thumb=thumb, checks="".join(checks), detail=detail_html)
+
+
+def _clean_meta(data):
+    checked_at = str(data.get("checked_at", "")).strip()
+    if not checked_at or not re.search(r"\d{4}[-/]\d{1,2}[-/]\d{1,2}", checked_at):
+        checked_at = "未记录"
+    vision = str(data.get("vision_model", "")).strip()
+    if not vision or vision in _KNOWN_TOOL_NAMES:
+        vision = "未记录"
+    return checked_at, vision
 
 
 def render_report_html(data):
@@ -223,16 +453,65 @@ def render_report_html(data):
     for item in items:
         counts[item.get("status", "ERROR")] = counts.get(item.get("status", "ERROR"), 0) + 1
     document = str(data.get("document", ""))
+    checked_at, vision = _clean_meta(data)
+    generated_at = datetime.datetime.now().strftime("%Y-%m-%d %H:%M")
     return _TEMPLATE.format(
         doc_name=_esc(Path(document).name or "未命名文档"),
         document=_esc(document),
-        checked_at=_esc(data.get("checked_at", "")),
-        vision_model=_esc(data.get("vision_model", "")),
+        checked_at=_esc(checked_at),
+        vision_model=_esc(vision),
+        generated_at=generated_at,
         stats_html=_stats_html(counts),
+        filters_html=_filters_html(counts, items),
         actions_html=_actions_html(items),
+        matrix_html=_matrix_html(items),
         items_html="".join(_item_html(i) for i in items) or
                    '<p class="noimg">没有检查项。</p>',
     )
+
+
+def _iter_local_images(data):
+    """items 里引用的本地图片相对路径（跳过外链与越界路径）"""
+    for item in data.get("items", []):
+        src = str(item.get("image", "")).strip()
+        if not src or src.lower().startswith(("http://", "https://", "data:")):
+            continue
+        rel = Path(src)
+        if rel.is_absolute() or ".." in rel.parts:
+            continue
+        yield src
+
+
+def _rewrite_src_for_generate(html_text, data, doc_dir_rel):
+    """generate/ 副本：图片引用改写为 ../<doc_dir>/<img>（raw 端点按会话相对路径解析）"""
+    if not doc_dir_rel:
+        return html_text
+    prefix = "../" + doc_dir_rel.rstrip("/") + "/"
+    for src in _iter_local_images(data):
+        html_text = html_text.replace('src="{}"'.format(_esc(src)),
+                                      'src="{}{}"'.format(prefix, _esc(src)))
+    return html_text
+
+
+def _pack_zip(zip_path, html_text, data, out_dir):
+    """自包含 ZIP：HTML（保持原始相对引用）+ JSON + 全部本地图片（保持相对结构）"""
+    packed = skipped = 0
+    with zipfile.ZipFile(zip_path, "w", zipfile.ZIP_DEFLATED) as zf:
+        zf.writestr("qc-report.html", html_text)
+        zf.writestr("qc-report.json", json.dumps(data, ensure_ascii=False, indent=2))
+        seen = set()
+        for src in _iter_local_images(data):
+            arc = Path(src).as_posix()
+            if arc in seen:
+                continue
+            seen.add(arc)
+            fp = out_dir / src
+            if fp.is_file():
+                zf.write(fp, arc)
+                packed += 1
+            else:
+                skipped += 1
+    return packed, skipped
 
 
 def emit(obj):
@@ -262,35 +541,52 @@ def main():
         emit({"ok": False, "result": f"JSON 解析失败：{e}", "files": []})
         return
 
-    # 目标目录：被检 Markdown 所在目录（Session 相对，如 workspace/md），
-    # 报告与数据放这里，图片相对引用直接生效
-    out_dir = session_root
+    # 文档目录：只读（图片从这里取，用于打包 ZIP 与 HTML 相对引用），
+    # 不向文档目录写任何产物——所有输出只落 generate/
+    doc_dir_abs = session_root
     if doc_dir:
         ddp = Path(doc_dir)
-        out_dir = ddp if ddp.is_absolute() else (session_root / ddp)
-    out_dir = out_dir if out_dir.is_dir() else workdir
-    # JSON 拷贝到目标目录（数据与报告同处，交付完整）
-    json_out = out_dir / "qc-report.json"
-    json_out.write_text(json.dumps(data, ensure_ascii=False, indent=2), encoding="utf-8")
-    print("已复制数据文件", file=sys.stderr)
+        doc_dir_abs = ddp if ddp.is_absolute() else (session_root / ddp)
+    doc_dir_abs = doc_dir_abs if doc_dir_abs.is_dir() else workdir
 
     try:
         html_text = render_report_html(data)
     except Exception as e:
         emit({"ok": False, "result": f"渲染失败：{e}", "files": []})
         return
-    html_out = out_dir / "qc-report.html"
-    html_out.write_text(html_text, encoding="utf-8")
+
+    # ---- generate/ 交付区（唯一产物位置）：HTML + JSON + 自包含 ZIP ----
+    doc_stem = re.sub(r'[\\/:*?"<>|]+', "_", Path(document := str(data.get("document", ""))).stem) or "report"
+    gen_files: list[str] = []
+    doc_dir_rel = ""
+    if doc_dir:
+        doc_dir_rel = Path(doc_dir).as_posix().strip("/")
+    try:
+        gen_html = workdir / f"qc-report-{doc_stem}.html"
+        gen_html.write_text(_rewrite_src_for_generate(html_text, data, doc_dir_rel), encoding="utf-8")
+        gen_json = workdir / f"qc-report-{doc_stem}.json"
+        gen_json.write_text(json.dumps(data, ensure_ascii=False, indent=2), encoding="utf-8")
+        zip_path = workdir / f"qc-report-{doc_stem}.zip"
+        packed, skipped = _pack_zip(zip_path, html_text, data, doc_dir_abs)
+        gen_files = [gen_html.name, gen_json.name, zip_path.name]
+        print(f"generate 交付：{gen_html.name} / {gen_json.name} / {zip_path.name}"
+              f"（ZIP 内图片 {packed} 张{f'，跳过 {skipped} 张' if skipped else ''}）", file=sys.stderr)
+    except Exception as e:
+        print(f"generate 交付失败：{e}", file=sys.stderr)
     counts = {}
     for item in data.get("items", []):
         counts[item.get("status", "ERROR")] = counts.get(item.get("status", "ERROR"), 0) + 1
     summary = "PASS {p} / WARN {w} / FAIL {f} / 其他 {o}".format(
         p=counts.get("PASS", 0), w=counts.get("WARN", 0), f=counts.get("FAIL", 0),
         o=counts.get("MISSING", 0) + counts.get("ERROR", 0) + counts.get("SKIP", 0))
+    if not gen_files:
+        emit({"ok": False, "result": f"generate 产物写入失败：{getattr(e, 'args', ['未知错误'])[0] if isinstance(e, Exception) else '未知错误'}", "files": []})
+        return
     emit({
         "ok": True,
-        "result": f"HTML 报告已生成（{summary}），位于 {html_out.name}",
-        "files": [str(html_out.name), str(json_out.name)],
+        "result": f"HTML 报告已生成（{summary}），产物全部位于 generate/："
+                  + "、".join(gen_files),
+        "files": [f"generate/{n}" for n in gen_files],
     })
 
 
