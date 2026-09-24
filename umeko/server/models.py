@@ -138,6 +138,27 @@ class ArtifactView(BaseModel):
     download_url: str
 
 
+class ProxySessionView(BaseModel):
+    """One-shot 代理调用：创建结果（POST /v1/proxy/sessions）。"""
+
+    session_id: str
+    run_id: str | None
+    skill: str | None = None
+    files: list[str] = Field(default_factory=list)
+
+
+class ProxyStatusView(BaseModel):
+    """One-shot 代理调用：任务状态（GET /v1/proxy/sessions/{id}）。"""
+
+    session_id: str
+    run_id: str | None
+    status: str
+    reply: str = ""
+    progress: str = ""          # running 时的阶段描述（如"正在调用 image_reasoning"）
+    result: dict | None = None  # completed 时的质检结论（qc-report.json 解析结果，内联返回）
+    artifacts: list[ArtifactView] = Field(default_factory=list)
+
+
 class WorkspaceNode(BaseModel):
     name: str
     path: str

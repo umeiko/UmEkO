@@ -29,6 +29,7 @@ SUBAGENT_TOOL_NAMES = {
     "ocr_image",
     "run_command",
     "image_reasoning",
+    "archive_tool",
 }
 
 SUBAGENT_SYSTEM = """你是主 Agent 启动的文件处理子 Agent，只完成收到的单个任务。

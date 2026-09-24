@@ -706,10 +706,60 @@ class AgentService:
             self.store.clear_context(session_id)
             return result
 
+    def clear_chat(self, session_id: str) -> int:
+        """清空聊天记录与上下文（保留文件与 Skill 挂载，相当于干净重来）。"""
+        session = self.get_session(session_id)
+        active = session.active_run_holder["run"]
+        if active is not None and active.status not in {"completed", "failed", "cancelled"}:
+            raise ValueError("任务运行中，暂时不能清空聊天")
+        with session.lock:
+            session.agent.clear_context()
+            return self.store.clear_chat(session_id)
+
     def cancel_run(self, run_id: str) -> Run:
         run = self.get_run(run_id)
         run.request_cancel()
         return run
+
+    # ---------- Session 复制 ----------
+
+    def clone_session(self, session_id: str, user_id: str) -> SessionState:
+        """复制会话：目录树（workspace/attachments/generate/client）+ 对话记录 + 上下文摘要。
+
+        复制的是"当前上下文可见"的内容（与清空/压缩语义一致：context_cutoff 之前的
+        消息不复制，summary 保留）。原会话保持不动。
+        """
+        import uuid
+
+        source = self.get_session(session_id)  # 不存在会抛 KeyError
+        if source.user_id != user_id:
+            raise KeyError(session_id)
+        active = source.active_run_holder["run"]
+        if active is not None and active.status not in {"completed", "failed", "cancelled"}:
+            raise ValueError("源会话任务运行中，等它结束再复制")
+        record = self.store.session_by_id(session_id)
+        new_id = f"sess_{uuid.uuid4().hex}"
+        title = (record["title"] or "未命名会话")[:74] + " 副本"
+        # 目录树复制（不复制 uploads/ 临时件）
+        src_root = self.data_root / "users" / user_id / "sessions" / session_id
+        dst_root = self.data_root / "users" / user_id / "sessions" / new_id
+        if src_root.is_dir():
+            shutil.copytree(
+                src_root, dst_root,
+                ignore=shutil.ignore_patterns("uploads"),
+            )
+        # DB 记录复制（messages 遵守 cutoff、summary、session_files 重映射路径）
+        self.store.clone_session(session_id, new_id, user_id, title)
+        # session_files 的 path 指向旧 session 目录 → 改写为新目录
+        with self.store.connect() as db:
+            db.execute(
+                "UPDATE session_files SET path=REPLACE(path, ?, ?) WHERE session_id=?",
+                (f"/sessions/{session_id}/", f"/sessions/{new_id}/", new_id),
+            )
+        # 通过标准创建路径装配内存态（_restore_id 分支会恢复历史/挂载/附件映射）
+        return self.create_session(
+            user_id=user_id, title=title, _restore_id=new_id,
+        )
 
     # ---------- 管理面（仅 admin 端口暴露；用户面路由不含这些入口） ----------
 

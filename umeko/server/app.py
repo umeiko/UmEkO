@@ -26,6 +26,8 @@ from .models import (
     FileView,
     MessageView,
     ModelPrefsIn,
+    ProxySessionView,
+    ProxyStatusView,
     RunCreate,
     RunView,
     SessionCreate,
@@ -601,6 +603,41 @@ def create_app(
         except ValueError as exc:
             raise HTTPException(409, str(exc)) from exc
 
+    @app.post(
+        "/v1/sessions/{session_id}/chat/clear",
+        response_model=SessionView,
+        tags=["sessions"],
+    )
+    def clear_session_chat(session_id: str, request: Request) -> SessionView:
+        """清空聊天记录与上下文（文件、Skill 挂载保留）。"""
+        try:
+            service.clear_chat(session_id)
+        except ValueError as exc:
+            raise HTTPException(409, str(exc)) from exc
+        view = _session_view(get_session(session_id))
+        record = store.session_by_id(session_id)
+        view.model_override_id = (record or {}).get("model_override_id")
+        return view
+
+    @app.post(
+        "/v1/sessions/{session_id}/clone",
+        response_model=SessionView,
+        status_code=201,
+        tags=["sessions"],
+    )
+    def clone_session(session_id: str, request: Request) -> SessionView:
+        """复制会话：文件目录、当前上下文、聊天记录与 Skill 挂载全部带走。"""
+        try:
+            state = service.clone_session(session_id, request.state.user["id"])
+        except KeyError as exc:
+            raise HTTPException(404, "Session 不存在或无权访问") from exc
+        except ValueError as exc:
+            raise HTTPException(409, str(exc)) from exc
+        view = _session_view(state)
+        record = store.session_by_id(state.id)
+        view.model_override_id = (record or {}).get("model_override_id")
+        return view
+
     @app.get("/v1/sessions/{session_id}", response_model=SessionView, tags=["sessions"])
     def read_session(session_id: str) -> SessionView:
         view = _session_view(get_session(session_id))
@@ -746,5 +783,164 @@ def create_app(
         except KeyError as exc:
             raise HTTPException(404, str(exc)) from exc
         return FileResponse(path, media_type=media_type, filename=path.name)
+
+    # ---------- One-shot 代理调用 API（外部 Agent 集成） ----------
+    # 用途：外部程序化调用（如同事的截图 Agent 借用质检能力）。
+    # 创建会话 → 存文件 → 挂 Skill → 起任务，一次请求完成；
+    # 轮询状态接口拿最终回复与产物下载地址。
+    # 权限遵循现有登录态：Bearer/Cookie 均可（走 authenticate_request 中间件）。
+
+    @app.post(
+        "/v1/proxy/sessions",
+        response_model=ProxySessionView,
+        status_code=201,
+        tags=["proxy"],
+    )
+    async def create_proxy_session(request: Request) -> ProxySessionView:
+        """一步创建会话并启动任务。
+
+       multipart/form-data 字段：
+        - prompt: str（必填）发给 Agent 的指令
+        - skill: str（可选）要挂载的技能包名（须在 default_skills 或服务器 skills/ 中）
+        - files: list[UploadFile]（可选）随任务附带的文件（zip/png/md…），存入 workspace
+        """
+        user = request.state.user
+        if user is None:
+            raise HTTPException(401, "请先登录")
+        form = await request.form()
+        prompt = str(form.get("prompt") or "").strip()
+        if not prompt:
+            raise HTTPException(400, "prompt 不能为空")
+        skill_name = str(form.get("skill") or "").strip()
+
+        session = service.create_session(user_id=user["id"], title=prompt[:28] or "API 调用")
+
+        # 可选：挂载指定 Skill（写入 client/skills/ 并注册资源）
+        if skill_name:
+            content = None
+            for item in store.default_skills():
+                if item["name"] == skill_name:
+                    content = item["content"]
+                    break
+            if content is None:
+                lib_dir = service._skills_library_dir()
+                lib_file = lib_dir / f"{skill_name}.md"
+                if lib_file.is_file():
+                    content = lib_file.read_text(encoding="utf-8")
+            if content is None:
+                raise HTTPException(404, f"Skill 不存在：{skill_name}")
+            from ..skillpacks import parse_skill_pack_text
+
+            dest = session.root / "client" / "skills" / f"{skill_name}.md"
+            dest.parent.mkdir(parents=True, exist_ok=True)
+            dest.write_text(content, encoding="utf-8")
+            if parse_skill_pack_text(content) is not None:
+                session.mounted_resources["skills"].add(dest.name)
+                store.set_resource_mount(session.id, "skills", dest.name, True)
+
+        # 保存上传文件到 workspace
+        saved_paths: list[str] = []
+        for upload in form.getlist("files"):
+            data = await upload.read()
+            if not data:
+                continue
+            try:
+                saved = service.save_workspace_file(
+                    session.id, upload.filename or "upload.bin", data
+                )
+            except ValueError as exc:
+                raise HTTPException(400, str(exc)) from exc
+            saved_paths.append(saved.relative_to(session.root).as_posix())
+
+        file_note = (
+            "\n\n随任务附带的文件（已存入 workspace）：\n" + "\n".join(saved_paths)
+            if saved_paths else ""
+        )
+        try:
+            run = service.create_run(session.id, prompt + file_note, [])
+        except ValueError as exc:
+            raise HTTPException(400, str(exc)) from exc
+        return ProxySessionView(
+            session_id=session.id,
+            run_id=run.id,
+            skill=skill_name or None,
+            files=saved_paths,
+        )
+
+    @app.get("/v1/proxy/sessions/{session_id}", response_model=ProxyStatusView, tags=["proxy"])
+    def proxy_session_status(session_id: str, request: Request) -> ProxyStatusView:
+        """查询任务状态。
+
+        - running：progress 给出当前阶段（最近工具调用/推理中）
+        - completed：reply 为文字结论；result 内联 qc-report.json 的结构化结果；
+          artifacts 只列交付物（qc-report-*.zip/html/json），中间产物不列。
+        """
+        session = get_session(session_id)
+        # 状态判定：优先活跃 Run；否则看最后一条 assistant 消息是否存在
+        active = service.active_run(session_id)
+        last_run = session.active_run_holder["run"]
+        if active is not None:
+            run_status, run_id = active.status, active.id
+        elif last_run is not None:
+            run_status, run_id = last_run.status, last_run.id
+        else:
+            run_status, run_id = "unknown", None
+        reply = ""
+        messages = store.messages(session_id)
+        if run_status in {"completed", "unknown"}:
+            for m in reversed(messages):
+                if m["role"] == "assistant":
+                    reply = service.web_text(session_id, m["content"] or "") or ""
+                    break
+            if run_status == "unknown" and reply:
+                run_status = "completed"
+        # 阶段信息：running 时从最近工具事件提取
+        progress = ""
+        if run_status in {"queued", "running"}:
+            events = store.tool_events(session_id)
+            if events:
+                last = events[-1]
+                tool = last.get("name", "")
+                if tool == "image_reasoning":
+                    progress = "正在图像推理（视觉模型分析图片）"
+                elif tool == "delegate_task":
+                    progress = "已派发子 Agent 处理"
+                elif tool == "run_skill_script":
+                    progress = "正在渲染质检报告"
+                elif tool in {"read_pack_file", "read_document", "list_dir", "find_files", "grep_files"}:
+                    progress = f"正在读取资料（{tool}）"
+                elif tool in {"write_file", "write_working_doc"}:
+                    progress = "正在落盘中间结论"
+                elif tool == "archive_tool":
+                    progress = "正在解压压缩包"
+                else:
+                    progress = f"正在调用 {tool}"
+            else:
+                progress = "模型推理中"
+        # 结构化结果：completed 时内联 qc-report.json
+        result = None
+        if run_status == "completed":
+            for p in sorted((session.root / "generate").glob("qc-report*.json"),
+                            key=lambda x: x.stat().st_mtime, reverse=True):
+                try:
+                    result = json.loads(p.read_text(encoding="utf-8"))
+                    break
+                except (json.JSONDecodeError, UnicodeDecodeError):
+                    continue
+        # 产物只列交付物（报告三件套），中间产物不列
+        artifacts = [
+            ArtifactView(**{k: v for k, v in item.items() if not k.startswith("_")})
+            for item in service.artifacts(session_id)
+            if re.search(r"generate/qc-report[^/]*\.(zip|html|json)$", item["name"])
+        ]
+        return ProxyStatusView(
+            session_id=session_id,
+            run_id=run_id,
+            status=run_status,
+            reply=reply,
+            progress=progress,
+            result=result,
+            artifacts=artifacts,
+        )
 
     return app

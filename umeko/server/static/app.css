@@ -118,6 +118,13 @@ h2 { font-size: 20px; }
 .tree-file { width: 100%; min-width: 0; display: flex; align-items: center; gap: 7px; padding: 4px 7px; border: 0; border-radius: 6px; color: var(--ink); background: transparent; font: inherit; text-align: left; cursor: pointer; }
 .tree-file-row { min-width: 0; display: grid; grid-template-columns: minmax(0, 1fr) 24px; align-items: center; border-radius: 6px; }
 .tree-file-row:hover, .tree-file-row:has(.tree-file.active) { background: #dfece7; }
+.tree-file-row.selected { background: #d3e7de; box-shadow: inset 2px 0 0 var(--accent); }
+.tree-file-row.selected:hover { background: #c8e0d5; }
+.tree-sel-bar { display: flex; align-items: center; gap: 8px; padding: 8px 12px; border-bottom: 1px solid var(--line); background: #eef4f0; font-size: 12.5px; }
+.tree-sel-bar .sel-count { flex: 1; color: var(--accent-dark); font-weight: 600; }
+.tree-sel-bar button { padding: 4px 10px; border: 1px solid var(--line); border-radius: 6px; background: #fff; color: var(--ink); font-size: 12px; cursor: pointer; }
+.tree-sel-bar button:hover { border-color: var(--accent); color: var(--accent-dark); }
+.tree-sel-bar button.danger:hover { border-color: #b3402a; color: #b3402a; }
 .tree-file:hover, .tree-file.active { color: var(--accent-dark); }
 .tree-attach { width: 22px; height: 22px; padding: 0; border: 0; border-radius: 5px; color: var(--accent); background: transparent; font: 700 15px/1 ui-monospace, monospace; cursor: pointer; opacity: .32; }
 .tree-file-row:hover .tree-attach, .resource-item:hover .tree-attach, .tree-attach.attached { opacity: 1; }
@@ -228,6 +235,8 @@ h2 { font-size: 20px; }
 .context-menu.hidden { display: none; }
 .context-menu button { padding: 6px 10px; border: 0; border-radius: 6px; background: transparent; text-align: left; white-space: nowrap; }
 .context-menu button:hover:not(:disabled) { background: #edf6f2; }
+.context-menu button.danger { color: #a13e34; }
+.context-menu button.danger:hover:not(:disabled) { color: #842b23; background: #fff0ee; }
 .context-menu button.active { color: #fff; background: var(--accent); font-weight: 700; }
 .context-menu button.active:hover:not(:disabled) { background: var(--accent-dark); }
 .model-prefs { display: grid; gap: 8px; margin: 0; padding: 12px; border: 1px solid var(--line); border-radius: 10px; background: #fff; }
@@ -268,7 +277,7 @@ h2 { font-size: 20px; }
 .csv-table tbody tr:nth-child(even) td { background: #f8faf9; }
 .csv-table .csv-row-number { position: sticky; left: 0; z-index: 1; width: 46px; min-width: 46px; color: #74817c; background: #f2f5f3; text-align: right; font-weight: 500; }
 .csv-table thead .csv-row-number { z-index: 3; background: #dcebe5; }
-.code-view { min-height: 440px; max-height: none; padding: 18px; border: 1px solid var(--line); background: #18211f; color: #dce9e4; white-space: pre; tab-size: 2; }
+.code-view { min-height: 440px; max-height: none; padding: 18px; border: 1px solid var(--line); background: #18211f; color: #dce9e4; white-space: pre-wrap; overflow-wrap: anywhere; word-break: break-all; tab-size: 2; }
 .resource-editor { width: 100%; min-height: 560px; resize: vertical; padding: 18px; border: 1px solid var(--line); outline: none; background: #18211f; color: #dce9e4; font: 12px/1.55 ui-monospace, monospace; tab-size: 2; }
 .resource-editor:focus { border-color: var(--accent); box-shadow: 0 0 0 3px #087f6818; }
 #source-panel { margin-top: 14px; border: 1px solid var(--line); background: #fff; }

@@ -22,6 +22,10 @@ description: 图文 Markdown 大文档的图片质检流水线。触发场景：
 1. `write_working_doc` 初始化进度文档（见下方模板），这是断点续跑的依据。
 2. 确认视觉能力：若 `image_reasoning` 工具不在你的工具列表里（无视觉模型配置），
    **立即停止并告知用户**"需要配置视觉模型才能做图片质检"，不要硬跑。
+3. **收到压缩包先解压**：用户附件若是压缩包（zip/7z/rar/tar 等），先用
+   `archive_tool`（operation=`list`）查看包内结构，再 `archive_tool`（operation=`extract`）
+   解压到 workspace，然后从解压出的 Markdown 文档开始质检；包内若有多份文档，
+   逐份跑完整流水线，报告按文档分别生成。图片已在压缩包目录里的直接用相对路径引用，不要移动文件。
 
 ## 阶段 1：提取图片清单（子 Agent #1）
 
@@ -48,8 +52,9 @@ description: 图文 Markdown 大文档的图片质检流水线。触发场景：
 > 1. `read_document generate/qc-manifest.md`，只看该图片对应小节的关联描述。
 > 2. `image_reasoning` 检查该图。**检查项以附属文档 checks.md 为准**
 >    （用 `read_pack_file` 工具读：pack=`doc-image-qc`，member=`checks.md`）：通用项 C1-C3 对所有图必检；
->    原理图类加 S1-S3，组网图类加 N1-N2，界面截图类加 U1-U4——按清单阶段 1
->    标注的分组选取。每项独立给 PASS/WARN/FAIL 结论与一句话依据，不要泛泛而谈。
+>    原理图类加 S1-S3，组网图类加 N1-N2，界面截图类加 U 组全部（当前 U1-U5，含 U5 界面术语一致性）——按清单阶段 1
+>    标注的分组选取。每项独立给 PASS/WARN/FAIL 结论与一句话依据，不要泛泛而谈；
+>    事实性不一致（含术语与正文不符）一律 FAIL，遵守 checks.md 的判定级别纪律。
 > 3. 把该图的结论**追加**到 `generate/qc-report.json`（先 `read_document` 读现有
 >    JSON，把新条目加入 items 数组后 `write_file` 整体写回；文件不存在则新建骨架：
 >    `{"document":"<文档路径>","checked_at":"<时间>","vision_model":"<模型名>","items":[]}`）。
@@ -81,9 +86,11 @@ description: 图文 Markdown 大文档的图片质检流水线。触发场景：
 - script: `render_report.py`
 - args: `{"data_path": "generate/qc-report.json", "doc_dir": "<被检 Markdown 所在的 Session 相对目录，如 workspace/md>"}`
 
-脚本会在 Markdown 同目录生成 `qc-report.html` + `qc-report.json`（图片相对
-引用直接生效）。然后向用户交付：qc-report.html 的路径（提示可双击在浏览器
-整页查看）+ 统计数字（PASS/WARN/FAIL 各多少）+ 最严重的 3 个问题（每条一句话）。
+脚本产物**只写 generate/**（不污染被检文档目录）：
+1. **generate/** `qc-report-<文档名>.html` + `.json`；
+2. **generate/** `qc-report-<文档名>.zip`（自包含：HTML + JSON + 全部图片按相对结构打包，下载解压后双击 HTML 即可阅读，图片正常显示）。
+
+文档目录只读（图片从那里读取打包），任何情况下不要把产物写到文档目录。然后向用户交付：**generate/ 的 zip 路径（主交付物，提示下载解压查看）** + 统计数字（PASS/WARN/FAIL 各多少）+ 最严重的 3 个问题（每条一句话）。不要引导用户在应用内预览 HTML。
 
 ## working_doc 模板（阶段 0 初始化）
 
