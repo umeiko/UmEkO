@@ -224,8 +224,8 @@ class Store:
             raise KeyError(user_id)
 
     def set_password(self, user_id: str, password: str) -> None:
-        if len(password) < 8:
-            raise ValueError("密码至少 8 个字符")
+        if len(password) < 4:
+            raise ValueError("密码至少 4 个字符")
         with self.connect() as db:
             result = db.execute(
                 "UPDATE users SET password_hash=? WHERE id=?",
