@@ -877,7 +877,9 @@ def build_file_tools(
                 },
                 "required": ["name", "description"],
             },
-            handler=session.create_skill,
+            handler=partial(
+                session.create_skill, should_cancel=should_cancel
+            ),
         ),
         Skill(
             name="list_skill_packs",

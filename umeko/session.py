@@ -130,11 +130,13 @@ class Session:
         """卸载此前显式启用的 Skill。"""
         self._active_skill_names.discard(name.strip().lower())
 
-    def create_skill(self, name: str, description: str) -> str:
+    def create_skill(self, name: str, description: str, should_cancel=None) -> str:
         """生成并校验一个 Session 目录中的提示词型 Skill。"""
         from .skill_agent import SkillAgent  # 延迟导入：仅用到时加载
 
-        result = SkillAgent(self._settings, self._skill_dir).create(name, description)
+        result = SkillAgent(self._settings, self._skill_dir).create(
+            name, description, should_cancel=should_cancel
+        )
         if not result.ok:
             return f"Skill 生成失败：{result.error}"
         return f"Skill 已生成（{result.rounds} 轮通过校验）：{result.path}"
