@@ -11,7 +11,7 @@ from pathlib import Path
 from uuid import uuid4
 from types import SimpleNamespace
 
-from openai import DefaultHttpxClient, OpenAI
+from openai import DefaultHttpxClient, OpenAI, Timeout as HttpTimeout
 
 from ..cancellation import (
     CancelCheck,
@@ -275,8 +275,10 @@ class LLMClient:
                         proxy=self._model.proxy,
                         trust_env=False,
                     ),
-                    # 网关挂起/无响应时的兜底：单请求最长等 10 分钟，防无限卡死
-                    timeout=600.0,
+                    # 分段超时：connect 快速失败（网关不可达/半死时不再傻等
+                    # 10 分钟）；read 是"两个字节之间"的等待上限，覆盖深度思考
+                    # 模型的长首 token。总闸 300s 兜底。
+                    timeout=HttpTimeout(connect=15.0, read=300.0, write=60.0, pool=60.0),
                     max_retries=2,
                 )
             return self._client

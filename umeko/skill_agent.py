@@ -28,7 +28,7 @@ class SkillAgent:
             Path(directory).resolve() if directory is not None else skill_packs_dir()
         )
 
-    def create(self, name: str, description: str) -> SkillResult:
+    def create(self, name: str, description: str, should_cancel=None) -> SkillResult:
         name = name.strip().lower()
         if not _NAME_RE.match(name):
             return SkillResult(False, error="Skill 名称只能含小写字母、数字、下划线或连字符")
@@ -50,7 +50,7 @@ class SkillAgent:
                     "正文写清触发条件、执行步骤、限制和完成标准。只输出文件内容。"
                 )},
                 {"role": "user", "content": user},
-            ])
+            ], should_cancel=should_cancel)
             match = re.search(r"```(?:markdown|md)?\s*\n(.*?)```", raw, re.DOTALL)
             content = (match.group(1) if match else raw).strip() + "\n"
             parsed = parse_skill_pack_text(content)
