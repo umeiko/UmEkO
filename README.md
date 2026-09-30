@@ -39,17 +39,13 @@ A domain-agnostic **general-purpose Agent platform**: chat with files, delegate 
 Grab `umeko-server.exe` from [Releases](https://github.com/umeiko/UmEkO/releases), drop it in an empty folder and double-click.
 
 Zero-config first run: the server boots immediately with a default admin account
-(`umeko` / `1234`) and generates a `.env` template — configure providers either
-by editing `.env` or entirely from the admin console.
+(`umeko` / `1234`) and generates a deployment `.env` template. Configure model
+credentials in the admin Provider / Model page or the shared CLI registry.
 
 ```ini
-TEXT_MODEL_NAME=your-model
-TEXT_MODEL_BASE_URL=https://api.example.com/v1
-TEXT_MODEL_API_KEY=sk-xxx
-# Optional — enables image_reasoning:
-# VISION_MODEL_NAME=your-vision-model
-# VISION_MODEL_API_KEY=sk-xxx
-# VISION_MODEL_BASE_URL=https://api.example.com/v1
+UMEKO_DATA_ROOT=server_data
+UMEKO_BASE_PATH=
+MODEL_CA_FILE=
 ```
 
 ```bash
@@ -62,10 +58,22 @@ umeko-server.exe --port 8000          # WebUI  http://127.0.0.1:8000
 ```bash
 git clone https://github.com/umeiko/UmEkO.git
 cd UmEkO
-uv sync                                   # or: pip install -e ".[dev]"
+uv sync --extra server                    # or: python -m pip install -e ".[server]"
 uv run python -m umeko.server --port 8000 # cloud mode (8000 + admin 9000)
 uv run python -m umeko.local  --port 8765 # local mode (no auth)
 ```
+
+## Startup and deployment
+
+See the [startup and production deployment guide](docs/deployment.md) (Chinese)
+for first-run setup, Windows exe usage, config migration, NGINX / ALB prefixes,
+model CAs, streaming checks, persistent storage, upgrades and troubleshooting.
+The [documentation index](docs/README.md) also links the architecture and local proxy lab.
+
+Use `umeko.server` for shared deployments; `umeko.local` is a personal,
+unauthenticated workspace. Configure and activate models in Provider / Model,
+persist `UMEKO_DATA_ROOT`, keep the admin port private, and use a single application
+process. Deployment changes in `.env` require a restart.
 
 ## Architecture 🏗
 
@@ -95,19 +103,40 @@ per session with one click.
 
 ## Configuration
 
-Priority: **provider registry (admin console) > DB overrides > .env**
+Model credentials, names, proxies and vision flags live in the **shared Provider
+registry** (`UMEKO_DATA_ROOT/umeko.db`). Web, local mode and CLI share the same
+resolver. `.env` contains deployment settings and runtime defaults.
 
 | Key | Description |
 |---|---|
-| `TEXT_MODEL_NAME/BASE_URL/API_KEY` | main model (required unless configured in admin console) |
-| `VISION_MODEL_NAME/BASE_URL/API_KEY` | vision model (enables `image_reasoning`) |
-| `MODEL_PROXY` | proxy for the model gateway |
+| `UMEKO_DATA_ROOT` | persistent data / Provider registry directory (default `server_data`) |
+| `UMEKO_BASE_PATH` | public URL prefix, e.g. `/doc-master/consistency/image-text`; empty for root |
+| `MODEL_CA_FILE` | additional PEM CA for HTTPS model services; certificate checks remain enabled |
 | `UMEKO_ADMIN_USERNAME/PASSWORD` | admin bootstrap (defaults to `umeko`/`1234`) |
+
+Copy `providers.example.json` to `providers.local`, fill it in and import:
+
+```sh
+python -m umeko.cli providers import providers.local
+python -m umeko.cli providers list
+python -m umeko.cli providers use mdl_MODEL_ID
+python -m umeko.cli
+```
+
+CLI `/reload` reads the current selection and starts a new conversation. Model
+changes apply to the next Web run. Set the same data directory on all entry
+points; use `--data-root local_data` to retain an existing isolated local install.
+Legacy environment model configuration is migrated once without replacing
+existing credentials or active selections. Remove old `.env` model entries with
+`python -m umeko.cli providers migrate-env --remove` after checking the data directory.
+See [deployment and migration](docs/deployment.md) for NGINX prefix stripping,
+private model CAs and the [Red Hat Docker verification lab](scripts/proxy_lab/README.md).
 
 ## For Developers
 
 ```bash
-uv run pytest                    # tests
+uv sync --extra dev              # test and packaging dependencies
+uv run pytest tests/ -q          # project tests
 uv run pyinstaller umeko.spec    # build the single-file server exe
 ```
 

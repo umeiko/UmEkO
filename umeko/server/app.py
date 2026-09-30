@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 import asyncio
+import html
 import json
 import re
 from pathlib import Path
@@ -11,7 +12,7 @@ from fastapi.staticfiles import StaticFiles
 from starlette.background import BackgroundTask
 
 from .. import __version__
-from ..config import Settings
+from ..config import Settings, normalize_base_path
 from ..host.profile import CLOUD_PROFILE, Profile
 from ..host.service import AgentService, SessionState
 from ..host.storage import Store
@@ -83,12 +84,15 @@ def _run_view(run: RunState, service: AgentService) -> RunView:
 
 def create_app(
     settings: Settings,
-    data_root: str | Path = "server_data",
+    data_root: str | Path | None = None,
     workspace_root: str | Path = "output",
     profile: Profile = CLOUD_PROFILE,
     command_runner=None,
 ) -> FastAPI:
+    base_path = normalize_base_path(settings.base_path)
+    data_root = data_root if data_root is not None else settings.data_root
     app = FastAPI(
+        root_path=base_path,
         title="Umeko API",
         version=__version__,
         description=(
@@ -110,7 +114,11 @@ def create_app(
 
     @app.middleware("http")
     async def authenticate_request(request: Request, call_next):
-        path = request.url.path
+        # ASGI path 包含 root_path 时先剥掉挂载前缀；鉴权匹配实际 API 路由。
+        path = request.scope["path"]
+        root_path = request.scope.get("root_path", "")
+        if root_path and (path == root_path or path.startswith(root_path + "/")):
+            path = path[len(root_path):] or "/"
         public = path in {"/", "/health", "/openapi.json", "/v1/auth/register", "/v1/auth/login"} or path.startswith("/static/")
         user = (
             store.user_for_token(request.cookies.get(AUTH_COOKIE))
@@ -138,7 +146,8 @@ def create_app(
 
     @app.get("/", response_class=HTMLResponse, include_in_schema=False)
     def web_app() -> HTMLResponse:
-        return HTMLResponse((STATIC_DIR / "index.html").read_text(encoding="utf-8"))
+        template = (STATIC_DIR / "index.html").read_text(encoding="utf-8")
+        return HTMLResponse(template.replace("__UMEKO_BASE_PATH__", html.escape(base_path, quote=True)))
 
     @app.get("/health", tags=["system"])
     def health() -> dict:
@@ -151,7 +160,8 @@ def create_app(
         except ValueError as exc:
             raise HTTPException(400, str(exc)) from exc
         response.set_cookie(AUTH_COOKIE, store.issue_token(user["id"]), httponly=True,
-                            samesite="lax", secure=False, max_age=14 * 86400)
+                            samesite="lax", secure=False, max_age=14 * 86400,
+                            path=base_path or "/")
         return UserView(**user)
 
     @app.post("/v1/auth/login", response_model=UserView, tags=["auth"])
@@ -160,7 +170,8 @@ def create_app(
         if not user:
             raise HTTPException(401, "用户名或密码错误")
         response.set_cookie(AUTH_COOKIE, store.issue_token(user["id"]), httponly=True,
-                            samesite="lax", secure=False, max_age=14 * 86400)
+                            samesite="lax", secure=False, max_age=14 * 86400,
+                            path=base_path or "/")
         return UserView(**user)
 
     @app.get("/v1/auth/me", response_model=UserView, tags=["auth"])
@@ -208,7 +219,7 @@ def create_app(
     @app.post("/v1/auth/logout", status_code=204, tags=["auth"])
     def logout(request: Request, response: Response) -> None:
         store.revoke_token(request.cookies.get(AUTH_COOKIE))
-        response.delete_cookie(AUTH_COOKIE)
+        response.delete_cookie(AUTH_COOKIE, path=base_path or "/")
 
     # ---------- 模型选择（用户面：只读注册表 + 个人偏好 + 会话覆盖） ----------
 

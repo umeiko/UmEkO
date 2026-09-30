@@ -1,0 +1,15 @@
+{
+  "providers": [
+    {
+      "name": "company",
+      "base_url": "https://models.example.com/v1",
+      "api_key": "replace-with-your-key",
+      "proxy": null,
+      "models": [
+        {"name": "your-text-model", "vision": false},
+        {"name": "your-vision-model", "vision": true}
+      ]
+    }
+  ],
+  "active": "company/your-text-model"
+}

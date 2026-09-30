@@ -1,0 +1,127 @@
+x-lab: &lab
+  image: umeko-proxy-lab-ubi9:local
+  build:
+    context: .
+    dockerfile: UBI.Dockerfile
+    args:
+      UBI_BASE: ${UBI_BASE:-registry.access.redhat.com/ubi9/ubi:latest}
+      HTTP_PROXY: ${LAB_BUILD_PROXY:-}
+      HTTPS_PROXY: ${LAB_BUILD_PROXY:-}
+  environment: &lab-env
+    UMEKO_LAB_RUNTIME: /runtime
+    UMEKO_LAB_MODEL_URL: https://model:19443/v1
+  volumes:
+    - ../../umeko:/app/umeko:ro
+    - .:/lab:ro
+    - runtime:/runtime
+  networks: [lab]
+
+services:
+  init:
+    <<: *lab
+    command: [python, /lab/docker_entry.py, init]
+
+  app:
+    <<: *lab
+    environment:
+      <<: *lab-env
+      UMEKO_BASE_PATH: /doc-master/consistency/image-text
+      MODEL_CA_FILE: /runtime/certs/model-ca.pem
+    command: [python, -m, uvicorn, app:create_lab_app, --app-dir, /lab, --factory, --host, 0.0.0.0, --port, "18000", --root-path, /doc-master/consistency/image-text]
+    depends_on:
+      init: {condition: service_completed_successfully}
+    healthcheck:
+      test: [CMD, python, /lab/docker_entry.py, health, app]
+      interval: 2s
+      timeout: 3s
+      retries: 30
+
+  root-app:
+    <<: *lab
+    environment:
+      <<: *lab-env
+      UMEKO_BASE_PATH: ""
+      MODEL_CA_FILE: /runtime/certs/model-ca.pem
+      UMEKO_LAB_DATA_NAME: root-data
+    command: [python, -m, uvicorn, app:create_lab_app, --app-dir, /lab, --factory, --host, 0.0.0.0, --port, "18000"]
+    depends_on:
+      init: {condition: service_completed_successfully}
+    healthcheck:
+      test: [CMD, python, /lab/docker_entry.py, health, app]
+      interval: 2s
+      timeout: 3s
+      retries: 30
+
+  model:
+    <<: *lab
+    command: [python, /lab/mock_model.py, --runtime, /runtime, --host, 0.0.0.0]
+    depends_on:
+      init: {condition: service_completed_successfully}
+    healthcheck:
+      test: [CMD, python, /lab/docker_entry.py, health, model]
+      interval: 2s
+      timeout: 3s
+      retries: 30
+
+  web-proxy:
+    <<: *lab
+    networks: [lab, entry]
+    command: [nginx, -c, /runtime/inner.conf]
+    ports: ["127.0.0.1:${LAB_HTTP_PORT:-28080}:18080"]
+    depends_on:
+      init: {condition: service_completed_successfully}
+      app: {condition: service_healthy}
+    healthcheck:
+      test: [CMD, python, /lab/docker_entry.py, health, web-proxy]
+      interval: 2s
+      timeout: 3s
+      retries: 30
+
+  edge:
+    <<: *lab
+    networks: [lab, entry]
+    command: [nginx, -c, /runtime/edge.conf]
+    ports: ["127.0.0.1:${LAB_HTTPS_PORT:-28443}:18443"]
+    depends_on:
+      init: {condition: service_completed_successfully}
+      web-proxy: {condition: service_healthy}
+    healthcheck:
+      test: [CMD, python, /lab/docker_entry.py, health, edge]
+      interval: 2s
+      timeout: 3s
+      retries: 30
+
+  baseline:
+    <<: *lab
+    networks: [lab, entry]
+    command: [nginx, -c, /runtime/baseline.conf]
+    ports: ["127.0.0.1:${LAB_BASELINE_PORT:-28081}:18081"]
+    depends_on:
+      init: {condition: service_completed_successfully}
+      root-app: {condition: service_healthy}
+    healthcheck:
+      test: [CMD, python, /lab/docker_entry.py, health, baseline]
+      interval: 2s
+      timeout: 3s
+      retries: 30
+
+  verifier:
+    <<: *lab
+    profiles: [verify]
+    command: [python, /lab/verify.py]
+    environment:
+      UMEKO_LAB_RUNTIME: /runtime
+      UMEKO_LAB_MODEL_URL: https://model:19443/v1
+      UMEKO_LAB_BASE_URL: https://edge:18443
+      UMEKO_LAB_DOCKER: "1"
+    depends_on:
+      edge: {condition: service_healthy}
+      model: {condition: service_healthy}
+
+networks:
+  entry: {}
+  lab:
+    internal: true
+
+volumes:
+  runtime:

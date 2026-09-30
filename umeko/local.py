@@ -59,7 +59,7 @@ def main() -> None:
     )
     parser.add_argument("--host", default="127.0.0.1", help="监听地址（默认 127.0.0.1）")
     parser.add_argument("--port", type=int, default=8765, help="监听端口（默认 8765）")
-    parser.add_argument("--data-root", default="local_data", help="本地数据目录")
+    parser.add_argument("--data-root", default=None, help="数据目录（默认与 Web/CLI 共用 UMEKO_DATA_ROOT）")
     parser.add_argument("--workspace-root", default="output", help="会话产物根目录")
     parser.add_argument("--env", default=None, help=".env 文件路径，默认 ./.env")
     args = parser.parse_args()
@@ -72,7 +72,7 @@ def main() -> None:
     from .config import load_settings
 
     try:
-        settings = load_settings(args.env)
+        settings = load_settings(args.env, args.data_root)
     except RuntimeError as exc:
         print(exc, file=sys.stderr)
         sys.exit(1)
@@ -90,7 +90,7 @@ def main() -> None:
         command_runner=LocalCommandRunner(cwd=args.workspace_root),
     )
     print(f"Umeko 本地工作台：http://{args.host}:{args.port}（免登录）")
-    uvicorn.run(app, host=args.host, port=args.port, log_level="info")
+    uvicorn.run(app, host=args.host, port=args.port, log_level="info", root_path=settings.base_path)
 
 
 if __name__ == "__main__":

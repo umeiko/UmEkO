@@ -35,10 +35,10 @@ COMPACT_SYSTEM = """你负责压缩 Agent 对话上下文。请把所给历史�
 
 _VISION_ON = "\n\n当前主模型图像输入：已开启，可以处理用户贴入的图片和 read_image 读取的图片。"
 _VISION_OFF = (
-    "\n\n当前主模型图像输入：未开启（TEXT_MODEL_VISION=false），你不能直接看图："
+    "\n\n当前主模型图像输入：未开启，你不能直接看图："
     "- 用户贴图时消息中只带图片路径，需要图片内容时用 ocr_image 提取文字；"
     "- 工具列表中没有 read_image；若用户需要看图能力，"
-    "提示用户在 .env 中把 TEXT_MODEL_VISION 设为 true 并使用支持图片输入的模型。"
+    "提示用户在 Provider / Model 中选择支持图片输入的模型并启用视觉能力。"
 )
 
 _SERVER_SESSION_PATH_POLICY = """
@@ -60,7 +60,7 @@ class _PendingImages:
 
     def add(self, path: str) -> str:
         if not self._vision:
-            return "错误：主模型未开启图像输入（TEXT_MODEL_VISION=false），无法看图。"
+            return "错误：主模型未开启图像输入，请在 Provider / Model 中配置视觉能力。"
         try:
             p = validate_image(path)
         except ValueError as e:

@@ -1,4 +1,4 @@
-"""配置加载：dotenv 读取文本模型与多模态模型的独立 API 配置。
+"""部署配置从 dotenv 加载，模型配置从共享 Provider 注册表解析。
 
 基座只保留通用项：双模型配置、上下文窗口、子 Agent 回合上限。
 领域配置（渲染、引擎、领域开关等）由各领域项目在自己的 Settings 中扩展。
@@ -7,10 +7,12 @@
 from __future__ import annotations
 
 import os
+import re
+import ssl
 from dataclasses import dataclass, replace
 from pathlib import Path
 
-from dotenv import load_dotenv
+from dotenv import dotenv_values, load_dotenv
 
 from . import runtime
 
@@ -24,6 +26,8 @@ class ModelConfig:
     base_url: str
     # 模型 API 代理。None 表示直连；LLM 客户端始终忽略系统代理环境变量。
     proxy: str | None = None
+    # 在默认信任库之外追加的公司 CA（PEM）；不关闭证书校验。
+    ca_file: str | None = None
 
 
 @dataclass(frozen=True)
@@ -44,37 +48,40 @@ class Settings:
     max_subagent_tool_iterations: int = 24
     # 主 Agent 单次请求允许的 function-calling 回合数
     max_tool_iterations: int = 8
+    # 浏览器入口路径；空字符串表示部署在域名根目录。修改后重启。
+    base_path: str = ""
+    data_root: str = "server_data"
+    # load_settings 使用持久化 Provider；直接构造 Settings 仍支持显式注入模型。
+    registry_managed: bool = False
 
 
-def _require(key: str) -> str:
-    value = os.getenv(key)
-    if not value:
+def normalize_base_path(value: str) -> str:
+    value = value.strip()
+    if value in {"", "/"}:
+        return ""
+    value = value.rstrip("/")
+    if (not re.fullmatch(r"(?:/[A-Za-z0-9._~-]+)+", value)
+            or any(part in {".", ".."} for part in value.split("/"))):
         raise RuntimeError(
-            f"缺少环境变量 {key}，请复制 .env.example 为 .env 并填写配置。"
+            "UMEKO_BASE_PATH 必须是 /doc-master/consistency/image-text 这样的路径，"
+            "不含域名、查询参数、空格或 . / .. 路径段。"
         )
     return value
 
 
-def _load_vision_model(proxy: str | None = None) -> ModelConfig | None:
-    """视觉模型可选：三项配置齐全才加载，否则返回 None。"""
-    name = os.getenv("VISION_MODEL_NAME")
-    api_key = os.getenv("VISION_MODEL_API_KEY")
-    base_url = os.getenv("VISION_MODEL_BASE_URL")
-    if name and api_key and base_url:
-        return ModelConfig(name=name, api_key=api_key, base_url=base_url, proxy=proxy)
-    return None
-
-
-def _load_text_model(proxy: str | None) -> ModelConfig:
-    """主模型配置：环境变量缺失时降级为占位配置（服务可启动，/health 可达，
-    WebUI/管理面可用；模型调用会在运行时报错并提示去管理面配置 Provider）。
-    这让 exe 双击即起，首次配置走管理面而非手工编辑 .env。"""
-    return ModelConfig(
-        name=os.getenv("TEXT_MODEL_NAME") or "unconfigured",
-        api_key=os.getenv("TEXT_MODEL_API_KEY") or "",
-        base_url=os.getenv("TEXT_MODEL_BASE_URL") or "https://invalid.unconfigured",
-        proxy=proxy,
-    )
+def _load_model_ca(env_path: Path) -> str | None:
+    value = (os.getenv("MODEL_CA_FILE") or "").strip()
+    if not value:
+        return None
+    path = Path(value).expanduser()
+    if not path.is_absolute():
+        path = env_path.resolve().parent / path
+    try:
+        # 启动即报错，避免直到提问时才发现证书文件缺失或格式错误。
+        ssl.create_default_context().load_verify_locations(cafile=str(path))
+    except (OSError, ssl.SSLError) as exc:
+        raise RuntimeError(f"MODEL_CA_FILE 无法加载 CA 证书：{path} ({exc})") from exc
+    return str(path.resolve())
 
 
 def model_config_unconfigured(settings) -> bool:
@@ -83,7 +90,7 @@ def model_config_unconfigured(settings) -> bool:
     return not tm.api_key or "unconfigured" in tm.base_url
 
 
-def load_settings(env_path: str | Path | None = None) -> Settings:
+def resolve_env_path(env_path: str | Path | None = None) -> Path:
     if env_path is None:
         # 冻结（离线包）时优先读 exe 旁边的 .env，其次 CWD；源码运行维持 ./.env
         candidates = (
@@ -92,37 +99,52 @@ def load_settings(env_path: str | Path | None = None) -> Settings:
             else [Path(".env")]
         )
         env_path = next((p for p in candidates if p.is_file()), candidates[-1])
+    return Path(env_path)
+
+
+def load_settings(env_path: str | Path | None = None, data_root: str | Path | None = None) -> Settings:
+    env_path = resolve_env_path(env_path)
     load_dotenv(env_path)
-    model_proxy = (os.getenv("MODEL_PROXY") or "").strip() or None
-    return Settings(
-        text_model=_load_text_model(model_proxy),
+    model_ca = _load_model_ca(Path(env_path))
+    root = Path(data_root) if data_root is not None else Path(os.getenv("UMEKO_DATA_ROOT") or "server_data")
+    if data_root is None and not root.is_absolute():
+        root = Path(env_path).resolve().parent / root
+    settings = Settings(
+        text_model=ModelConfig("unconfigured", "", "https://invalid.unconfigured", ca_file=model_ca),
         context_window=max(1, int(os.getenv("TEXT_MODEL_CONTEXT_WINDOW", "128000"))),
-        vision_model=_load_vision_model(model_proxy),
-        text_model_vision=os.getenv("TEXT_MODEL_VISION", "").lower()
-        in ("1", "true", "yes"),
+        base_path=normalize_base_path(os.getenv("UMEKO_BASE_PATH", "")),
+        data_root=str(root.resolve()),
+        registry_managed=True,
         max_subagent_tool_iterations=max(
             1, int(os.getenv("MAX_SUBAGENT_TOOL_ITERATIONS", "24"))
         ),
         max_tool_iterations=max(1, int(os.getenv("MAX_TOOL_ITERATIONS", "32"))),
     )
+    from .host.configuration import LEGACY_MODEL_KEYS, migrate_legacy_models, resolve_provider_settings
+    from .host.storage import Store
+
+    store = Store(root / "umeko.db")
+    # 旧安装首次迁移；注册表已有配置时，不再读取 .env 凭据作为运行时回退。
+    if store.config().get("LEGACY_MODEL_CONFIG_MIGRATED") != "1":
+        legacy = {k: os.getenv(k, v) for k, v in dotenv_values(env_path).items() if k in LEGACY_MODEL_KEYS}
+        legacy.update({k: os.environ[k] for k in LEGACY_MODEL_KEYS if k in os.environ})
+        migrate_legacy_models(store, legacy)
+        store.set_config({"LEGACY_MODEL_CONFIG_MIGRATED": "1"})
+    return resolve_provider_settings(settings, store)
 
 
 # ---- 管理面可在线修改的配置键（存 Store.app_config，优先级高于 .env） ----
 
 CONFIGURABLE_KEYS = (
-    "TEXT_MODEL_NAME", "TEXT_MODEL_API_KEY", "TEXT_MODEL_BASE_URL",
-    "TEXT_MODEL_VISION", "TEXT_MODEL_CONTEXT_WINDOW",
-    "VISION_MODEL_NAME", "VISION_MODEL_API_KEY", "VISION_MODEL_BASE_URL",
-    "MODEL_PROXY", "MAX_TOOL_ITERATIONS",
+    "TEXT_MODEL_CONTEXT_WINDOW", "MAX_TOOL_ITERATIONS",
 )
-SECRET_KEYS = frozenset({"TEXT_MODEL_API_KEY", "VISION_MODEL_API_KEY"})
+SECRET_KEYS = frozenset()
 
 
 def apply_overrides(settings: Settings, overrides: dict[str, str]) -> Settings:
     """把 DB 覆盖层应用到 Settings（frozen dataclass，返回新实例）。
 
-    视觉模型三项必须齐全才生效；覆盖不完整时保持原状，避免半个配置把
-    在线服务打挂。
+    地址、密钥、代理与视觉能力仅来自 Provider 注册表。
     """
     o = {
         k: str(v).strip()
@@ -131,35 +153,13 @@ def apply_overrides(settings: Settings, overrides: dict[str, str]) -> Settings:
     }
     if not o:
         return settings
-    proxy = o.get("MODEL_PROXY", settings.text_model.proxy)
-    text_model = replace(
-        settings.text_model,
-        name=o.get("TEXT_MODEL_NAME", settings.text_model.name),
-        api_key=o.get("TEXT_MODEL_API_KEY", settings.text_model.api_key),
-        base_url=o.get("TEXT_MODEL_BASE_URL", settings.text_model.base_url),
-        proxy=proxy,
-    )
-    vision = settings.vision_model
-    v_name = o.get("VISION_MODEL_NAME", vision.name if vision else None)
-    v_key = o.get("VISION_MODEL_API_KEY", vision.api_key if vision else None)
-    v_url = o.get("VISION_MODEL_BASE_URL", vision.base_url if vision else None)
-    if v_name and v_key and v_url:
-        vision = ModelConfig(name=v_name, api_key=v_key, base_url=v_url, proxy=proxy)
     try:
         context_window = int(o.get("TEXT_MODEL_CONTEXT_WINDOW", settings.context_window))
     except (TypeError, ValueError):
         context_window = settings.context_window
-    vision_flag = o.get("TEXT_MODEL_VISION")
     result = replace(
         settings,
-        text_model=text_model,
-        vision_model=vision,
         context_window=max(1, context_window),
-        text_model_vision=(
-            settings.text_model_vision
-            if vision_flag is None
-            else vision_flag.lower() in ("1", "true", "yes")
-        ),
     )
     # 主 Agent 最大工具轮次：0 = 无限（管理面可配）
     mti = o.get("MAX_TOOL_ITERATIONS")

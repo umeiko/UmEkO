@@ -5,6 +5,7 @@ from __future__ import annotations
 import json
 import logging
 import re
+import ssl
 import threading
 import time
 from pathlib import Path
@@ -12,6 +13,7 @@ from uuid import uuid4
 from types import SimpleNamespace
 
 from openai import DefaultHttpxClient, OpenAI, Timeout as HttpTimeout
+import certifi
 
 from ..cancellation import (
     CancelCheck,
@@ -266,6 +268,13 @@ class LLMClient:
     def _get_client(self) -> OpenAI:
         with self._client_lock:
             if self._client is None:
+                tls_options = {}
+                if self._model.ca_file:
+                    # 同时保留系统与公共 CA，额外信任显式配置的公司 CA。
+                    context = ssl.create_default_context()
+                    context.load_verify_locations(cafile=certifi.where())
+                    context.load_verify_locations(cafile=self._model.ca_file)
+                    tls_options["verify"] = context
                 self._client = OpenAI(
                     api_key=self._model.api_key,
                     base_url=self._model.base_url,
@@ -274,6 +283,7 @@ class LLMClient:
                     http_client=DefaultHttpxClient(
                         proxy=self._model.proxy,
                         trust_env=False,
+                        **tls_options,
                     ),
                     # 分段超时：connect 快速失败（网关不可达/半死时不再傻等
                     # 10 分钟）；read 是"两个字节之间"的等待上限，覆盖深度思考

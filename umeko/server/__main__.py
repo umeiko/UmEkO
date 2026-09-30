@@ -14,7 +14,6 @@ import logging
 import os
 import sys
 import threading
-from pathlib import Path
 
 
 def _bootstrap_admin(store, logger: logging.Logger) -> None:
@@ -40,7 +39,7 @@ def main() -> None:
     parser = argparse.ArgumentParser(prog="umeko.server", description="Umeko Web 工作台")
     parser.add_argument("--host", default="127.0.0.1", help="监听地址（默认 127.0.0.1）")
     parser.add_argument("--port", type=int, default=8000, help="监听端口（默认 8000）")
-    parser.add_argument("--data-root", default="server_data", help="服务端数据目录")
+    parser.add_argument("--data-root", default=None, help="数据目录（覆盖 UMEKO_DATA_ROOT，默认 server_data）")
     parser.add_argument("--workspace-root", default="output", help="会话产物根目录")
     parser.add_argument("--env", default=None, help=".env 文件路径，默认 ./.env")
     parser.add_argument("--admin-host", default="127.0.0.1",
@@ -55,35 +54,29 @@ def main() -> None:
         datefmt="%H:%M:%S",
     )
     logger = logging.getLogger("umeko.server")
-    from ..config import load_settings, model_config_unconfigured
-    from ..runtime import app_dir
+    from ..config import load_settings, model_config_unconfigured, resolve_env_path
 
     try:
-        settings = load_settings(args.env)
+        settings = load_settings(args.env, args.data_root)
     except RuntimeError as exc:
         print(exc, file=sys.stderr)
         sys.exit(1)
 
     # 首次运行：无 .env 时在 exe/项目目录生成模板，方便直接编辑（也可全走管理面配置）
-    env_path = Path(args.env) if args.env else app_dir() / ".env"
+    env_path = resolve_env_path(args.env)
     if model_config_unconfigured(settings) and not env_path.is_file():
         template = (
-            "# UMEKO 配置模板——也可不改此文件，直接在管理面（默认 9000 端口）"
-            "的 Provider/Model 页配置模型\n"
-            "# 主模型（OpenAI 兼容）\n"
-            "# TEXT_MODEL_NAME=your-model\n"
-            "# TEXT_MODEL_BASE_URL=https://api.example.com/v1\n"
-            "# TEXT_MODEL_API_KEY=sk-xxx\n"
-            "# 可选：视觉模型（启用 image_reasoning）\n"
-            "# VISION_MODEL_NAME=your-vision-model\n"
-            "# VISION_MODEL_API_KEY=sk-xxx\n"
-            "# VISION_MODEL_BASE_URL=https://api.example.com/v1\n"
+            "# 模型地址、密钥、模型名在管理面 Provider / Model 或 CLI 中配置。\n"
+            "# 部署配置（修改后重启；本地开发前缀/CA 保持为空）\n"
+            "UMEKO_BASE_PATH=\n"
+            "MODEL_CA_FILE=\n"
+            "UMEKO_DATA_ROOT=server_data\n"
         )
         try:
             env_path.write_text(template, encoding="utf-8")
             logger.info("检测到未配置模型：已生成 .env 模板（%s）", env_path)
             logger.info(
-                "两种配置方式任选：1) 编辑 .env 后重启；2) 打开管理面 "
+                "模型配置：打开管理面 "
                 "http://%s:%d 用默认账号登录，在 Provider/Model 页添加",
                 args.admin_host, args.admin_port,
             )
@@ -92,7 +85,6 @@ def main() -> None:
 
     import uvicorn
 
-    from ..host.storage import Store
     from .app import create_app
 
     app = create_app(settings, data_root=args.data_root, workspace_root=args.workspace_root)
@@ -102,8 +94,6 @@ def main() -> None:
 
         store = app.state.store  # 与用户面共用同一 Store 实例（同一 SQLite）
         _bootstrap_admin(store, logger)
-        if store.seed_providers_from_settings(settings):
-            logger.info("已用 .env 模型配置播种 Provider 注册表（default）")
         admin_app = create_admin_app(settings, app.state.agent_service, store)
         threading.Thread(
             target=_serve_admin,
@@ -113,7 +103,8 @@ def main() -> None:
         logger.info("管理面：http://%s:%d（仅管理员，用户面无入口）",
                     args.admin_host, args.admin_port)
 
-    uvicorn.run(app, host=args.host, port=args.port, log_level="info")
+    uvicorn.run(app, host=args.host, port=args.port, log_level="info",
+                root_path=settings.base_path)
 
 
 if __name__ == "__main__":

@@ -24,7 +24,7 @@ from urllib.parse import quote
 from .. import events as ev
 from ..agent import UmekoAgent
 from ..cancellation import OperationCancelled
-from ..config import ModelConfig, Settings, apply_overrides
+from ..config import Settings
 from ..prompts.system import DEFAULT_SYSTEM
 from ..runtime import app_dir
 from ..runner import Run, RunManager, TERMINAL_STATUSES
@@ -33,6 +33,7 @@ from ..tree import TreeNode, TreeBudget, build_tree, compile_filter
 from .profile import CLOUD_PROFILE, Profile
 from ..skillpacks import parse_skill_pack_text
 from .storage import Store
+from .configuration import deployment_defaults, model_from_row, resolve_provider_settings
 
 
 def _now() -> str:
@@ -87,7 +88,7 @@ class AgentService:
         profile: Profile = CLOUD_PROFILE,
         command_runner=None,
     ):
-        self._base_settings = settings
+        self._base_settings = deployment_defaults(settings)
         self.profile = profile
         # run_command 工具后端（CommandRunner 协议）；云场景必须保持 None
         self._command_runner = command_runner if profile.allow_command else None
@@ -96,8 +97,7 @@ class AgentService:
         self.workspace_root = Path(workspace_root).resolve()
         self.workspace_root.mkdir(parents=True, exist_ok=True)
         self.store = store or Store(self.data_root / "umeko.db")
-        # DB 配置覆盖层（管理面在线修改）优先于 .env；内存中生效配置可随时重载
-        self.settings = apply_overrides(settings, self.store.config())
+        self.settings = resolve_provider_settings(self._base_settings, self.store)
         self.sessions: dict[str, SessionState] = {}
         self._lock = threading.Lock()
         self.run_manager = RunManager(max_workers=4)
@@ -783,24 +783,18 @@ class AgentService:
 
     # ---------- 用户级模型解析 ----------
 
-    @staticmethod
-    def _config_from_row(row: dict, default_proxy: str | None) -> ModelConfig:
-        return ModelConfig(
-            name=row["model"], api_key=row["api_key"],
-            base_url=row["base_url"], proxy=row["proxy"] or default_proxy,
-        )
-
     def effective_settings_for(
         self, user_id: str, session_id: str | None = None
     ) -> Settings:
         """按优先级解析某用户（某会话）的生效配置：
 
-        主智能体：会话覆盖 > 用户主模型偏好 > 全局（active 模型/覆盖层/.env）
+        主智能体：会话覆盖 > 用户主模型偏好 > 注册表激活模型
         子智能体：用户子模型偏好 > 跟随主智能体
         视觉智能体：用户视觉偏好 > 主模型原生视觉（None）> 注册表视觉兜底
         引用了已删除模型的偏好/覆盖在此静默回退（存储层删除时也会主动清理）。
         """
-        settings = self.settings
+        settings = resolve_provider_settings(self._base_settings, self.store)
+        self.settings = settings
         prefs = self.store.user_model_prefs(user_id) if user_id else Store._empty_prefs()
         override_id = None
         if session_id:
@@ -818,22 +812,20 @@ class AgentService:
         vision_model = settings.vision_model
         main_row = self.store.model_by_id(main_id) if main_id else None
         if main_row is not None:
-            text_model = self._config_from_row(main_row, settings.text_model.proxy)
+            text_model = model_from_row(main_row, settings.text_model)
             text_vision = bool(main_row["vision"])
 
         sub_model, sub_vision = settings.sub_model, settings.sub_model_vision
         if prefs["sub_model_id"]:
             sub_row = self.store.model_by_id(prefs["sub_model_id"])
             if sub_row is not None:
-                sub_model = self._config_from_row(sub_row, settings.text_model.proxy)
+                sub_model = model_from_row(sub_row, settings.text_model)
                 sub_vision = bool(sub_row["vision"])
 
         if prefs["vision_model_id"]:
             vision_row = self.store.model_by_id(prefs["vision_model_id"])
             if vision_row is not None and vision_row["vision"]:
-                vision_model = self._config_from_row(
-                    vision_row, settings.text_model.proxy
-                )
+                vision_model = model_from_row(vision_row, settings.text_model)
         elif main_row is not None:
             # 主模型被用户显式更换且未指定视觉模型：按主模型视觉能力重推
             if text_vision:
@@ -843,7 +835,7 @@ class AgentService:
                     prefer_provider=main_row["provider_id"]
                 )
                 vision_model = (
-                    self._config_from_row(fallback, settings.text_model.proxy)
+                    model_from_row(fallback, settings.text_model)
                     if fallback else settings.vision_model
                 )
 
@@ -859,36 +851,11 @@ class AgentService:
     def reload_config(self) -> dict:
         """重读配置并驱逐全部在线 Session（配置变更即时全员生效）。
 
-        优先级：Provider 注册表激活模型 > app_config 覆盖键 > .env。
+        模型只来自 Provider 注册表；部署配置保持进程启动时的值。
         激活模型有视觉能力时不再配 OCR 兜底视觉模型；无视觉时自动选用
         注册表中第一个视觉模型（优先同 Provider）。
         """
-        settings = apply_overrides(self._base_settings, self.store.config())
-        active = self.store.active_model()
-        if active is not None:
-            proxy = active["proxy"] or settings.text_model.proxy
-            text_model = ModelConfig(
-                name=active["model"], api_key=active["api_key"],
-                base_url=active["base_url"], proxy=proxy,
-            )
-            if active["vision"]:
-                vision_model = None  # 主模型原生视觉，无需 OCR 兜底
-            else:
-                fallback = self.store.first_vision_model(
-                    prefer_provider=active["provider_id"]
-                )
-                vision_model = (
-                    ModelConfig(
-                        name=fallback["model"], api_key=fallback["api_key"],
-                        base_url=fallback["base_url"],
-                        proxy=fallback["proxy"] or proxy,
-                    )
-                    if fallback else settings.vision_model
-                )
-            settings = replace(
-                settings, text_model=text_model, vision_model=vision_model,
-                text_model_vision=bool(active["vision"]),
-            )
+        settings = resolve_provider_settings(self._base_settings, self.store)
         self.settings = settings
         evicted = self.evict_all_sessions()
         return {
