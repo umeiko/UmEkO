@@ -1,3 +1,10 @@
+// 后端在运行时提供部署前缀；所有应用内部路径通过此入口生成。
+const basePath = document.querySelector('meta[name="umeko-base-path"]')?.content || "";
+function appUrl(path) {
+  return typeof path === "string" && path.startsWith("/") && !path.startsWith("//")
+    ? basePath + path : path;
+}
+
 const ui = {
   messages: document.querySelector("#messages"),
   composer: document.querySelector("#composer"),
@@ -288,7 +295,7 @@ function renderToolImages(action) {
   wrap.replaceChildren();
   for (const path of valid) {
     const link = document.createElement("a");
-    link.href = `/v1/sessions/${sessionId}/workspace/files/raw/${path}`;
+    link.href = appUrl(`/v1/sessions/${sessionId}/workspace/files/raw/${path}`);
     link.target = "_blank";
     link.rel = "noopener";
     link.title = path;
@@ -373,7 +380,7 @@ ui.toolDetailDialog.addEventListener("click", event => {
 });
 
 async function api(path, options = {}) {
-  const response = await fetch(path, options);
+  const response = await fetch(appUrl(path), options);
   if (!response.ok) {
     const body = await response.json().catch(() => ({}));
     let detail = body.detail;
@@ -633,7 +640,7 @@ function setAvatarView(image, fallback, username, source) {
   }
   image.onload = () => { image.classList.remove("hidden"); fallback.classList.add("hidden"); };
   image.onerror = () => { image.classList.add("hidden"); fallback.classList.remove("hidden"); };
-  image.src = source;
+  image.src = appUrl(source);
 }
 
 function renderCurrentUser(user, cacheBust = false) {
@@ -1241,7 +1248,7 @@ async function executeFileAction(action, target) {
   }
   if (action === "download") {
     const link = document.createElement("a");
-    link.href = `/v1/sessions/${sessionId}/workspace/files/download?path=${encodeURIComponent(target.path)}`;
+    link.href = appUrl(`/v1/sessions/${sessionId}/workspace/files/download?path=${encodeURIComponent(target.path)}`);
     link.download = target.type === "directory" ? `${target.name}.zip` : target.name;
     document.body.appendChild(link); link.click(); link.remove();
     setStatus(t("file.downloading", {name: link.download}), true);
@@ -1803,7 +1810,7 @@ async function previewFile(path, button) {
   selectedResource = null;
   document.querySelectorAll(".tree-file.active").forEach(node => node.classList.remove("active"));
   button.classList.add("active");
-  const url = `/v1/sessions/${sessionId}/workspace/files/content?path=${encodeURIComponent(path)}`;
+  const url = appUrl(`/v1/sessions/${sessionId}/workspace/files/content?path=${encodeURIComponent(path)}`);
   const name = path.split("/").pop();
   const ext = name.split(".").pop().toLowerCase();
   ui.previewKicker.textContent = "OUTPUT FILE";
@@ -2142,7 +2149,7 @@ function setRunControls(running, stopping = false) {
 function followRun(runId, runSessionId = sessionId) {
   if (activeRunCleanup) activeRunCleanup();
   else if (activeStream) activeStream.close();
-  const stream = new EventSource(`/v1/runs/${runId}/events`);
+  const stream = new EventSource(appUrl(`/v1/runs/${runId}/events`));
   activeStream = stream;
   activeRunId = runId;
   activeRunSessionId = runSessionId;
@@ -2175,10 +2182,17 @@ function followRun(runId, runSessionId = sessionId) {
   const workspaceFallback = setInterval(
     () => scheduleWorkspaceRefresh(runSessionId, 0), 2500
   );
+  let disposed = false;
+  let reconnectTimer = null;
+  let pollTimer = null;
+  let polling = false;
   const cleanup = () => {
+    disposed = true;
     stream.close();
     clearInterval(timer);
     clearInterval(workspaceFallback);
+    clearTimeout(reconnectTimer);
+    clearTimeout(pollTimer);
     if (activeStream === stream) activeStream = null;
     if (activeRunCleanup === cleanup) activeRunCleanup = null;
   };
@@ -2395,53 +2409,80 @@ function followRun(runId, runSessionId = sessionId) {
   stream.addEventListener("subagent.completed", event => finishSubagentEvent(event, "completed"));
   stream.addEventListener("subagent.failed", event => finishSubagentEvent(event, t("subagent.failed")));
   stream.addEventListener("subagent.cancelled", event => finishSubagentEvent(event, t("subagent.cancelled")));
-  stream.addEventListener("run.completed", async event => {
-    if (sessionId !== runSessionId) { stream.close(); return; }
-    const payload = JSON.parse(event.data);
-    const reply = payload.data.reply || t("run.done");
-    if (!assistant || !streamedText.trim()) {
-      assistant = addMessage(reply, "assistant");
+  const finishRun = async (status, data) => {
+    if (disposed || sessionId !== runSessionId) return;
+    if (status === "completed") {
+      const reply = data.reply || t("run.done");
+      if (!assistant || !streamedText.trim()) assistant = addMessage(reply, "assistant");
+      assistant.querySelector(".message-body").innerHTML = renderMarkdown(reply);
+    } else {
+      addMessage(status === "failed"
+        ? t("run.failedMessage", {error: data.error || t("run.failed")})
+        : (data.reply || t("run.stoppedReply")), "assistant");
     }
-    assistant.querySelector(".message-body").innerHTML = renderMarkdown(reply);
     cleanup(); finishReasoning(); updateMetrics();
     activeStream = null; activeRunId = null; activeRunSessionId = null;
     setRunControls(false);
-    setStatus(t("status.connected"), true);
-    await refreshTree();
-    await refreshContext(runSessionId);
-    await refreshSessionTabs();
-  });
-  stream.addEventListener("run.failed", async event => {
-    if (sessionId !== runSessionId) { stream.close(); return; }
-    const payload = JSON.parse(event.data);
-    addMessage(t("run.failedMessage", {error: payload.data.error}), "assistant");
-    cleanup(); finishReasoning(); updateMetrics();
-    activeStream = null; activeRunId = null; activeRunSessionId = null;
-    setRunControls(false);
-    setStatus(t("run.failed"));
-    await refreshTree(runSessionId);
-    await refreshContext(runSessionId);
-  });
+    setStatus(t(status === "completed" ? "status.connected"
+      : status === "failed" ? "run.failed" : "run.stopped"), status !== "failed");
+    // 任务已经结束；刷新面板失败不能让输入框重新卡住。
+    await Promise.allSettled([refreshTree(runSessionId), refreshContext(runSessionId), refreshSessionTabs()]);
+  };
+  for (const status of ["completed", "failed", "cancelled"]) {
+    stream.addEventListener(`run.${status}`, event => {
+      void finishRun(status, JSON.parse(event.data).data);
+    });
+  }
   stream.addEventListener("run.cancelling", () => {
     if (sessionId !== runSessionId) return;
     setRunControls(true, true);
     setStatus(t("run.stopping"));
   });
-  stream.addEventListener("run.cancelled", async event => {
-    if (sessionId !== runSessionId) { stream.close(); return; }
-    const payload = JSON.parse(event.data);
-    const reply = payload.data.reply || t("run.stoppedReply");
-    addMessage(reply, "assistant");
-    cleanup(); finishReasoning(); updateMetrics();
-    activeStream = null; activeRunId = null; activeRunSessionId = null;
-    setRunControls(false);
-    setStatus(t("run.stopped"), true);
-    await refreshTree();
-    await refreshContext(runSessionId);
-  });
+  const pollRun = async () => {
+    if (disposed) return;
+    try {
+      const run = await api(`/v1/runs/${runId}`, {signal: AbortSignal.timeout(10000)});
+      if (disposed || sessionId !== runSessionId) return;
+      if (["completed", "failed", "cancelled"].includes(run.status)) {
+        await finishRun(run.status, run);
+        return;
+      }
+      // 后台任务仍在运行，保留停止按钮；直到拿到最终结果才结束。
+      pollTimer = setTimeout(pollRun, 2500);
+    } catch (_) {
+      if (disposed || sessionId !== runSessionId) return;
+      cleanup(); finishReasoning(); updateMetrics();
+      activeRunId = null; activeRunSessionId = null;
+      setRunControls(false);
+      setStatus(t("run.streamFailed"));
+      addMessage(t("run.streamFailedMessage"), "assistant");
+    }
+  };
+  const usePolling = () => {
+    if (disposed || polling) return;
+    polling = true;
+    stream.close();
+    clearTimeout(reconnectTimer);
+    setStatus(t("run.waitingResult"));
+    void pollRun();
+  };
+  // 原生 EventSource 会重试网络断连，但 401/404 时会直接进入 CLOSED。
+  // 首次连接/重连等候 15 秒后也降级，避免无限重连。
+  const waitForReconnect = () => {
+    if (!reconnectTimer) reconnectTimer = setTimeout(usePolling, 15000);
+  };
+  waitForReconnect();
+  stream.onopen = () => {
+    if (disposed || polling) return;
+    clearTimeout(reconnectTimer);
+    reconnectTimer = null;
+    setStatus(t("run.running"));
+  };
   stream.onerror = () => {
-    if (stream.readyState === EventSource.CLOSED) return;
+    if (disposed || polling) return;
+    if (stream.readyState === EventSource.CLOSED) { usePolling(); return; }
     setStatus(t("run.reconnecting"));
+    waitForReconnect();
   };
 }
 

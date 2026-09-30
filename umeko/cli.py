@@ -1,25 +1,75 @@
 """命令行 REPL：与 Web 共用 L1 Runner + 事件协议（events.py / runner.py）。
 
 用法：
-    cp .env.example .env  # 填写模型配置
+    python -m umeko.cli providers import providers.local
     python -m umeko.cli
 """
 
 from __future__ import annotations
 
 import logging
+import argparse
+import json
 import sys
 import time
 from pathlib import Path
 
 from . import events as ev
 from .agent import UmekoAgent
-from .config import load_settings
+from .config import load_settings, model_config_unconfigured, resolve_env_path
 from .prompts.system import DEFAULT_SYSTEM
 from .runner import TERMINAL_STATUSES, Run, RunManager
 from .session import Session
 
 CLI_SESSION_ID = "cli"
+
+
+def _parser() -> argparse.ArgumentParser:
+    parser = argparse.ArgumentParser(prog="umeko.cli", description="Umeko REPL 与共享 Provider 管理")
+    parser.add_argument("--env", default=None, help="部署 .env 路径")
+    parser.add_argument("--data-root", default=None, help="覆盖 UMEKO_DATA_ROOT（与 Web 共用同一目录）")
+    sub = parser.add_subparsers(dest="command")
+    actions = sub.add_parser("providers", help="与网页管理面共用 Provider 注册表").add_subparsers(dest="action", required=True)
+    actions.add_parser("list", help="列出 Provider/模型，不显示密钥")
+    actions.add_parser("import", help="导入与网页管理面相同格式的 JSON").add_argument("file", type=Path)
+    actions.add_parser("use", help="激活默认模型").add_argument("model_id")
+    migrate = actions.add_parser("migrate-env", help="将旧 .env 模型配置迁移到 Provider")
+    migrate.add_argument("--remove", action="store_true", help="迁移成功后删除旧 .env 模型项")
+    return parser
+
+
+def _providers(args, settings) -> None:
+    from dotenv import dotenv_values, unset_key
+    from .host.configuration import LEGACY_MODEL_KEYS, migrate_legacy_models
+    from .host.storage import Store
+    store = Store(Path(settings.data_root) / "umeko.db")
+    if args.action == "list":
+        active = store.active_model()
+        providers = store.list_providers()
+        for provider in providers:
+            print(f"{provider['name']} ({provider['id']})")
+            for model in provider["models"]:
+                mark = "*" if active and active["model_id"] == model["id"] else " "
+                print(f"  {mark} {model['id']}  {model['name']}  vision={model['vision']}")
+        if not providers:
+            print("尚未配置 Provider，请从管理面添加或使用 providers import。")
+    elif args.action == "import":
+        result = store.import_providers(json.loads(args.file.read_text(encoding="utf-8")))
+        print(json.dumps(result, ensure_ascii=False))
+    elif args.action == "use":
+        store.set_active_model(args.model_id)
+        print("已激活默认模型。网页服务会在下一轮提问时读取更新；CLI 用 /reload。")
+    elif args.action == "migrate-env":
+        path = resolve_env_path(args.env)
+        if not path.is_file():
+            raise RuntimeError(f"找不到旧配置文件：{path}")
+        count = migrate_legacy_models(store, dotenv_values(path))
+        store.set_config({"LEGACY_MODEL_CONFIG_MIGRATED": "1"})
+        if args.remove:
+            for key in LEGACY_MODEL_KEYS:
+                if key in dotenv_values(path):
+                    unset_key(str(path), key)
+        print(f"已核对/迁移 {count} 个模型；注册表：{store.path}" + ("；旧 .env 模型项已移除。" if args.remove else "。"))
 
 
 def _render(event: dict) -> None:
@@ -72,14 +122,20 @@ def _run_turn(manager: RunManager, agent: UmekoAgent, user_input: str) -> str | 
 
 
 def main() -> None:
+    args = _parser().parse_args()
     logging.basicConfig(
         level=logging.INFO,
         format="%(asctime)s %(levelname)s %(name)s %(message)s",
         datefmt="%H:%M:%S",
     )
     try:
-        settings = load_settings()
-    except RuntimeError as exc:
+        settings = load_settings(args.env, args.data_root)
+        if args.command == "providers":
+            _providers(args, settings)
+            return
+        if model_config_unconfigured(settings):
+            raise RuntimeError("尚未激活模型。请在管理面 Provider / Model 中配置，或使用 providers import/use。")
+    except (RuntimeError, ValueError, KeyError, OSError) as exc:
         print(exc, file=sys.stderr)
         sys.exit(1)
     session = Session(settings, Path("output"))
@@ -92,6 +148,7 @@ def main() -> None:
         ),
     )
     print("UMEKO REPL（Ctrl+C 取消本轮，/quit 退出）；产物目录：", session.output_dir)
+    print("模型来自共享 Provider 注册表；/reload 读取更新并开始新对话。")
     while True:
         try:
             user_input = input("\n> ").strip()
@@ -102,6 +159,20 @@ def main() -> None:
             continue
         if user_input in {"/quit", "/exit"}:
             break
+        if user_input == "/reload":
+            try:
+                updated = load_settings(args.env, args.data_root)
+                if model_config_unconfigured(updated):
+                    raise RuntimeError("尚未激活模型，请先配置 Provider。")
+                session = Session(updated, Path("output"))
+                agent = UmekoAgent(updated, session, DEFAULT_SYSTEM,
+                    on_event=lambda t, d: _stream_to_run(t, d, manager),
+                    should_cancel=lambda: bool((r := _active_run(manager)) and r.cancel_requested()))
+                settings = updated
+                print("已读取 Provider 配置并开始新对话。")
+            except (RuntimeError, ValueError, OSError) as exc:
+                print(f"配置更新失败：{exc}")
+            continue
         if user_input == "/stats":
             print(agent.context_stats())
             continue

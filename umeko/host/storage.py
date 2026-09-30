@@ -253,7 +253,7 @@ class Store:
                 "SELECT COUNT(*) AS c FROM users WHERE role='admin'"
             ).fetchone()["c"] > 0
 
-    # ---- Provider / Model 注册表（管理面维护，激活后覆盖 .env 模型配置） ----
+    # ---- Provider / Model 注册表（管理面、CLI 和本地工作台共用） ----
 
     def list_providers(self) -> list[dict]:
         with self.connect() as db:
@@ -515,8 +515,7 @@ class Store:
         return dict(rows[0])
 
     def seed_providers_from_settings(self, settings) -> bool:
-        """注册表为空时用 .env 生效配置播种 Provider；.env 未配置（占位值）则跳过，
-        留待管理员在管理面录入。"""
+        """显式 Settings 注入的初始化助手；正常入口使用共享配置解析/迁移逻辑。"""
         if self.list_providers():
             return False
         tm = settings.text_model
@@ -600,7 +599,7 @@ class Store:
             "models_created": created_m, "activated": activated,
         }
 
-    # ---- Provider/Model 配置覆盖层（DB > .env，见 config.apply_overrides） ----
+    # ---- 运行参数覆盖层与注册表状态 ----
 
     def config(self) -> dict[str, str]:
         with self.connect() as db:

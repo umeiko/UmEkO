@@ -1,0 +1,9 @@
+# Pin the direct dependencies used in the Windows reproduction for comparison.
+openai==3.22.1
+httpx==0.28.1
+fastapi==0.142.1
+uvicorn==0.54.0
+python-dotenv==1.2.3
+python-multipart==0.0.32
+cryptography==50.0.1
+psutil==7.2.2
