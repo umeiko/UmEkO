@@ -4,6 +4,10 @@ Agent Card：`BASE_URL/.well-known/agent-card.json`；协议入口：`BASE_URL/a
 
 ## 方法与输入
 
+管理员可在“服务接入”点击 Agent Card 名称或地址，打开居中的 JSON 编辑框，查看、格式化、修改并保存。可编辑 `name`、`description`、`version`、`documentationUrl`、`iconUrl`、`provider` 和 `skills`；保存到数据库后公开 Card 立即更新，重启后仍保留。
+
+`supportedInterfaces`、`capabilities`、默认输入 / 输出类型以及鉴权声明由实际服务配置自动生成。编辑时保留这些字段的原值；配置已变化时点击“重新读取”。技能描述是公开能力说明，修改它不会安装工具或改变 Agent 的执行能力。公开 Card 响应使用 `Cache-Control: no-cache`，客户端自行缓存的 Card 仍需重新获取。
+
 采用 A2A 1.0 JSON-RPC，方法名为 `SendMessage`、`SendStreamingMessage`、`GetTask`、`ListTasks`、`CancelTask`、`SubscribeToTask`。不是旧版 0.3 的 `message/send` 等方法名。
 
 ```json

@@ -67,6 +67,21 @@
         "title": "_ActiveModelIn",
         "type": "object"
       },
+      "_AgentCardIn": {
+        "additionalProperties": false,
+        "properties": {
+          "card": {
+            "additionalProperties": true,
+            "title": "Card",
+            "type": "object"
+          }
+        },
+        "required": [
+          "card"
+        ],
+        "title": "_AgentCardIn",
+        "type": "object"
+      },
       "_DefaultSkillIn": {
         "properties": {
           "content": {
@@ -536,6 +551,80 @@
           }
         ],
         "summary": "Activate Model"
+      }
+    },
+    "/admin/v1/agent-card": {
+      "get": {
+        "operationId": "get_agent_card_admin_v1_agent_card_get",
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "additionalProperties": true,
+                  "title": "Response Get Agent Card Admin V1 Agent Card Get",
+                  "type": "object"
+                }
+              }
+            },
+            "description": "Successful Response"
+          }
+        },
+        "security": [
+          {
+            "umeko_admin": []
+          }
+        ],
+        "summary": "Get Agent Card",
+        "tags": [
+          "service access"
+        ]
+      },
+      "put": {
+        "operationId": "save_agent_card_admin_v1_agent_card_put",
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/_AgentCardIn"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "additionalProperties": true,
+                  "title": "Response Save Agent Card Admin V1 Agent Card Put",
+                  "type": "object"
+                }
+              }
+            },
+            "description": "Successful Response"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            },
+            "description": "Validation Error"
+          }
+        },
+        "security": [
+          {
+            "umeko_admin": []
+          }
+        ],
+        "summary": "Save Agent Card",
+        "tags": [
+          "service access"
+        ]
       }
     },
     "/admin/v1/default-skills": {

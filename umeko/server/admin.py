@@ -15,7 +15,8 @@ from typing import Literal
 
 from fastapi import FastAPI, HTTPException, Request, Response
 from fastapi.responses import HTMLResponse, JSONResponse
-from pydantic import BaseModel, Field
+from pydantic import BaseModel, ConfigDict, Field
+from .agent_card import EDITABLE_FIELDS
 from ..host.identities import SCOPES
 
 from ..config import Settings
@@ -140,7 +141,13 @@ class _ServiceAccessIn(BaseModel):
     auth_mode: Literal["required", "anonymous"]
 
 
-def create_admin_app(settings: Settings, service: AgentService, store: Store) -> FastAPI:
+class _AgentCardIn(BaseModel):
+    model_config = ConfigDict(extra="forbid")
+    card: dict
+
+
+def create_admin_app(settings: Settings, service: AgentService, store: Store, public_url: str | None = None) -> FastAPI:
+    public_base = settings.public_url or public_url or "http://127.0.0.1:8000" + settings.base_path
     app = FastAPI(
         title="Umeko Admin",
         docs_url=None, redoc_url=None, openapi_url=None,  # 不暴露任何 API 文档
@@ -192,7 +199,7 @@ def create_admin_app(settings: Settings, service: AgentService, store: Store) ->
 
     @app.get("/admin/v1/service-accounts", tags=["service access"])
     def service_accounts() -> dict:
-        base = settings.public_url or settings.base_path
+        base = public_base
         return {"accounts": service.identity_store.list(), "scopes": sorted(SCOPES),
                 "auth_mode": service.identity_store.auth_mode(),
                 "endpoints": {"mcp": base + "/mcp", "a2a": base + "/a2a",
@@ -206,6 +213,19 @@ def create_admin_app(settings: Settings, service: AgentService, store: Store) ->
     def update_service_access(payload: _ServiceAccessIn) -> dict:
         service.identity_store.set_auth_mode(payload.auth_mode)
         return service_access()
+
+    @app.get("/admin/v1/agent-card", tags=["service access"])
+    def get_agent_card() -> dict:
+        return {"card": service.agent_card.render(public_base, service.identity_store.auth_mode()),
+                "editable_fields": list(EDITABLE_FIELDS), "public_url": public_base + "/.well-known/agent-card.json"}
+
+    @app.put("/admin/v1/agent-card", tags=["service access"])
+    def save_agent_card(payload: _AgentCardIn) -> dict:
+        try:
+            service.agent_card.save(payload.card, public_base, service.identity_store.auth_mode())
+        except ValueError as exc:
+            raise HTTPException(400, str(exc)) from exc
+        return get_agent_card()
 
     @app.post("/admin/v1/service-accounts", status_code=201, tags=["service access"])
     def create_service_account(payload: _ServiceAccountIn, response: Response) -> dict:

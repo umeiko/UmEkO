@@ -8,6 +8,7 @@ from datetime import timezone
 from urllib.parse import urlsplit
 from typing import Any
 from fastapi import Request
+from fastapi.responses import JSONResponse
 
 from a2a import types as a2a
 from a2a.server.context import ServerCallContext
@@ -329,17 +330,8 @@ class A2AHandler(RequestHandler):
 def add_a2a_routes(app, settings, tasks):
     async def card(request: Request):
         base = public_base(settings, request)
-        value = {"name": "UMEKO", "description": "文件处理与多智能体任务执行服务", "version": __version__,
-                 "documentationUrl": "https://umeiko.github.io/UmEkO/api/",
-                 "supportedInterfaces": [{"url": base + "/a2a", "protocolBinding": "JSONRPC", "protocolVersion": "1.0"}],
-                 "capabilities": {"streaming": True, "pushNotifications": False},
-                 "defaultInputModes": ["text/plain", "application/octet-stream", "application/json"],
-                 "defaultOutputModes": ["text/plain", "application/octet-stream"],
-                 "securitySchemes": {"serviceBearer": {"httpAuthSecurityScheme": {"scheme": "bearer", "bearerFormat": "UMEKO service credential"}}},
-                 "securityRequirements": [] if tasks.service.identity_store.auth_mode() == "anonymous" else [{"schemes": {"serviceBearer": {"list": []}}}],
-                 "skills": [{"id": "file_task", "name": "文件任务", "description": "按要求处理文本、图像和文件，返回结果与报告",
-                             "tags": ["files", "documents", "images"], "examples": ["检查附件内容并生成报告"]}]}
-        return MessageToDict(ParseDict(value, a2a.AgentCard()))
+        value = tasks.service.agent_card.render(base, tasks.service.identity_store.auth_mode())
+        return JSONResponse(value, headers={"Cache-Control": "no-cache"})
     app.add_api_route("/.well-known/agent-card.json", card, methods=["GET"], tags=["A2A"])
     app.router.routes.extend(create_jsonrpc_routes(A2AHandler(tasks), rpc_url="/a2a",
                                                    context_builder=A2AContextBuilder(settings)))

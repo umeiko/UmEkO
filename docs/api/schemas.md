@@ -1217,6 +1217,26 @@
 }
 ```
 
+### _AgentCardIn
+
+```json
+{
+  "additionalProperties": false,
+  "properties": {
+    "card": {
+      "additionalProperties": true,
+      "title": "Card",
+      "type": "object"
+    }
+  },
+  "required": [
+    "card"
+  ],
+  "title": "_AgentCardIn",
+  "type": "object"
+}
+```
+
 ### _DefaultSkillIn
 
 ```json

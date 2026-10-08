@@ -99,7 +99,10 @@ def main() -> None:
 
         store = app.state.store  # 与用户面共用同一 Store 实例（同一 SQLite）
         _bootstrap_admin(store, logger)
-        admin_app = create_admin_app(settings, app.state.agent_service, store)
+        public_host = "127.0.0.1" if args.host in {"0.0.0.0", "::"} else args.host
+        public_host = f"[{public_host}]" if ":" in public_host else public_host
+        admin_app = create_admin_app(settings, app.state.agent_service, store,
+                                     public_url=f"http://{public_host}:{args.port}{settings.base_path}")
         threading.Thread(
             target=_serve_admin,
             args=(admin_app, args.admin_host, args.admin_port),

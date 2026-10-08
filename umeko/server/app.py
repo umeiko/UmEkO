@@ -21,6 +21,7 @@ from ..host.identities import IdentityStore, SCOPES
 from ..host.tasks import TaskService
 from .monitor import ResourceMonitor
 from .body_limit import MachineBodyLimitMiddleware
+from .agent_card import AgentCardConfig
 from .protocols import add_a2a_routes, build_mcp
 from .task_api import add_task_routes, public_base
 from ..runner import Run as RunState
@@ -130,6 +131,7 @@ def create_app(
     app.state.profile = profile
     identities = IdentityStore(store)
     service.identity_store = identities
+    service.agent_card = AgentCardConfig(store)
     service.task_service = TaskService(service, settings)
     service.resource_monitor = ResourceMonitor(service, service.task_service)
     app.state.task_service = service.task_service

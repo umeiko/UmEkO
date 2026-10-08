@@ -204,6 +204,7 @@
   .metric.warn strong { color:#a13e34; }
   .access-endpoints { display:grid; grid-template-columns:120px minmax(0,1fr); gap:8px; margin:16px 0; }
   .access-endpoints code { overflow-wrap:anywhere; }
+  .access-endpoints a { color:var(--accent); text-decoration:underline; text-underline-offset:3px; }
   .secret-dialog { position:fixed; inset:0; margin:auto; width:min(600px,calc(100vw - 32px)); height:fit-content;
     max-height:calc(100dvh - 32px); overflow:auto; border:1px solid var(--line); border-radius:12px;
     padding:24px; color:var(--ink); background:var(--panel); box-shadow:0 20px 70px #17211e40; }
@@ -211,6 +212,11 @@
   .secret-dialog > p { margin:10px 0 18px; line-height:1.6; }
   .secret-dialog::backdrop { background:#17211e66; }
   .secret-dialog input { width:100%; font-family:ui-monospace,monospace; margin:8px 0; }
+  .agent-card-dialog { width:min(900px,calc(100vw - 32px)); }
+  .agent-card-dialog textarea { display:block; width:100%; height:min(52vh,460px); min-height:220px;
+    padding:14px; margin:12px 0; border:1px solid var(--line); border-radius:8px; background:#fff;
+    color:var(--ink); font:13px/1.6 ui-monospace,monospace; resize:vertical; }
+  .agent-card-dialog a { color:var(--accent); }
   @media(max-width:900px) { .monitor-grid { grid-template-columns:repeat(2,minmax(0,1fr)); } .topbar { flex-wrap:wrap; height:auto; min-height:40px; align-items:center; } .tabs { flex-wrap:wrap; order:3; flex-basis:100%; } .topbar .who { margin-left:auto; } }
   @media(max-width:500px) { .monitor-grid { grid-template-columns:1fr; } .access-endpoints { grid-template-columns:1fr; } }
   </style>
@@ -284,6 +290,15 @@
     <label class="muted">服务账号 ID（OAuth client_id）</label><input id="service-client-id" readonly>
     <label class="muted">服务凭据（Bearer Token / OAuth client_secret）</label><input id="service-token" readonly>
     <div class="row"><button class="primary" onclick="copyServiceToken()">复制凭据</button><button onclick="clearServiceSecret();document.getElementById('service-secret').close()">已保存，关闭</button></div>
+  </dialog>
+
+  <dialog id="agent-card-editor" class="secret-dialog agent-card-dialog" aria-labelledby="agent-card-title" onclose="clearAgentCardEditor()">
+    <strong id="agent-card-title">Agent Card</strong>
+    <p class="muted">可编辑名称、介绍、版本、文档和图标地址、提供方及技能描述。服务地址、协议能力和鉴权方式由服务配置维护。修改这些说明不会改变 Agent 的实际执行能力。</p>
+    <a id="agent-card-public" href="#" target="_blank" rel="noopener">查看公开 Agent Card</a>
+    <textarea id="agent-card-json" aria-label="Agent Card JSON" spellcheck="false"></textarea>
+    <p id="agent-card-feedback" class="muted" role="status" aria-live="polite"></p>
+    <div class="row"><button id="agent-card-reload" onclick="loadAgentCardEditor()">重新读取</button><button id="agent-card-format" onclick="formatAgentCard()">格式化 JSON</button><button id="agent-card-save" class="primary" onclick="saveAgentCard()">保存</button><button onclick="document.getElementById('agent-card-editor').close()">关闭</button></div>
   </dialog>
 
   <div id="page-users" class="card">
@@ -473,6 +488,7 @@ function showLogin() {
   clearTimeout(monitorTimer);
   clearServiceSecret();
   if ($('service-secret').open) $('service-secret').close();
+  if ($('agent-card-editor').open) $('agent-card-editor').close();
   document.body.className = "auth";
   $("login").classList.remove("hidden"); $("main").classList.add("hidden");
 }
@@ -1017,7 +1033,9 @@ async function loadServiceAccounts() {
     const data=await api('GET','/admin/v1/service-accounts');
     $('service-auth-mode').value=data.auth_mode;
     showServiceAuthNote(data.auth_mode);
-    $('access-endpoints').innerHTML=Object.entries(data.endpoints).map(([name,url])=>`<strong>${safeHtml(name==='agent_card'?'Agent Card':name.toUpperCase())}</strong><code>${safeHtml(url)}</code>`).join('');
+    $('access-endpoints').innerHTML=Object.entries(data.endpoints).map(([name,url])=>name==='agent_card'
+      ?`<a id="agent-card-link" href="#agent-card-editor" onclick="openAgentCardEditor(event)"><strong>Agent Card</strong></a><a href="#agent-card-editor" onclick="openAgentCardEditor(event)"><code>${safeHtml(url)}</code></a>`
+      :`<strong>${safeHtml(name.toUpperCase())}</strong><code>${safeHtml(url)}</code>`).join('');
     $('service-accounts').innerHTML=data.accounts.length?data.accounts.map(a=>`<tr><td>${safeHtml(a.name)}</td><td class="muted">${safeHtml(a.scopes.join(', '))}</td><td>${!a.enabled?'已停用':new Date(a.expires_at)<new Date()?'已过期':'可用'}</td><td>${new Date(a.expires_at).toLocaleDateString()}</td><td>${a.last_used_at?new Date(a.last_used_at).toLocaleString():'尚未使用'}</td><td><div class="row"><button onclick="rotateServiceAccount('${a.id}')">更换凭据</button><button onclick="toggleServiceAccount('${a.id}',${!a.enabled})">${a.enabled?'停用':'启用'}</button></div></td></tr>`).join(''):'<tr><td colspan="6" class="muted">暂无服务账号</td></tr>';
   } catch(e) {toast(e.message,true);}
 }
@@ -1030,6 +1048,50 @@ async function saveServiceAccess() {
   try {const result=await api('PUT','/admin/v1/service-access',{auth_mode:$('service-auth-mode').value});showServiceAuthNote(result.auth_mode);toast('接入方式已保存，立即生效');}
   catch(e){toast(e.message,true);loadServiceAccounts();}
 }
+function agentCardFeedback(message, bad=false) {const el=$('agent-card-feedback');el.textContent=message;el.style.color=bad?'#9d382e':'var(--muted)';}
+function agentCardBusy(busy) {
+  for(const id of ['agent-card-save','agent-card-reload','agent-card-format','agent-card-json']) $(id).disabled=busy;
+  $('agent-card-save').textContent=busy?'请稍候…':'保存';
+}
+async function openAgentCardEditor(event) {
+  event.preventDefault();clearToast();
+  if($('agent-card-editor').open) return;
+  $('agent-card-editor').showModal();
+  await loadAgentCardEditor();
+}
+async function loadAgentCardEditor() {
+  agentCardBusy(true);agentCardFeedback('正在读取 Agent Card…');
+  try {
+    const data=await api('GET','/admin/v1/agent-card');
+    $('agent-card-json').value=JSON.stringify(data.card,null,2);
+    $('agent-card-public').href=data.public_url;
+    agentCardFeedback('已读取当前 Agent Card，修改后点击保存即可生效。');
+  } catch(e) {agentCardFeedback(e.message,true);}
+  finally {agentCardBusy(false);}
+}
+function parsedAgentCard() {
+  const card=JSON.parse($('agent-card-json').value);
+  if(!card||typeof card!=='object'||Array.isArray(card)) throw Error('Agent Card 须为 JSON 对象');
+  return card;
+}
+function formatAgentCard() {
+  try {$('agent-card-json').value=JSON.stringify(parsedAgentCard(),null,2);agentCardFeedback('JSON 已格式化，尚未保存。');}
+  catch(e) {agentCardFeedback('JSON 格式不正确：'+e.message,true);}
+}
+async function saveAgentCard() {
+  if($('agent-card-save').disabled) return;
+  let card;
+  try {card=parsedAgentCard();}
+  catch(e) {agentCardFeedback('JSON 格式不正确：'+e.message,true);return;}
+  agentCardBusy(true);agentCardFeedback('正在保存…');
+  try {
+    const data=await api('PUT','/admin/v1/agent-card',{card});
+    $('agent-card-json').value=JSON.stringify(data.card,null,2);
+    agentCardFeedback('Agent Card 已保存，对外接口立即生效。');
+  } catch(e) {agentCardFeedback(e.message,true);}
+  finally {agentCardBusy(false);}
+}
+function clearAgentCardEditor() {$('agent-card-json').value='';agentCardFeedback('');}
 function showServiceSecret(account, title='服务账号已创建') { clearToast();$('service-secret-title').textContent=title;$('service-client-id').value=account.id;$('service-token').value=account.token;$('service-secret').showModal(); }
 function clearServiceSecret() { $('service-client-id').value='';$('service-token').value=''; }
 async function copyServiceToken() {try{await navigator.clipboard.writeText($('service-token').value);toast('已复制');}catch(_){$('service-token').select();toast('请复制选中的凭据');}}
