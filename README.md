@@ -1,5 +1,10 @@
 <div align="center">
 
+<picture>
+  <source media="(prefers-color-scheme: dark)" srcset="docs/assets/brand/icon-light.svg">
+  <img src="docs/assets/brand/icon.svg" alt="UMEKO logo" width="96" height="96">
+</picture>
+
 # UMEKO
 
 **Unified Multi-agent Execution Kernel & Orchestrator**

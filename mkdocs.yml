@@ -12,8 +12,9 @@ theme:
   name: material
   language: zh
   font: false
+  logo: assets/brand/icon-light.svg
+  favicon: assets/brand/favicon.svg
   icon:
-    logo: material/hexagon-multiple
     repo: fontawesome/brands/github
   palette:
     - scheme: default
