@@ -4,9 +4,13 @@ Agent Card：`BASE_URL/.well-known/agent-card.json`；协议入口：`BASE_URL/a
 
 ## 方法与输入
 
-管理员可在“服务接入”点击 Agent Card 名称或地址，打开居中的 JSON 编辑框，查看、格式化、修改并保存。可编辑 `name`、`description`、`version`、`documentationUrl`、`iconUrl`、`provider` 和 `skills`；保存到数据库后公开 Card 立即更新，重启后仍保留。
+管理员可在“服务接入”点击 Agent Card 名称或地址，打开居中的表单，维护服务名称、介绍、版本、文档 / 图标地址和提供方。可编辑字段为 `name`、`description`、`version`、`documentationUrl`、`iconUrl`、`provider`；保存到数据库后公开 Card 立即更新，重启后仍保留。选填地址须为完整 HTTP / HTTPS 地址，提供方名称和网址同时填写或同时留空。弹窗另有只读 JSON 预览。
 
-`supportedInterfaces`、`capabilities`、默认输入 / 输出类型以及鉴权声明由实际服务配置自动生成。编辑时保留这些字段的原值；配置已变化时点击“重新读取”。技能描述是公开能力说明，修改它不会安装工具或改变 Agent 的执行能力。公开 Card 响应使用 `Cache-Control: no-cache`，客户端自行缓存的 Card 仍需重新获取。
+`skills` 自动读取管理页中已启用、可解析的“默认 Skill”数据库副本，与新任务的技能下发来源一致。每项的 `id` 使用 Skill 文件名，`name` 和 `description` 取自文档头部，`tags` 使用技能名称；不公开技能正文、脚本或附属文件。无需再维护另一份能力清单。未启用任何技能时返回空 `skills` 数组，服务仍可接收普通任务；旧 Card 单独保存的技能清单不再使用，其余服务介绍保留。
+
+在“默认 Skill”页更新、启用、停用或删除后，公开 Card 自动更新，新任务使用更新后的下发配置；已创建的工作区保留原副本。库中未导入 / 未启用的源文件不会展示到 Card。
+
+`supportedInterfaces`、`capabilities`、默认输入 / 输出类型以及鉴权声明也由实际服务配置自动生成。API 提交完整 Card 时，自动字段须保留原值；提交服务介绍字段则可省略自动字段。Card 并不按技能 ID 切换执行程序，任务由共享 Agent 引擎处理。公开 Card 响应使用 `Cache-Control: no-cache`，客户端自行缓存的 Card 仍需重新获取。
 
 采用 A2A 1.0 JSON-RPC，方法名为 `SendMessage`、`SendStreamingMessage`、`GetTask`、`ListTasks`、`CancelTask`、`SubscribeToTask`。不是旧版 0.3 的 `message/send` 等方法名。
 

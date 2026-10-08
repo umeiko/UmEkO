@@ -21,11 +21,15 @@ sequenceDiagram
 
 ## 当前能力
 
-Card 位于 `/.well-known/agent-card.json`，声明 `/a2a` 的 JSONRPC 1.0 接口、流式能力、Bearer 鉴权和文件处理技能。公开 Card 不包含服务凭据、Provider Key 或主机文件路径。
+Card 位于 `/.well-known/agent-card.json`，声明 `/a2a` 的 JSONRPC 1.0 接口、流式能力、鉴权方式和当前下发的技能。公开 Card 不包含服务凭据、Provider Key 或主机文件路径。
 
 管理员开启免鉴权后，Card 不再声明必需鉴权；不带 Bearer 的请求共用免鉴权任务身份，带有效凭据仍按服务账号隔离。接入方式从数据库实时读取，不按 IP 鉴权；来源 IP 仅作后台记录。
 
-Card 元数据由 `AgentCardConfig` 生成。管理页通过管理员专用 GET / PUT `/admin/v1/agent-card` 编辑名称、描述、版本、文档 / 图标地址、提供方和技能，保存到 `A2A_AGENT_CARD` 数据库设置。SDK 校验 JSON 字段，额外校验必填文本、技能列表和唯一技能 ID；错误不会覆盖已保存内容。协议接口、输入输出能力和鉴权要求始终按部署与接入配置生成，不能通过编辑 Card 宣称尚未实现的协议能力。
+Card 元数据由 `AgentCardConfig` 生成。管理页用表单通过管理员专用 GET / PUT `/admin/v1/agent-card` 编辑名称、描述、版本、文档 / 图标地址和提供方，保存到 `A2A_AGENT_CARD` 数据库设置，JSON 仅作预览。SDK 校验字段，并额外校验必填文本、URL 和提供方；错误不会覆盖已保存内容。
+
+技能单一来源为 `default_skills` 表中已启用的数据库副本，与 `AgentService.create_session` 下发到新工作区的技能一致。Card 使用同一解析器提取文档头部的名称和简介，文件名作为稳定 ID，正文、脚本和附属文件不对外发布。更新、启停和删除会立即影响 Card 与后续工作区；既有工作区保留原副本。没有可用技能时公开空列表，不声明虚构业务能力。旧配置中独立维护的 `skills` 不再读取，其余元数据保留。
+
+协议接口、输入输出能力和鉴权要求始终按部署与接入配置生成，不能通过编辑 Card 宣称尚未实现的协议能力。技能清单也不能通过 Card PUT 修改，统一在默认 Skill 管理中维护；任务仍由共享 Agent 引擎执行，不以 Card 技能 ID 路由到不同程序。
 
 支持发送、流式发送、查询、分页列表、取消和订阅活跃任务。不提供 gRPC、HTTP+JSON 绑定、推送回调或扩展 Agent Card；相关可选能力未宣称支持，调用时返回明确的协议错误。
 

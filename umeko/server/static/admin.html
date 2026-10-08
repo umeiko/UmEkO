@@ -213,10 +213,26 @@
   .secret-dialog::backdrop { background:#17211e66; }
   .secret-dialog input { width:100%; font-family:ui-monospace,monospace; margin:8px 0; }
   .agent-card-dialog { width:min(900px,calc(100vw - 32px)); }
-  .agent-card-dialog textarea { display:block; width:100%; height:min(52vh,460px); min-height:220px;
-    padding:14px; margin:12px 0; border:1px solid var(--line); border-radius:8px; background:#fff;
-    color:var(--ink); font:13px/1.6 ui-monospace,monospace; resize:vertical; }
+  .agent-card-form { margin-top:16px; }
+  .agent-card-fields { display:grid; grid-template-columns:repeat(2,minmax(0,1fr)); gap:12px 16px; }
+  .agent-card-fields label { display:grid; gap:6px; font-size:12px; color:var(--muted); }
+  .agent-card-fields .wide { grid-column:1 / -1; }
+  .agent-card-fields input { width:100%; margin:0; font:13px/1.5 inherit; }
+  .agent-card-fields textarea { width:100%; min-height:82px; padding:10px; border:1px solid var(--line);
+    border-radius:7px; color:var(--ink); background:#fff; font:13px/1.5 inherit; resize:vertical; }
+  .agent-card-skills { display:grid; gap:8px; margin:10px 0; }
+  .agent-card-skill { padding:10px 12px; border:1px solid var(--line); border-radius:8px; background:#fff; }
+  .agent-card-skill strong { display:inline; font-size:13px; }
+  .agent-card-skill code { margin-left:8px; font-size:11px; color:var(--muted); overflow-wrap:anywhere; }
+  .agent-card-skill p { margin-top:6px; font-size:12px; line-height:1.6; overflow-wrap:anywhere; }
+  .agent-card-dialog details { margin-top:16px; }
+  .agent-card-dialog summary { cursor:pointer; color:var(--muted); font-size:12px; }
+  #agent-card-feedback { margin-top:14px; line-height:1.6; }
+  #agent-card-json { display:block; width:100%; height:240px; padding:12px; margin:10px 0 0;
+    border:1px solid var(--line); border-radius:8px; color:var(--ink); background:#fff;
+    font:12px/1.6 ui-monospace,monospace; resize:vertical; }
   .agent-card-dialog a { color:var(--accent); }
+  @media(max-width:600px) { .agent-card-fields { grid-template-columns:1fr; } }
   @media(max-width:900px) { .monitor-grid { grid-template-columns:repeat(2,minmax(0,1fr)); } .topbar { flex-wrap:wrap; height:auto; min-height:40px; align-items:center; } .tabs { flex-wrap:wrap; order:3; flex-basis:100%; } .topbar .who { margin-left:auto; } }
   @media(max-width:500px) { .monitor-grid { grid-template-columns:1fr; } .access-endpoints { grid-template-columns:1fr; } }
   </style>
@@ -294,11 +310,25 @@
 
   <dialog id="agent-card-editor" class="secret-dialog agent-card-dialog" aria-labelledby="agent-card-title" onclose="clearAgentCardEditor()">
     <strong id="agent-card-title">Agent Card</strong>
-    <p class="muted">可编辑名称、介绍、版本、文档和图标地址、提供方及技能描述。服务地址、协议能力和鉴权方式由服务配置维护。修改这些说明不会改变 Agent 的实际执行能力。</p>
+    <p class="muted">维护对外服务介绍。技能自动同步已启用的默认 Skill；服务地址、协议能力和鉴权方式由服务配置维护。</p>
     <a id="agent-card-public" href="#" target="_blank" rel="noopener">查看公开 Agent Card</a>
-    <textarea id="agent-card-json" aria-label="Agent Card JSON" spellcheck="false"></textarea>
+    <form id="agent-card-form" class="agent-card-form" onsubmit="saveAgentCard(event)" oninput="updateAgentCardPreview()" novalidate>
+      <div class="agent-card-fields">
+        <label>服务名称 *<input id="agent-card-name" required placeholder="例如：UMEKO 图像质检"></label>
+        <label>版本 *<input id="agent-card-version" required placeholder="例如：1.0.0"></label>
+        <label class="wide">服务介绍 *<textarea id="agent-card-description" required placeholder="说明服务适合处理什么任务"></textarea></label>
+        <label>文档地址（选填）<input id="agent-card-documentation" type="url" placeholder="https://…"></label>
+        <label>图标地址（选填）<input id="agent-card-icon" type="url" placeholder="https://…"></label>
+        <label>提供方名称（选填）<input id="agent-card-provider-name" placeholder="例如：图像质检团队"></label>
+        <label>提供方网址（选填）<input id="agent-card-provider-url" type="url" placeholder="https://…"></label>
+      </div>
+      <div class="row"><strong style="font-size:13px">对外技能</strong><span class="tag">自动同步</span><button type="button" onclick="manageAgentCardSkills()">管理默认 Skill</button></div>
+      <p class="muted" style="margin-top:8px">名称和简介来自 Skill 文档头部。启用、停用和更新会同步公开 Card，并影响新任务；已有任务保留原配置。公开介绍不包含技能正文或脚本。</p>
+      <div id="agent-card-skills" class="agent-card-skills"></div>
+      <details id="agent-card-preview"><summary>查看 JSON 预览（只读）</summary><textarea id="agent-card-json" aria-label="Agent Card JSON 预览" readonly spellcheck="false"></textarea></details>
     <p id="agent-card-feedback" class="muted" role="status" aria-live="polite"></p>
-    <div class="row"><button id="agent-card-reload" onclick="loadAgentCardEditor()">重新读取</button><button id="agent-card-format" onclick="formatAgentCard()">格式化 JSON</button><button id="agent-card-save" class="primary" onclick="saveAgentCard()">保存</button><button onclick="document.getElementById('agent-card-editor').close()">关闭</button></div>
+      <div class="row"><button type="button" id="agent-card-reload" onclick="loadAgentCardEditor()">重新读取</button><button type="submit" id="agent-card-save" class="primary">保存</button><button type="button" onclick="document.getElementById('agent-card-editor').close()">关闭</button></div>
+    </form>
   </dialog>
 
   <div id="page-users" class="card">
@@ -1049,8 +1079,10 @@ async function saveServiceAccess() {
   catch(e){toast(e.message,true);loadServiceAccounts();}
 }
 function agentCardFeedback(message, bad=false) {const el=$('agent-card-feedback');el.textContent=message;el.style.color=bad?'#9d382e':'var(--muted)';}
+let agentCardCurrent=null;
+const agentCardFields={name:'agent-card-name',description:'agent-card-description',version:'agent-card-version',documentationUrl:'agent-card-documentation',iconUrl:'agent-card-icon'};
 function agentCardBusy(busy) {
-  for(const id of ['agent-card-save','agent-card-reload','agent-card-format','agent-card-json']) $(id).disabled=busy;
+  for(const el of $('agent-card-form').querySelectorAll('input,textarea,button')) el.disabled=busy;
   $('agent-card-save').textContent=busy?'请稍候…':'保存';
 }
 async function openAgentCardEditor(event) {
@@ -1063,35 +1095,61 @@ async function loadAgentCardEditor() {
   agentCardBusy(true);agentCardFeedback('正在读取 Agent Card…');
   try {
     const data=await api('GET','/admin/v1/agent-card');
-    $('agent-card-json').value=JSON.stringify(data.card,null,2);
-    $('agent-card-public').href=data.public_url;
+    renderAgentCardForm(data);
     agentCardFeedback('已读取当前 Agent Card，修改后点击保存即可生效。');
   } catch(e) {agentCardFeedback(e.message,true);}
   finally {agentCardBusy(false);}
 }
-function parsedAgentCard() {
-  const card=JSON.parse($('agent-card-json').value);
-  if(!card||typeof card!=='object'||Array.isArray(card)) throw Error('Agent Card 须为 JSON 对象');
+function renderAgentCardForm(data) {
+  agentCardCurrent=data.card;
+  for(const [field,id] of Object.entries(agentCardFields)) $(id).value=data.card[field]||'';
+  $('agent-card-provider-name').value=data.card.provider?.organization||'';
+  $('agent-card-provider-url').value=data.card.provider?.url||'';
+  $('agent-card-public').href=data.public_url;
+  const skills=data.card.skills||[];
+  $('agent-card-skills').innerHTML=skills.length?skills.map(skill=>`<article class="agent-card-skill"><strong>${safeHtml(skill.name)}</strong><code>${safeHtml(skill.id)}</code><p>${safeHtml(skill.description)}</p></article>`).join(''):'<p class="muted">尚未启用默认 Skill。可在“默认 Skill”页启用要下发的技能；服务仍可接收普通任务。</p>';
+  updateAgentCardPreview();
+}
+function agentCardMetadata(validate=false) {
+  const card={};
+  for(const [field,id] of Object.entries(agentCardFields)) {
+    const value=$(id).value.trim();
+    if(value||['name','description','version'].includes(field)) card[field]=value;
+  }
+  if(validate) {
+    for(const [field,label] of [['name','服务名称'],['description','服务介绍'],['version','版本']]) {
+      if(!card[field]) {$(agentCardFields[field]).focus();throw Error('请填写'+label);}
+    }
+  }
+  const organization=$('agent-card-provider-name').value.trim(), url=$('agent-card-provider-url').value.trim();
+  if(organization||url) {
+    if(validate && (!organization||!url)) throw Error('提供方名称和网址请同时填写，或同时留空');
+    card.provider={organization,url};
+  }
   return card;
 }
-function formatAgentCard() {
-  try {$('agent-card-json').value=JSON.stringify(parsedAgentCard(),null,2);agentCardFeedback('JSON 已格式化，尚未保存。');}
-  catch(e) {agentCardFeedback('JSON 格式不正确：'+e.message,true);}
+function updateAgentCardPreview() {
+  if(!agentCardCurrent) return;
+  const preview={...agentCardCurrent};
+  for(const key of [...Object.keys(agentCardFields),'provider']) delete preview[key];
+  $('agent-card-json').value=JSON.stringify({...agentCardMetadata(),...preview},null,2);
 }
-async function saveAgentCard() {
+async function saveAgentCard(event) {
+  event?.preventDefault();
   if($('agent-card-save').disabled) return;
   let card;
-  try {card=parsedAgentCard();}
-  catch(e) {agentCardFeedback('JSON 格式不正确：'+e.message,true);return;}
+  try {card=agentCardMetadata(true);}
+  catch(e) {agentCardFeedback(e.message,true);return;}
   agentCardBusy(true);agentCardFeedback('正在保存…');
   try {
     const data=await api('PUT','/admin/v1/agent-card',{card});
-    $('agent-card-json').value=JSON.stringify(data.card,null,2);
+    renderAgentCardForm(data);
     agentCardFeedback('Agent Card 已保存，对外接口立即生效。');
   } catch(e) {agentCardFeedback(e.message,true);}
   finally {agentCardBusy(false);}
 }
-function clearAgentCardEditor() {$('agent-card-json').value='';agentCardFeedback('');}
+function clearAgentCardEditor() {agentCardCurrent=null;$('agent-card-form').reset();$('agent-card-json').value='';$('agent-card-skills').innerHTML='';$('agent-card-preview').open=false;agentCardFeedback('');}
+function manageAgentCardSkills() {$('agent-card-editor').close();showTab('dskills');loadDefaultSkills();}
 function showServiceSecret(account, title='服务账号已创建') { clearToast();$('service-secret-title').textContent=title;$('service-client-id').value=account.id;$('service-token').value=account.token;$('service-secret').showModal(); }
 function clearServiceSecret() { $('service-client-id').value='';$('service-token').value=''; }
 async function copyServiceToken() {try{await navigator.clipboard.writeText($('service-token').value);toast('已复制');}catch(_){$('service-token').select();toast('请复制选中的凭据');}}
