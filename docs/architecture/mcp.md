@@ -1,19 +1,19 @@
 # MCP 接入架构
 
-**已实现 Streamable HTTP MCP 服务，入口 `/mcp`。** 使用官方 Python SDK `mcp>=2.3,<3`，通过 SDK 处理现代请求级协商以及旧版初始化客户端。服务工具调用返回业务 Task，不让一条 MCP 请求长期占用 Agent 执行连接。
+**已实现 Streamable HTTP MCP 服务，入口 `/agent/{slug}/mcp`。** 使用官方 Python SDK `mcp>=2.3,<3`，通过 SDK 处理现代请求级协商以及旧版初始化客户端。服务工具调用返回业务 Task，不让一条 MCP 请求长期占用 Agent 执行连接。
 
 ```mermaid
 flowchart LR
     Client[MCP 客户端] --> HTTP[官方 SDK · Streamable HTTP]
     HTTP --> Auth[Bearer / scope]
-    Auth --> Tools[六个工具与产物资源]
+    Auth --> Tools[七个工具与产物资源]
     Tools --> Tasks[共享 TaskService]
     Tasks --> Agent[现有执行引擎]
 ```
 
 ## 工具与资源
 
-`list_models`、`submit_task`、`get_task`、`list_tasks`、`cancel_task`、`read_artifact` 提供结构化结果。产物另有 `umeko://tasks/{task_id}/artifacts/{artifact_id}` 资源模板；小文件通过 MCP 读取，大文件通过受保护 HTTP 下载。
+`get_agent_info`、`list_models`、`submit_task`、`get_task`、`list_tasks`、`cancel_task`、`read_artifact` 提供结构化结果。产物另有 `umeko://tasks/{task_id}/artifacts/{artifact_id}` 资源模板；小文件通过 MCP 读取，大文件通过受保护 HTTP 下载。
 
 工具可被发现，不代表凭据有权限执行。每次调用检查 scope 和任务归属。模型发现只返回 ID、名称、视觉能力和 Provider 名称，不返回模型地址或密钥。
 

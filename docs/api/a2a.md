@@ -1,16 +1,14 @@
 # A2A API
 
-Agent Card：`BASE_URL/.well-known/agent-card.json`；协议入口：`BASE_URL/a2a`。BASE_URL 必须包含部署前缀。Card 可公开读取；协议请求带 `A2A-Version: 1.0`，需要凭据模式下另外带服务 Bearer。管理员开启免鉴权后无需 Bearer，Card 不再声明必需鉴权。免鉴权调用共用任务身份，详见[机器任务](machine-tasks.md)。
+Agent Card：`BASE_URL/.well-known/agent-card.json`；协议入口：`BASE_URL/a2a`。BASE_URL 必须是用户服务基址加 `/agent/{slug}`，并包含部署前缀。Card 可公开读取；协议请求带 `A2A-Version: 1.0`，需要凭据模式下另外带服务 Bearer。管理员开启免鉴权后无需 Bearer，Card 不再声明必需鉴权。免鉴权调用共用任务身份，详见[机器任务](machine-tasks.md)。
 
 ## 方法与输入
 
-管理员可在“服务接入”点击 Agent Card 名称或地址，打开居中的表单，维护服务名称、介绍、版本、文档 / 图标地址和提供方。可编辑字段为 `name`、`description`、`version`、`documentationUrl`、`iconUrl`、`provider`；保存到数据库后公开 Card 立即更新，重启后仍保留。选填地址须为完整 HTTP / HTTPS 地址，提供方名称和网址同时填写或同时留空。弹窗另有只读 JSON 预览。
+在“服务接入”下的“智能体管理”维护名称、介绍、版本、可选链接和提供方，勾选所需默认 Skill。Card 自动生成，私有工作指引和模型密钥不对外披露，详见[智能体管理 API](agents.md)。
 
-`skills` 自动读取管理页中已启用、可解析的“默认 Skill”数据库副本，与新任务的技能下发来源一致。每项的 `id` 使用 Skill 文件名，`name` 和 `description` 取自文档头部，`tags` 使用技能名称；不公开技能正文、脚本或附属文件。无需再维护另一份能力清单。未启用任何技能时返回空 `skills` 数组，服务仍可接收普通任务；旧 Card 单独保存的技能清单不再使用，其余服务介绍保留。
+`skills` 只包含该 Agent 选择且已启用、可解析的默认 Skill。每项 `id` 使用文件名，名称和介绍取自文档头部，不公开正文、脚本和附属资源。更新默认 Skill 会影响 Card 和新任务；已接收任务保留提交时的主文档副本。
 
-在“默认 Skill”页更新、启用、停用或删除后，公开 Card 自动更新，新任务使用更新后的下发配置；已创建的工作区保留原副本。库中未导入 / 未启用的源文件不会展示到 Card。
-
-`supportedInterfaces`、`capabilities`、默认输入 / 输出类型以及鉴权声明也由实际服务配置自动生成。API 提交完整 Card 时，自动字段须保留原值；提交服务介绍字段则可省略自动字段。Card 并不按技能 ID 切换执行程序，任务由共享 Agent 引擎处理。公开 Card 响应使用 `Cache-Control: no-cache`，客户端自行缓存的 Card 仍需重新获取。
+协议接口、输入输出能力和鉴权声明由实际服务配置生成；无法通过提交 Card 修改这些字段。公开 Card 使用 `Cache-Control: no-cache`。Task 的 `metadata.agentId` 标记归属，幂等键与 Context 限定在同一 Agent、同一调用者范围内。
 
 采用 A2A 1.0 JSON-RPC，方法名为 `SendMessage`、`SendStreamingMessage`、`GetTask`、`ListTasks`、`CancelTask`、`SubscribeToTask`。不是旧版 0.3 的 `message/send` 等方法名。
 

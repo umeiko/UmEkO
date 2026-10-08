@@ -67,19 +67,102 @@
         "title": "_ActiveModelIn",
         "type": "object"
       },
-      "_AgentCardIn": {
+      "_AgentIn": {
         "additionalProperties": false,
         "properties": {
-          "card": {
-            "additionalProperties": true,
-            "title": "Card",
-            "type": "object"
+          "default_model_id": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Default Model Id"
+          },
+          "description": {
+            "maxLength": 10000,
+            "minLength": 1,
+            "title": "Description",
+            "type": "string"
+          },
+          "documentationUrl": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Documentationurl"
+          },
+          "enabled": {
+            "default": true,
+            "title": "Enabled",
+            "type": "boolean"
+          },
+          "iconUrl": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Iconurl"
+          },
+          "name": {
+            "maxLength": 200,
+            "minLength": 1,
+            "title": "Name",
+            "type": "string"
+          },
+          "provider": {
+            "anyOf": [
+              {
+                "additionalProperties": true,
+                "type": "object"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Provider"
+          },
+          "skill_names": {
+            "items": {
+              "type": "string"
+            },
+            "title": "Skill Names",
+            "type": "array"
+          },
+          "slug": {
+            "maxLength": 63,
+            "minLength": 1,
+            "title": "Slug",
+            "type": "string"
+          },
+          "system_prompt": {
+            "default": "",
+            "maxLength": 100000,
+            "title": "System Prompt",
+            "type": "string"
+          },
+          "version": {
+            "default": "0.1.2",
+            "title": "Version",
+            "type": "string"
           }
         },
         "required": [
-          "card"
+          "slug",
+          "name",
+          "description"
         ],
-        "title": "_AgentCardIn",
+        "title": "_AgentIn",
         "type": "object"
       },
       "_DefaultSkillIn": {
@@ -553,16 +636,16 @@
         "summary": "Activate Model"
       }
     },
-    "/admin/v1/agent-card": {
+    "/admin/v1/agents": {
       "get": {
-        "operationId": "get_agent_card_admin_v1_agent_card_get",
+        "operationId": "agents_admin_v1_agents_get",
         "responses": {
           "200": {
             "content": {
               "application/json": {
                 "schema": {
                   "additionalProperties": true,
-                  "title": "Response Get Agent Card Admin V1 Agent Card Get",
+                  "title": "Response Agents Admin V1 Agents Get",
                   "type": "object"
                 }
               }
@@ -575,30 +658,30 @@
             "umeko_admin": []
           }
         ],
-        "summary": "Get Agent Card",
+        "summary": "Agents",
         "tags": [
-          "service access"
+          "agents"
         ]
       },
-      "put": {
-        "operationId": "save_agent_card_admin_v1_agent_card_put",
+      "post": {
+        "operationId": "create_agent_admin_v1_agents_post",
         "requestBody": {
           "content": {
             "application/json": {
               "schema": {
-                "$ref": "#/components/schemas/_AgentCardIn"
+                "$ref": "#/components/schemas/_AgentIn"
               }
             }
           },
           "required": true
         },
         "responses": {
-          "200": {
+          "201": {
             "content": {
               "application/json": {
                 "schema": {
                   "additionalProperties": true,
-                  "title": "Response Save Agent Card Admin V1 Agent Card Put",
+                  "title": "Response Create Agent Admin V1 Agents Post",
                   "type": "object"
                 }
               }
@@ -621,9 +704,202 @@
             "umeko_admin": []
           }
         ],
-        "summary": "Save Agent Card",
+        "summary": "Create Agent",
         "tags": [
-          "service access"
+          "agents"
+        ]
+      }
+    },
+    "/admin/v1/agents/{agent_id}": {
+      "delete": {
+        "operationId": "delete_agent_admin_v1_agents__agent_id__delete",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "agent_id",
+            "required": true,
+            "schema": {
+              "title": "Agent Id",
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "204": {
+            "description": "Successful Response"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            },
+            "description": "Validation Error"
+          }
+        },
+        "security": [
+          {
+            "umeko_admin": []
+          }
+        ],
+        "summary": "Delete Agent",
+        "tags": [
+          "agents"
+        ]
+      },
+      "get": {
+        "operationId": "get_agent_admin_v1_agents__agent_id__get",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "agent_id",
+            "required": true,
+            "schema": {
+              "title": "Agent Id",
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "additionalProperties": true,
+                  "title": "Response Get Agent Admin V1 Agents  Agent Id  Get",
+                  "type": "object"
+                }
+              }
+            },
+            "description": "Successful Response"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            },
+            "description": "Validation Error"
+          }
+        },
+        "security": [
+          {
+            "umeko_admin": []
+          }
+        ],
+        "summary": "Get Agent",
+        "tags": [
+          "agents"
+        ]
+      },
+      "put": {
+        "operationId": "update_agent_admin_v1_agents__agent_id__put",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "agent_id",
+            "required": true,
+            "schema": {
+              "title": "Agent Id",
+              "type": "string"
+            }
+          }
+        ],
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/_AgentIn"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "additionalProperties": true,
+                  "title": "Response Update Agent Admin V1 Agents  Agent Id  Put",
+                  "type": "object"
+                }
+              }
+            },
+            "description": "Successful Response"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            },
+            "description": "Validation Error"
+          }
+        },
+        "security": [
+          {
+            "umeko_admin": []
+          }
+        ],
+        "summary": "Update Agent",
+        "tags": [
+          "agents"
+        ]
+      }
+    },
+    "/admin/v1/agents/{agent_id}/card": {
+      "get": {
+        "operationId": "managed_agent_card_admin_v1_agents__agent_id__card_get",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "agent_id",
+            "required": true,
+            "schema": {
+              "title": "Agent Id",
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "additionalProperties": true,
+                  "title": "Response Managed Agent Card Admin V1 Agents  Agent Id  Card Get",
+                  "type": "object"
+                }
+              }
+            },
+            "description": "Successful Response"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            },
+            "description": "Validation Error"
+          }
+        },
+        "security": [
+          {
+            "umeko_admin": []
+          }
+        ],
+        "summary": "Managed Agent Card",
+        "tags": [
+          "agents"
         ]
       }
     },

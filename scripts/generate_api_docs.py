@@ -20,6 +20,7 @@ from fastapi.routing import APIRoute
 from umeko.config import ModelConfig, Settings
 from umeko.server.app import create_app
 from umeko.server.admin import create_admin_app
+from umeko.server.agent_routing import published_path
 from umeko.server.models import EventView
 
 METHODS = {"get", "post", "put", "patch", "delete", "head", "options"}
@@ -35,7 +36,7 @@ def supplement(spec: dict, admin: bool) -> None:
     spec["servers"] = [{"url": "http://127.0.0.1:9000" if admin else "http://127.0.0.1:8000"}]
     public = {("/health", "get"), ("/admin/login", "post")} if admin else {
         ("/health", "get"), ("/v1/auth/login", "post"), ("/v1/auth/register", "post"),
-        ("/oauth/token", "post")}
+        ("/agent/{agent_name}/oauth/token", "post"), ("/agent", "get")}
     if not admin:
         spec["components"]["securitySchemes"]["serviceBearer"] = {
             "type": "http", "scheme": "bearer",
@@ -43,8 +44,8 @@ def supplement(spec: dict, admin: bool) -> None:
     for path, operations in spec["paths"].items():
         for method, operation in operations.items():
             if method in METHODS:
-                operation["security"] = [] if (path, method) in public or path.startswith("/.well-known/") else [{cookie: []}]
-                if not admin and path.startswith("/v1/tasks"):
+                operation["security"] = [] if (path, method) in public or "/.well-known/" in path else [{cookie: []}]
+                if not admin and path.startswith("/agent/{agent_name}/v1/tasks"):
                     operation["security"] = [{"serviceBearer": []}, {cookie: []}]
                     note = "管理员开启免鉴权后可省略凭据；免鉴权调用共用任务身份。默认仍需要凭据。"
                     operation["description"] = (operation.get("description", "") + "\n\n" + note).strip()
@@ -81,7 +82,7 @@ def supplement(spec: dict, admin: bool) -> None:
         "/v1/tasks/{task_id}/artifacts/{artifact_id}/content",
     ]
     for path in downloads:
-        spec["paths"][path]["get"]["responses"]["200"] = {
+        spec["paths"][published_path(path)]["get"]["responses"]["200"] = {
             "description": "文件响应；实际 Content-Type 随文件类型变化，目录下载为 ZIP。",
             "content": {"application/octet-stream": {"schema": BINARY}},
         }
@@ -90,10 +91,10 @@ def supplement(spec: dict, admin: bool) -> None:
         "content": {"text/event-stream": {"schema": {"type": "string"}}},
     }
     spec["components"]["schemas"]["EventView"] = EventView.model_json_schema()
-    spec["paths"]["/v1/tasks/{task_id}/events"]["get"]["responses"]["200"] = {
+    spec["paths"]["/agent/{agent_name}/v1/tasks/{task_id}/events"]["get"]["responses"]["200"] = {
         "description": "持久化任务事件 SSE；保留最近 500 条，支持 after 与 Last-Event-ID。",
         "content": {"text/event-stream": {"schema": {"type": "string"}}}}
-    spec["paths"]["/oauth/token"]["post"]["requestBody"] = {
+    spec["paths"]["/agent/{agent_name}/oauth/token"]["post"]["requestBody"] = {
         "required": True, "description": "client_credentials；也可用 HTTP Basic 传 client_id/client_secret。",
         "content": {"application/x-www-form-urlencoded": {"schema": {
             "type": "object", "required": ["grant_type"], "properties": {
@@ -134,9 +135,9 @@ def reference(spec: dict, admin: bool) -> str:
             if method not in METHODS:
                 continue
             lines += ["", f"## {method.upper()} {path}", "", op.get("summary", ""), "",
-                      "认证：" + ("服务账号凭据（表单或 HTTP Basic）。" if path == "/oauth/token" else
+                      "认证：" + ("服务账号凭据（表单或 HTTP Basic）。" if path == "/agent/{agent_name}/oauth/token" else
                                   "无须登录。" if not op["security"] else
-                                  "服务 Bearer Token 或 `umeko_auth` Cookie；开启免鉴权后可省略凭据，共享匿名任务归属。" if path.startswith("/v1/tasks") else
+                                  "服务 Bearer Token 或 `umeko_auth` Cookie；开启免鉴权后可省略凭据，共享匿名任务归属。" if path.startswith("/agent/{agent_name}/v1/tasks") else
                                   f"`{'umeko_admin' if admin else 'umeko_auth'}` Cookie。")]
             if op.get("description"):
                 lines += ["", op["description"]]
@@ -176,7 +177,7 @@ def generate() -> dict[Path, str]:
             admin = create_admin_app(settings, service, app.state.store)
             specs = {"user": app.openapi(), "admin": admin.openapi()}
             for name, instance in [("user", app), ("admin", admin)]:
-                expected = {(route.path_format, method.lower()) for route in instance.routes
+                expected = {(route.path_format if name == "admin" else published_path(route.path_format), method.lower()) for route in instance.routes
                             if isinstance(route, APIRoute) and route.include_in_schema
                             for method in route.methods}
                 actual = {(path, method) for path, ops in specs[name]["paths"].items()

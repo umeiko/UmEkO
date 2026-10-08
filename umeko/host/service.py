@@ -68,6 +68,7 @@ class SessionState:
     builtin_resources: dict[str, set[str]] = field(
         default_factory=lambda: {"skills": set()}, repr=False
     )
+    agent_snapshot: dict | None = field(default=None, repr=False)
 
 
 class AgentService:
@@ -431,6 +432,7 @@ class AgentService:
         title="未命名会话",
         _restore_id=None,
         settings: Settings | None = None,
+        agent_snapshot: dict | None = None,
     ) -> SessionState:
         effective = settings if settings is not None else self.settings
         session_id = _restore_id or f"sess_{uuid.uuid4().hex}"
@@ -444,7 +446,8 @@ class AgentService:
         target.mkdir(parents=True, exist_ok=True)
         # Skill 分发唯一通道：管理员在管理面「默认 Skill」维护（default_skills 表）。
         # 文件系统 skills/ 目录不再自动播种——是否下发由管理员决定；停用项不下发。
-        for item in self.store.default_skills(enabled_only=True):
+        dispatched = agent_snapshot["dispatched_skills"] if agent_snapshot else self.store.default_skills(enabled_only=True)
+        for item in dispatched:
             dest = target / item["name"]
             if not dest.exists():
                 dest.write_text(item["content"], encoding="utf-8")
@@ -458,6 +461,7 @@ class AgentService:
             effective,
             root / "generate",
             skill_dir=root / "client" / "skills",
+            allowed_skill_packs={Path(item["name"]).stem for item in dispatched} if agent_snapshot else None,
         )
         holder: dict[str, Run | None] = {"run": None}
 
@@ -547,7 +551,7 @@ class AgentService:
         agent = UmekoAgent(
             effective,
             session,
-            DEFAULT_SYSTEM,
+            DEFAULT_SYSTEM + ("\n\n当前智能体工作指引：\n" + agent_snapshot["system_prompt"] if agent_snapshot and agent_snapshot.get("system_prompt") else ""),
             output_root=root,
             readable_root=root,
             readable_roots=tuple(root / name for name in self.WORKSPACE_ROOTS),
@@ -560,6 +564,7 @@ class AgentService:
         state = SessionState(
             session_id, _now(), root, session, agent, user_id=user_id, title=title,
             active_run_holder=holder, builtin_resources=builtin_resources,
+            agent_snapshot=agent_snapshot,
         )
         with self._lock:
             self.sessions[session_id] = state
@@ -581,9 +586,14 @@ class AgentService:
             record = self.store.session_by_id(session_id)
             if record is None:
                 raise KeyError(f"未知会话：{session_id}") from exc
+            snapshot = None
+            if record.get("purpose") == "task":
+                with self.store.connect() as db:
+                    task = db.execute("SELECT input_json FROM service_tasks WHERE session_id=?", (session_id,)).fetchone()
+                snapshot = json.loads(task["input_json"]).get("agent_snapshot") if task else None
             return self.create_session(
                 user_id=record["user_id"], title=record["title"],
-                _restore_id=session_id,
+                _restore_id=session_id, agent_snapshot=snapshot,
             )
 
     # ---------- Run 执行 ----------
@@ -601,7 +611,7 @@ class AgentService:
             self.evict_session(session_id)
             session = self.create_session(
                 user_id=record["user_id"], title=record["title"],
-                _restore_id=session_id, settings=effective,
+                _restore_id=session_id, settings=effective, agent_snapshot=session.agent_snapshot,
             )
         if session.title == "未命名会话":
             title = " ".join(user_input.strip().split())[:28] or "未命名会话"

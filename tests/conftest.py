@@ -34,6 +34,8 @@ def machine_app(tmp_path, monkeypatch, request):
                         task_workers=1, task_queue_limit=2, task_caller_limit=3,
                         task_retention_seconds=60, task_timeout_seconds=15)
     app = create_app(settings, data_root=tmp_path / "data", workspace_root=tmp_path / "out")
+    app.state.fixture_agent = app.state.agent_service.agent_registry.save({
+        "slug": "fixture", "name": "Fixture Agent", "description": "Protocol test service", "skill_names": []})
     first = app.state.identity_store.create("first", sorted(SCOPES))
     second = app.state.identity_store.create("second", sorted(SCOPES))
     return app, first, second, settings
@@ -59,7 +61,7 @@ def machine_server(machine_app):
     while not server.started and thread.is_alive() and time.monotonic() < deadline:
         time.sleep(0.02)
     assert server.started
-    yield base + settings.base_path, app, first, second
+    yield base + settings.base_path + "/agent/fixture", app, first, second
     server.should_exit = True
     thread.join(timeout=15)
     listener.close()
@@ -69,7 +71,7 @@ def machine_server(machine_app):
 def wait_task(client, task_id, token, terminal=True):
     deadline = time.monotonic() + 10
     while time.monotonic() < deadline:
-        response = client.get("/v1/tasks/" + task_id, headers={"Authorization": "Bearer " + token})
+        response = client.get("/agent/fixture/v1/tasks/" + task_id, headers={"Authorization": "Bearer " + token})
         assert response.status_code == 200, response.text
         task = response.json()
         if task["status"] in {"completed", "failed", "cancelled"} if terminal else task["status"] == "running":

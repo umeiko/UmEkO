@@ -29,7 +29,7 @@ class TaskCreateInput(BaseModel):
 
 
 def public_base(settings, request: Request) -> str:
-    return settings.public_url or str(request.base_url).rstrip("/")
+    return (settings.public_url + getattr(request.state, "agent_path", "")) if settings.public_url else str(request.base_url).rstrip("/")
 
 
 def caller_ip(request: Request) -> str | None:

@@ -200,11 +200,11 @@ location /doc-master/consistency/image-text/ {
 
 ### MCP、A2A 与自动发现
 
-`/mcp`、`/a2a`、`/v1/tasks`、`/oauth/token`、`/.well-known/...` 都在用户服务入口下，与静态页面使用同一公共前缀。代理应转发 Authorization，不能把协议请求改成网页登录页；A2A SSE 与 REST 任务流都要关闭缓冲。机器请求体最多 30 MiB，OAuth 表单最多 16 KiB，网关可设置更严格的限制。
+机器入口统一为用户服务基址加 `/agent/{slug}`，其下提供 `/mcp`、`/a2a`、`/v1/tasks`、`/oauth/token` 和 `/.well-known/...`。顶级协议入口已移除。代理应转发 Authorization，不能把协议请求改成网页登录页；A2A SSE 与 REST 任务流都要关闭缓冲。机器请求体最多 30 MiB，OAuth 表单最多 16 KiB，网关可设置更严格的限制。
 
 使用客户端配置的完整 MCP URL、Agent Card URL 或 ClientFactory 基址时，始终包含前缀。MCP 未授权响应提供 `WWW-Authenticate` 的 `resource_metadata` 地址，可据此访问本服务的 metadata。
 
-带路径的 OAuth issuer 自动发现可能按 RFC 8414 在域名根下寻找 `/.well-known/oauth-authorization-server/<服务前缀>`；受保护资源也可能寻找 `/.well-known/oauth-protected-resource/<服务前缀>/mcp`。本应用的 metadata 位于公共前缀下。需要自动发现的网关应为这些域名根路径配置到对应 metadata 的路由，或让调用方显式配置 metadata 地址。不要把其他服务的整个 `/.well-known/` 目录都转发到 UMEKO。当前只实现客户端凭据流程，没有交互式 OAuth / PKCE。
+带路径的 OAuth issuer 自动发现可能按 RFC 8414 在域名根下寻找 `/.well-known/oauth-authorization-server/<服务前缀>`；受保护资源也可能寻找 `/.well-known/oauth-protected-resource/<服务前缀>/mcp`。本应用的 metadata 位于公共前缀加 `/agent/{slug}` 下；自动发现需包含完整 Agent 路径。需要自动发现的网关应为这些域名根路径配置到对应 metadata 的路由，或让调用方显式配置 metadata 地址。不要把其他服务的整个 `/.well-known/` 目录都转发到 UMEKO。当前只实现客户端凭据流程，没有交互式 OAuth / PKCE。
 
 ## 机器任务容量与资源监控
 
@@ -295,6 +295,20 @@ JSON 导入也支持模型字段 `max_concurrent_requests`，省略时不会覆�
 
 把容器数据写在临时容器层、改变启动目录后使用默认相对路径，都会让新进程看起来像“全新安装”。
 容器中的数据目录和技能库使用持久化存储，证书与 `.env` 放在应用能读取的固定位置。
+
+## 多 Agent 路径部署
+
+先在管理端“服务接入”下新建并启用 Agent，再把调用方 URL 更新为它的完整地址。没有自动创建的默认 Agent。旧全局 Card 编辑接口与顶级机器入口已删除。
+
+“智能体管理”配置保存在原 `umeko.db`，无需增加 `.env` 项，也无需为每个 Agent 新开一个端口或应用进程。升级启动时自动添加 Agent 配置表与任务归属字段，旧机器任务可在管理员资源监控中查看，但旧顶级协议地址不再可用；升级前按上节备份数据目录。
+
+如果公共部署前缀为 `/doc-master/consistency/image-text`，独立 MCP 地址为 `/doc-master/consistency/image-text/agent/image-qc/mcp`。代理按前述配置只剥离部署前缀，转给应用的路径必须保留 `/agent/image-qc/mcp`。不要再剥离 `/agent/image-qc`，否则请求会落到已移除的顶级入口，返回 404。
+
+`UMEKO_PUBLIC_URL` 填用户服务的完整公共基址，含部署前缀，不含某个 Agent 路径。应用自动追加 `/agent/{slug}`，生成 Card、协议、OAuth 与产物地址。流式和超时配置仍沿用 MCP / A2A 的代理规则。
+
+保存新配置立即影响后续请求。停用会让该 Agent 的公开入口返回 404，已接收任务继续执行；管理员可从资源监控取消。需要继续供调用者读取结果时，等任务处理完且结果不再需要后再停用。仍有保留任务的 Agent 不允许删除。
+
+管理方法见[智能体管理](api/agents.md)，模型并发与任务容量继续由平台统一控制。
 
 ## 常见问题定位
 

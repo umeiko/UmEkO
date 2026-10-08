@@ -5,8 +5,8 @@ UMEKO 提供两种生命周期：网页会话保留聊天历史；机器任务�
 ```mermaid
 flowchart TB
     REST[REST /v1/tasks] --> Identity[凭据身份或共享免鉴权身份]
-    MCP[MCP /mcp] --> Identity
-    A2A[A2A /a2a] --> Identity
+    MCP[MCP /agent/name/mcp] --> Identity
+    A2A[A2A /agent/name/a2a] --> Identity
     Identity --> Admission[输入校验 / 幂等 / 容量检查]
     Admission --> Tasks[(SQLite 持久化任务与事件)]
     Tasks --> Worker[单进程任务调度器]

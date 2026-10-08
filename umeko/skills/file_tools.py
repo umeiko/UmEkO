@@ -1050,7 +1050,7 @@ def build_file_tools(
                 },
                 "required": ["pack", "member"],
             },
-            handler=lambda pack, member: read_pack_file(pack, member),
+            handler=lambda pack, member: session.call_skill_pack(pack, read_pack_file, member=member),
         )
     )
 
@@ -1084,8 +1084,8 @@ def build_file_tools(
                 },
                 "required": ["pack", "script"],
             },
-            handler=lambda pack, script, args="": run_skill_script(
-                pack=pack, script=script, args=args,
+            handler=lambda pack, script, args="": session.call_skill_pack(
+                pack, run_skill_script, script=script, args=args,
                 workdir=writable_root,
                 session_root=readable_root,
                 should_cancel=should_cancel,
@@ -1096,4 +1096,4 @@ def build_file_tools(
             ),
         )
     )
-    return skills
+    return [skill for skill in skills if getattr(session, "allowed_skill_packs", None) is None or skill.name != "create_skill"]

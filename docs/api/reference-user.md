@@ -2,7 +2,7 @@
 
 > 自动生成：请修改源码或生成器，不直接编辑本文件。
 
-共 **59** 个 HTTP 操作。[下载 OpenAPI](openapi-user.json) · [数据结构](schemas.md)
+共 **60** 个 HTTP 操作。[下载 OpenAPI](openapi-user.json) · [数据结构](schemas.md)
 
 路径为应用内部路由；带前缀部署时在公共 URL 前加 `UMEKO_BASE_PATH`。登录、原始字节体与 SSE 契约由生成器显式补充。
 
@@ -12,16 +12,7 @@
 
 | 方法 | 路径 | 操作 |
 | --- | --- | --- |
-| POST | `/v1/tasks` | Submit Task |
-| GET | `/v1/tasks` | List Tasks |
-| GET | `/v1/tasks/{task_id}` | Get Task |
-| POST | `/v1/tasks/{task_id}/cancel` | Cancel Task |
-| GET | `/v1/tasks/{task_id}/events` | Task Events |
-| GET | `/v1/tasks/{task_id}/artifacts/{artifact_id}/content` | Download Artifact |
-| GET | `/.well-known/oauth-protected-resource/mcp` | Oauth Resource |
-| GET | `/.well-known/oauth-authorization-server` | Oauth Server |
-| POST | `/oauth/token` | Oauth Token |
-| GET | `/.well-known/agent-card.json` | Card |
+| GET | `/agent` | Agent Catalogue |
 | GET | `/health` | Health |
 | POST | `/v1/auth/register` | Register |
 | POST | `/v1/auth/login` | Login |
@@ -71,187 +62,26 @@
 | GET | `/v1/sessions/{session_id}/artifacts/{artifact_id}/content` | Download Artifact |
 | POST | `/v1/proxy/sessions` | Create Proxy Session |
 | GET | `/v1/proxy/sessions/{session_id}` | Proxy Session Status |
+| POST | `/agent/{agent_name}/v1/tasks` | Submit Task |
+| GET | `/agent/{agent_name}/v1/tasks` | List Tasks |
+| GET | `/agent/{agent_name}/v1/tasks/{task_id}` | Get Task |
+| POST | `/agent/{agent_name}/v1/tasks/{task_id}/cancel` | Cancel Task |
+| GET | `/agent/{agent_name}/v1/tasks/{task_id}/events` | Task Events |
+| GET | `/agent/{agent_name}/v1/tasks/{task_id}/artifacts/{artifact_id}/content` | Download Artifact |
+| GET | `/agent/{agent_name}/.well-known/oauth-protected-resource/mcp` | Oauth Resource |
+| GET | `/agent/{agent_name}/.well-known/oauth-authorization-server` | Oauth Server |
+| POST | `/agent/{agent_name}/oauth/token` | Oauth Token |
+| GET | `/agent/{agent_name}/.well-known/agent-card.json` | Card |
 
-## POST /v1/tasks
+## GET /agent
 
-Submit Task
-
-认证：服务 Bearer Token 或 `umeko_auth` Cookie；开启免鉴权后可省略凭据，共享匿名任务归属。
-
-管理员开启免鉴权后可省略凭据；免鉴权调用共用任务身份。默认仍需要凭据。
-
-请求体：必填。
-
-`application/json` → `TaskCreateInput`
-
-| 响应码 | 内容 |
-| --- | --- |
-| 202 | application/json: object |
-| 422 | application/json: HTTPValidationError |
-
-## GET /v1/tasks
-
-List Tasks
-
-认证：服务 Bearer Token 或 `umeko_auth` Cookie；开启免鉴权后可省略凭据，共享匿名任务归属。
-
-管理员开启免鉴权后可省略凭据；免鉴权调用共用任务身份。默认仍需要凭据。
-
-| 参数 | 位置 | 必填 | 类型与约束 |
-| --- | --- | --- | --- |
-| `limit` | query | 否 | `{"default": 50, "maximum": 100, "minimum": 1, "title": "Limit", "type": "integer"}` |
-| `offset` | query | 否 | `{"default": 0, "minimum": 0, "title": "Offset", "type": "integer"}` |
-
-| 响应码 | 内容 |
-| --- | --- |
-| 200 | application/json: object |
-| 422 | application/json: HTTPValidationError |
-
-## GET /v1/tasks/{task_id}
-
-Get Task
-
-认证：服务 Bearer Token 或 `umeko_auth` Cookie；开启免鉴权后可省略凭据，共享匿名任务归属。
-
-管理员开启免鉴权后可省略凭据；免鉴权调用共用任务身份。默认仍需要凭据。
-
-| 参数 | 位置 | 必填 | 类型与约束 |
-| --- | --- | --- | --- |
-| `task_id` | path | 是 | `{"title": "Task Id", "type": "string"}` |
-
-| 响应码 | 内容 |
-| --- | --- |
-| 200 | application/json: object |
-| 422 | application/json: HTTPValidationError |
-
-## POST /v1/tasks/{task_id}/cancel
-
-Cancel Task
-
-认证：服务 Bearer Token 或 `umeko_auth` Cookie；开启免鉴权后可省略凭据，共享匿名任务归属。
-
-管理员开启免鉴权后可省略凭据；免鉴权调用共用任务身份。默认仍需要凭据。
-
-| 参数 | 位置 | 必填 | 类型与约束 |
-| --- | --- | --- | --- |
-| `task_id` | path | 是 | `{"title": "Task Id", "type": "string"}` |
-
-| 响应码 | 内容 |
-| --- | --- |
-| 200 | application/json: object |
-| 422 | application/json: HTTPValidationError |
-
-## GET /v1/tasks/{task_id}/events
-
-Task Events
-
-认证：服务 Bearer Token 或 `umeko_auth` Cookie；开启免鉴权后可省略凭据，共享匿名任务归属。
-
-管理员开启免鉴权后可省略凭据；免鉴权调用共用任务身份。默认仍需要凭据。
-
-| 参数 | 位置 | 必填 | 类型与约束 |
-| --- | --- | --- | --- |
-| `task_id` | path | 是 | `{"title": "Task Id", "type": "string"}` |
-| `after` | query | 否 | `{"default": 0, "minimum": 0, "title": "After", "type": "integer"}` |
-
-| 响应码 | 内容 |
-| --- | --- |
-| 200 | text/event-stream: string |
-| 422 | application/json: HTTPValidationError |
-
-## GET /v1/tasks/{task_id}/artifacts/{artifact_id}/content
-
-Download Artifact
-
-认证：服务 Bearer Token 或 `umeko_auth` Cookie；开启免鉴权后可省略凭据，共享匿名任务归属。
-
-管理员开启免鉴权后可省略凭据；免鉴权调用共用任务身份。默认仍需要凭据。
-
-| 参数 | 位置 | 必填 | 类型与约束 |
-| --- | --- | --- | --- |
-| `task_id` | path | 是 | `{"title": "Task Id", "type": "string"}` |
-| `artifact_id` | path | 是 | `{"title": "Artifact Id", "type": "string"}` |
-
-| 响应码 | 内容 |
-| --- | --- |
-| 200 | application/octet-stream: string |
-| 422 | application/json: HTTPValidationError |
-
-## GET /.well-known/oauth-protected-resource/mcp
-
-Oauth Resource
+Agent Catalogue
 
 认证：无须登录。
 
 | 响应码 | 内容 |
 | --- | --- |
 | 200 | application/json: object |
-
-## GET /.well-known/oauth-authorization-server
-
-Oauth Server
-
-认证：无须登录。
-
-| 响应码 | 内容 |
-| --- | --- |
-| 200 | application/json: object |
-
-## POST /oauth/token
-
-Oauth Token
-
-认证：服务账号凭据（表单或 HTTP Basic）。
-
-请求体：必填。
-
-client_credentials；也可用 HTTP Basic 传 client_id/client_secret。
-
-`application/x-www-form-urlencoded` → `object`
-
-```json
-{
-  "properties": {
-    "client_id": {
-      "type": "string"
-    },
-    "client_secret": {
-      "type": "string",
-      "writeOnly": true
-    },
-    "grant_type": {
-      "enum": [
-        "client_credentials"
-      ],
-      "type": "string"
-    },
-    "resource": {
-      "type": "string"
-    },
-    "scope": {
-      "type": "string"
-    }
-  },
-  "required": [
-    "grant_type"
-  ],
-  "type": "object"
-}
-```
-
-| 响应码 | 内容 |
-| --- | --- |
-| 200 | application/json: 任意 JSON |
-
-## GET /.well-known/agent-card.json
-
-Card
-
-认证：无须登录。
-
-| 响应码 | 内容 |
-| --- | --- |
-| 200 | application/json: 任意 JSON |
 
 ## GET /health
 
@@ -1104,3 +934,209 @@ Proxy Session Status
 | --- | --- |
 | 200 | application/json: ProxyStatusView |
 | 422 | application/json: HTTPValidationError |
+
+## POST /agent/{agent_name}/v1/tasks
+
+Submit Task
+
+认证：服务 Bearer Token 或 `umeko_auth` Cookie；开启免鉴权后可省略凭据，共享匿名任务归属。
+
+管理员开启免鉴权后可省略凭据；免鉴权调用共用任务身份。默认仍需要凭据。
+
+| 参数 | 位置 | 必填 | 类型与约束 |
+| --- | --- | --- | --- |
+| `agent_name` | path | 是 | `{"pattern": "^[a-z0-9][a-z0-9-]{0,62}$", "type": "string"}` |
+
+请求体：必填。
+
+`application/json` → `TaskCreateInput`
+
+| 响应码 | 内容 |
+| --- | --- |
+| 202 | application/json: object |
+| 422 | application/json: HTTPValidationError |
+
+## GET /agent/{agent_name}/v1/tasks
+
+List Tasks
+
+认证：服务 Bearer Token 或 `umeko_auth` Cookie；开启免鉴权后可省略凭据，共享匿名任务归属。
+
+管理员开启免鉴权后可省略凭据；免鉴权调用共用任务身份。默认仍需要凭据。
+
+| 参数 | 位置 | 必填 | 类型与约束 |
+| --- | --- | --- | --- |
+| `agent_name` | path | 是 | `{"pattern": "^[a-z0-9][a-z0-9-]{0,62}$", "type": "string"}` |
+| `limit` | query | 否 | `{"default": 50, "maximum": 100, "minimum": 1, "title": "Limit", "type": "integer"}` |
+| `offset` | query | 否 | `{"default": 0, "minimum": 0, "title": "Offset", "type": "integer"}` |
+
+| 响应码 | 内容 |
+| --- | --- |
+| 200 | application/json: object |
+| 422 | application/json: HTTPValidationError |
+
+## GET /agent/{agent_name}/v1/tasks/{task_id}
+
+Get Task
+
+认证：服务 Bearer Token 或 `umeko_auth` Cookie；开启免鉴权后可省略凭据，共享匿名任务归属。
+
+管理员开启免鉴权后可省略凭据；免鉴权调用共用任务身份。默认仍需要凭据。
+
+| 参数 | 位置 | 必填 | 类型与约束 |
+| --- | --- | --- | --- |
+| `agent_name` | path | 是 | `{"pattern": "^[a-z0-9][a-z0-9-]{0,62}$", "type": "string"}` |
+| `task_id` | path | 是 | `{"title": "Task Id", "type": "string"}` |
+
+| 响应码 | 内容 |
+| --- | --- |
+| 200 | application/json: object |
+| 422 | application/json: HTTPValidationError |
+
+## POST /agent/{agent_name}/v1/tasks/{task_id}/cancel
+
+Cancel Task
+
+认证：服务 Bearer Token 或 `umeko_auth` Cookie；开启免鉴权后可省略凭据，共享匿名任务归属。
+
+管理员开启免鉴权后可省略凭据；免鉴权调用共用任务身份。默认仍需要凭据。
+
+| 参数 | 位置 | 必填 | 类型与约束 |
+| --- | --- | --- | --- |
+| `agent_name` | path | 是 | `{"pattern": "^[a-z0-9][a-z0-9-]{0,62}$", "type": "string"}` |
+| `task_id` | path | 是 | `{"title": "Task Id", "type": "string"}` |
+
+| 响应码 | 内容 |
+| --- | --- |
+| 200 | application/json: object |
+| 422 | application/json: HTTPValidationError |
+
+## GET /agent/{agent_name}/v1/tasks/{task_id}/events
+
+Task Events
+
+认证：服务 Bearer Token 或 `umeko_auth` Cookie；开启免鉴权后可省略凭据，共享匿名任务归属。
+
+管理员开启免鉴权后可省略凭据；免鉴权调用共用任务身份。默认仍需要凭据。
+
+| 参数 | 位置 | 必填 | 类型与约束 |
+| --- | --- | --- | --- |
+| `agent_name` | path | 是 | `{"pattern": "^[a-z0-9][a-z0-9-]{0,62}$", "type": "string"}` |
+| `task_id` | path | 是 | `{"title": "Task Id", "type": "string"}` |
+| `after` | query | 否 | `{"default": 0, "minimum": 0, "title": "After", "type": "integer"}` |
+
+| 响应码 | 内容 |
+| --- | --- |
+| 200 | text/event-stream: string |
+| 422 | application/json: HTTPValidationError |
+
+## GET /agent/{agent_name}/v1/tasks/{task_id}/artifacts/{artifact_id}/content
+
+Download Artifact
+
+认证：服务 Bearer Token 或 `umeko_auth` Cookie；开启免鉴权后可省略凭据，共享匿名任务归属。
+
+管理员开启免鉴权后可省略凭据；免鉴权调用共用任务身份。默认仍需要凭据。
+
+| 参数 | 位置 | 必填 | 类型与约束 |
+| --- | --- | --- | --- |
+| `agent_name` | path | 是 | `{"pattern": "^[a-z0-9][a-z0-9-]{0,62}$", "type": "string"}` |
+| `task_id` | path | 是 | `{"title": "Task Id", "type": "string"}` |
+| `artifact_id` | path | 是 | `{"title": "Artifact Id", "type": "string"}` |
+
+| 响应码 | 内容 |
+| --- | --- |
+| 200 | application/octet-stream: string |
+| 422 | application/json: HTTPValidationError |
+
+## GET /agent/{agent_name}/.well-known/oauth-protected-resource/mcp
+
+Oauth Resource
+
+认证：无须登录。
+
+| 参数 | 位置 | 必填 | 类型与约束 |
+| --- | --- | --- | --- |
+| `agent_name` | path | 是 | `{"pattern": "^[a-z0-9][a-z0-9-]{0,62}$", "type": "string"}` |
+
+| 响应码 | 内容 |
+| --- | --- |
+| 200 | application/json: object |
+
+## GET /agent/{agent_name}/.well-known/oauth-authorization-server
+
+Oauth Server
+
+认证：无须登录。
+
+| 参数 | 位置 | 必填 | 类型与约束 |
+| --- | --- | --- | --- |
+| `agent_name` | path | 是 | `{"pattern": "^[a-z0-9][a-z0-9-]{0,62}$", "type": "string"}` |
+
+| 响应码 | 内容 |
+| --- | --- |
+| 200 | application/json: object |
+
+## POST /agent/{agent_name}/oauth/token
+
+Oauth Token
+
+认证：服务账号凭据（表单或 HTTP Basic）。
+
+| 参数 | 位置 | 必填 | 类型与约束 |
+| --- | --- | --- | --- |
+| `agent_name` | path | 是 | `{"pattern": "^[a-z0-9][a-z0-9-]{0,62}$", "type": "string"}` |
+
+请求体：必填。
+
+client_credentials；也可用 HTTP Basic 传 client_id/client_secret。
+
+`application/x-www-form-urlencoded` → `object`
+
+```json
+{
+  "properties": {
+    "client_id": {
+      "type": "string"
+    },
+    "client_secret": {
+      "type": "string",
+      "writeOnly": true
+    },
+    "grant_type": {
+      "enum": [
+        "client_credentials"
+      ],
+      "type": "string"
+    },
+    "resource": {
+      "type": "string"
+    },
+    "scope": {
+      "type": "string"
+    }
+  },
+  "required": [
+    "grant_type"
+  ],
+  "type": "object"
+}
+```
+
+| 响应码 | 内容 |
+| --- | --- |
+| 200 | application/json: 任意 JSON |
+
+## GET /agent/{agent_name}/.well-known/agent-card.json
+
+Card
+
+认证：无须登录。
+
+| 参数 | 位置 | 必填 | 类型与约束 |
+| --- | --- | --- | --- |
+| `agent_name` | path | 是 | `{"pattern": "^[a-z0-9][a-z0-9-]{0,62}$", "type": "string"}` |
+
+| 响应码 | 内容 |
+| --- | --- |
+| 200 | application/json: 任意 JSON |

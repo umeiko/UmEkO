@@ -17,11 +17,11 @@ def bearer(account):
 def test_task_roundtrip_artifact_isolation_and_memory_release(machine_client):
     client, app, a, b = machine_client
     payload = {"prompt": "inspect", "files": [{"name": "input.txt", "content_base64": base64.b64encode(b"fixture input").decode()}]}
-    response = client.post("/v1/tasks", json=payload, headers={**bearer(a), "Idempotency-Key": "same"})
+    response = client.post("/agent/fixture/v1/tasks", json=payload, headers={**bearer(a), "Idempotency-Key": "same"})
     assert response.status_code == 202, response.text
     task_id = response.json()["id"]
-    assert client.post("/v1/tasks", json=payload, headers={**bearer(a), "Idempotency-Key": "same"}).json()["id"] == task_id
-    assert client.post("/v1/tasks", json={"prompt": "different"}, headers={**bearer(a), "Idempotency-Key": "same"}).status_code == 409
+    assert client.post("/agent/fixture/v1/tasks", json=payload, headers={**bearer(a), "Idempotency-Key": "same"}).json()["id"] == task_id
+    assert client.post("/agent/fixture/v1/tasks", json={"prompt": "different"}, headers={**bearer(a), "Idempotency-Key": "same"}).status_code == 409
     result = wait_task(client, task_id, a["token"])
     assert result["status"] == "completed", result
     assert "fixture input" in result["reply"]
@@ -29,10 +29,10 @@ def test_task_roundtrip_artifact_isolation_and_memory_release(machine_client):
     url = artifact["download_url"]
     assert "fixture input" in client.get(url, headers=bearer(a)).text
     assert client.get(url, headers=bearer(b)).status_code == 404
-    assert client.get("/v1/tasks/" + task_id, headers=bearer(b)).status_code == 404
-    assert client.post("/v1/tasks/" + task_id + "/cancel", headers=bearer(b)).status_code == 404
-    assert client.get("/v1/tasks", headers=bearer(b)).json()["tasks"] == []
-    stream = client.get("/v1/tasks/" + task_id + "/events", headers=bearer(a))
+    assert client.get("/agent/fixture/v1/tasks/" + task_id, headers=bearer(b)).status_code == 404
+    assert client.post("/agent/fixture/v1/tasks/" + task_id + "/cancel", headers=bearer(b)).status_code == 404
+    assert client.get("/agent/fixture/v1/tasks", headers=bearer(b)).json()["tasks"] == []
+    stream = client.get("/agent/fixture/v1/tasks/" + task_id + "/events", headers=bearer(a))
     assert stream.headers["x-accel-buffering"] == "no"
     assert "event: task.completed" in stream.text
     deadline = time.monotonic() + 5
@@ -43,55 +43,55 @@ def test_task_roundtrip_artifact_isolation_and_memory_release(machine_client):
     assert app.state.store.sessions(a["user_id"]) == []
     assert all(u["id"] != a["user_id"] for u in app.state.store.list_users())
     assert not app.state.task_service._directory(task_id).exists()
-    base = "http://127.0.0.1/v1/tasks"
+    base = "http://127.0.0.1/agent/fixture/v1/tasks"
     create_token = app.state.identity_store.issue_access_token(a["id"], a["token"], base, ["tasks:create"])["access_token"]
-    repeated = client.post("/v1/tasks", json=payload, headers={"Authorization": "Bearer " + create_token, "Idempotency-Key": "same"})
+    repeated = client.post("/agent/fixture/v1/tasks", json=payload, headers={"Authorization": "Bearer " + create_token, "Idempotency-Key": "same"})
     assert repeated.status_code == 202 and repeated.json()["id"] == task_id
     assert repeated.json()["reply"] is None and repeated.json()["artifacts"] == []
     cancel_token = app.state.identity_store.issue_access_token(a["id"], a["token"], base, ["tasks:cancel"])["access_token"]
-    stopped = client.post("/v1/tasks/" + task_id + "/cancel", headers={"Authorization": "Bearer " + cancel_token})
+    stopped = client.post("/agent/fixture/v1/tasks/" + task_id + "/cancel", headers={"Authorization": "Bearer " + cancel_token})
     assert stopped.status_code == 200
     assert stopped.json()["reply"] is None and stopped.json()["artifacts"] == []
 
 
 def test_bounded_admission_cancel_and_permissions(machine_client):
     client, app, a, b = machine_client
-    first = client.post("/v1/tasks", json={"prompt": "hold active"}, headers=bearer(a)).json()
+    first = client.post("/agent/fixture/v1/tasks", json={"prompt": "hold active"}, headers=bearer(a)).json()
     wait_task(client, first["id"], a["token"], terminal=False)
-    queued = [client.post("/v1/tasks", json={"prompt": "never starts"}, headers=bearer(a)).json() for _ in range(2)]
-    full = client.post("/v1/tasks", json={"prompt": "too many"}, headers=bearer(b))
+    queued = [client.post("/agent/fixture/v1/tasks", json={"prompt": "never starts"}, headers=bearer(a)).json() for _ in range(2)]
+    full = client.post("/agent/fixture/v1/tasks", json={"prompt": "too many"}, headers=bearer(b))
     assert full.status_code == 429 and full.headers["retry-after"] == "5"
-    assert client.post("/v1/tasks/" + queued[0]["id"] + "/cancel", headers=bearer(a)).json()["status"] == "cancelled"
-    assert client.post("/v1/tasks/" + first["id"] + "/cancel", headers=bearer(a)).status_code == 200
+    assert client.post("/agent/fixture/v1/tasks/" + queued[0]["id"] + "/cancel", headers=bearer(a)).json()["status"] == "cancelled"
+    assert client.post("/agent/fixture/v1/tasks/" + first["id"] + "/cancel", headers=bearer(a)).status_code == 200
     assert wait_task(client, first["id"], a["token"])["status"] == "cancelled"
     readonly = app.state.identity_store.create("readonly", ["tasks:read"])
-    assert client.post("/v1/tasks", json={"prompt": "forbidden"}, headers=bearer(readonly)).status_code == 403
-    assert client.post("/v1/tasks", json={"prompt": "bad", "files": [{"name": "../bad.txt", "content_base64": "eA=="}]}, headers=bearer(a)).status_code == 400
+    assert client.post("/agent/fixture/v1/tasks", json={"prompt": "forbidden"}, headers=bearer(readonly)).status_code == 403
+    assert client.post("/agent/fixture/v1/tasks", json={"prompt": "bad", "files": [{"name": "../bad.txt", "content_base64": "eA=="}]}, headers=bearer(a)).status_code == 400
 
 
 def test_oauth_rotation_revocation_and_audience(machine_client):
     client, app, a, b = machine_client
-    token = client.post("/oauth/token", data={"grant_type": "client_credentials", "client_id": a["id"],
-                        "client_secret": a["token"], "resource": "http://127.0.0.1/v1/tasks", "scope": "tasks:read"})
+    token = client.post("/agent/fixture/oauth/token", data={"grant_type": "client_credentials", "client_id": a["id"],
+                        "client_secret": a["token"], "resource": "http://127.0.0.1/agent/fixture/v1/tasks", "scope": "tasks:read"})
     assert token.status_code == 200, token.text
     key = token.json()["access_token"]
-    assert client.get("/v1/tasks", headers={"Authorization": "Bearer " + key}).status_code == 200
-    assert client.post("/a2a", json={}, headers={"Authorization": "Bearer " + key}).status_code == 401
-    assert client.post("/v1/tasks", json={"prompt": "forbidden"}, headers={"Authorization": "Bearer " + key}).status_code == 403
-    assert client.post("/oauth/token", data={"grant_type": "client_credentials", "client_id": a["id"], "client_secret": key}).status_code == 401
-    assert client.post("/oauth/token", data={"grant_type": "client_credentials", "client_id": a["id"], "client_secret": a["token"], "resource": "https://wrong.invalid"}).status_code == 400
+    assert client.get("/agent/fixture/v1/tasks", headers={"Authorization": "Bearer " + key}).status_code == 200
+    assert client.post("/agent/fixture/a2a", json={}, headers={"Authorization": "Bearer " + key}).status_code == 401
+    assert client.post("/agent/fixture/v1/tasks", json={"prompt": "forbidden"}, headers={"Authorization": "Bearer " + key}).status_code == 403
+    assert client.post("/agent/fixture/oauth/token", data={"grant_type": "client_credentials", "client_id": a["id"], "client_secret": key}).status_code == 401
+    assert client.post("/agent/fixture/oauth/token", data={"grant_type": "client_credentials", "client_id": a["id"], "client_secret": a["token"], "resource": "https://wrong.invalid"}).status_code == 400
     rotated = app.state.identity_store.update(a["id"], rotate=True)
-    assert client.get("/v1/tasks", headers=bearer(a)).status_code == 401
-    assert client.get("/v1/tasks", headers={"Authorization": "Bearer " + key}).status_code == 401
-    assert client.get("/v1/tasks", headers=bearer(rotated)).status_code == 200
+    assert client.get("/agent/fixture/v1/tasks", headers=bearer(a)).status_code == 401
+    assert client.get("/agent/fixture/v1/tasks", headers={"Authorization": "Bearer " + key}).status_code == 401
+    assert client.get("/agent/fixture/v1/tasks", headers=bearer(rotated)).status_code == 200
     app.state.identity_store.update(a["id"], enabled=False)
-    assert client.get("/v1/tasks", headers=bearer(rotated)).status_code == 401
+    assert client.get("/agent/fixture/v1/tasks", headers=bearer(rotated)).status_code == 401
 
 
 def test_restart_queued_tasks_and_expiry(machine_app):
     app, a, b, settings = machine_app
     tasks, store = app.state.task_service, app.state.store
-    principal = app.state.identity_store.authenticate(a["token"])
+    principal = {**app.state.identity_store.authenticate(a["token"]), "agent_id": app.state.fixture_agent["id"], "agent_definition": app.state.fixture_agent}
     queued = tasks.submit(principal, {"prompt": "resume queued"})
     with store.connect() as db:
         interrupted = tasks.submit(principal, {"prompt": "interrupted"})

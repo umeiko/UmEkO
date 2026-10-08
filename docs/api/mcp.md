@@ -1,12 +1,15 @@
 # MCP API
 
-入口为用户服务基址加 `/mcp`，传输为 Streamable HTTP。需要凭据模式下，在管理端“服务接入”创建凭据，客户端发送 `Authorization: Bearer <token>`；管理员开启免鉴权后可省略此 Header。服务需要已配置并激活的 Provider / Model。免鉴权调用共用任务身份，详见[机器任务](machine-tasks.md)。
+入口为用户服务基址加 `/agent/{slug}/mcp`，传输为 Streamable HTTP。需要凭据模式下，在管理端“服务接入”创建凭据，客户端发送 `Authorization: Bearer <token>`；管理员开启免鉴权后可省略此 Header。服务需要已配置并激活的 Provider / Model。免鉴权调用共用任务身份，详见[机器任务](machine-tasks.md)。
 
 ## 工具
 
+客户端的 `UMEKO_SERVICE_URL` 必须设为 `/agent/{slug}` 对应的完整地址，以使用指定 Agent 的模型和技能配置。MCP 初始化仍使用平台名 UMEKO，具体 Agent 通过 `get_agent_info` 识别。任务查询、资源读取和取消限定在当前 Agent 的调用者归属内。
+
 | 工具 | 参数 | 结果 |
 | --- | --- | --- |
-| `list_models` | 无 | 默认模型 ID、可选模型 ID / 名称 / vision / Provider 名称 |
+| `get_agent_info` | 无 | 当前路径对应的公开 Agent Card，含介绍和实际披露的技能 |
+| `list_models` | 无 | 当前 Agent 默认模型 ID、可选模型 ID / 名称 / vision / Provider 名称 |
 | `submit_task` | `prompt`，可选 `files`、`model_id`、`idempotency_key` | Task 与任务 ID，立即返回 |
 | `get_task` | `task_id` | 状态、最终回复、错误、产物与到期时间 |
 | `list_tasks` | 可选 `limit=50`、`offset=0` | `tasks` 与 `total`，最多 100 条 |

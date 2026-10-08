@@ -104,6 +104,12 @@ class TaskService:
             columns = {row["name"] for row in db.execute("PRAGMA table_info(service_tasks)")}
             if "caller_ip" not in columns:
                 db.execute("ALTER TABLE service_tasks ADD COLUMN caller_ip TEXT")
+            if "agent_id" not in columns:
+                db.execute("ALTER TABLE service_tasks ADD COLUMN agent_id TEXT NOT NULL DEFAULT ''")
+            if "request_key" not in columns:
+                db.execute("ALTER TABLE service_tasks ADD COLUMN request_key TEXT")
+                db.execute("UPDATE service_tasks SET request_key=idempotency_key")
+            db.execute("CREATE UNIQUE INDEX IF NOT EXISTS idx_task_request_key ON service_tasks(user_id,agent_id,request_key)")
 
     def start(self):
         if self._thread is not None:
@@ -145,6 +151,7 @@ class TaskService:
     def submit(self, principal: dict, payload: dict, *, source="rest", idempotency_key=None,
                context_id=None, message_id=None, caller_ip=None) -> dict:
         owner = require_scope(principal, "tasks:create")
+        agent_id = principal.get("agent_id", "")
         normalized, contents = validate_input(payload)
         if normalized["model_id"] and self.store.model_by_id(normalized["model_id"]) is None:
             raise ValueError("指定模型不存在")
@@ -155,21 +162,29 @@ class TaskService:
             raise ValueError("context_id 无效")
         fingerprint = hashlib.sha256(json.dumps({**normalized, "context_id": context_id},
                                                 sort_keys=True, ensure_ascii=False).encode()).hexdigest()
+        definition = principal.get("agent_definition")
+        if agent_id:
+            if not definition or definition["id"] != agent_id:
+                raise ValueError("智能体配置无效")
+            normalized["agent_snapshot"] = self.service.agent_registry.snapshot(definition)
+            normalized["model_id"] = normalized["model_id"] or definition.get("default_model_id")
         if message_id:
             normalized["message_id"] = message_id
         task_id, stamp = "task_" + uuid.uuid4().hex, now()
         expires = (datetime.now(timezone.utc) + timedelta(seconds=self.settings.task_retention_seconds)).isoformat()
         with self.store.connect() as db:
             db.execute("BEGIN IMMEDIATE")
+            if agent_id and db.execute("SELECT 1 FROM agent_definitions WHERE id=? AND enabled=1", (agent_id,)).fetchone() is None:
+                raise KeyError("智能体不存在或已停用")
             if idempotency_key:
-                row = db.execute("SELECT * FROM service_tasks WHERE user_id=? AND idempotency_key=?",
-                                 (owner, idempotency_key)).fetchone()
+                row = db.execute("SELECT * FROM service_tasks WHERE user_id=? AND agent_id=? AND request_key=?",
+                                 (owner, agent_id, idempotency_key)).fetchone()
                 if row:
                     if row["request_hash"] != fingerprint:
                         raise IdempotencyConflict("同一幂等键对应的输入不同")
                     return self._visible(self._view(db, row), principal)
-            if context_id and db.execute("SELECT 1 FROM service_tasks WHERE context_id=? AND user_id=?",
-                                         (context_id, owner)).fetchone() is None:
+            if context_id and db.execute("SELECT 1 FROM service_tasks WHERE context_id=? AND user_id=? AND agent_id=?",
+                                         (context_id, owner, agent_id)).fetchone() is None:
                 raise KeyError("Context 不存在或无权访问")
             queued = db.execute("SELECT COUNT(*) FROM service_tasks WHERE status='queued'").fetchone()[0]
             owned = db.execute("SELECT COUNT(*) FROM service_tasks WHERE user_id=? "
@@ -182,9 +197,9 @@ class TaskService:
                 for i, content in enumerate(contents):
                     (directory / str(i)).write_bytes(content)
                 db.execute("INSERT INTO service_tasks(id,user_id,source,context_id,status,input_json,"
-                           "request_hash,idempotency_key,created_at,updated_at,expires_at,caller_ip) "
-                           "VALUES(?,?,?,?,?,?,?,?,?,?,?,?)", (task_id, owner, source, context_id or "ctx_" + uuid.uuid4().hex,
-                            "queued", json.dumps(normalized, ensure_ascii=False), fingerprint, idempotency_key, stamp, stamp, expires, caller_ip))
+                           "request_hash,request_key,created_at,updated_at,expires_at,caller_ip,agent_id) "
+                           "VALUES(?,?,?,?,?,?,?,?,?,?,?,?,?)", (task_id, owner, source, context_id or "ctx_" + uuid.uuid4().hex,
+                            "queued", json.dumps(normalized, ensure_ascii=False), fingerprint, idempotency_key, stamp, stamp, expires, caller_ip, agent_id))
                 self._event(db, task_id, "task.queued", {})
             except BaseException:
                 self._remove_staging(task_id)
@@ -192,7 +207,7 @@ class TaskService:
             row = db.execute("SELECT * FROM service_tasks WHERE id=?", (task_id,)).fetchone()
             result = self._view(db, row)
         self._wake.set()
-        logger.info("Machine task submitted: id=%s source=%s caller_id=%s caller_ip=%s", task_id, source, owner, caller_ip or "unknown")
+        logger.info("Machine task submitted: id=%s agent_id=%s source=%s caller_id=%s caller_ip=%s", task_id, agent_id or "default", source, owner, caller_ip or "unknown")
         return self._visible(result, principal)
 
     @staticmethod
@@ -203,15 +218,15 @@ class TaskService:
         return result
 
     def _view(self, db, row) -> dict:
-        return {**{key: row[key] for key in ("id", "context_id", "source", "status", "created_at", "updated_at",
+        return {**{key: row[key] for key in ("id", "agent_id", "context_id", "source", "status", "created_at", "updated_at",
                                            "completed_at", "expires_at", "reply", "error")},
                 "expires_at": row["expires_at"] if row["status"] in TERMINAL else None,
                 "artifacts": [dict(a) for a in db.execute("SELECT id,name,media_type,size FROM service_task_artifacts WHERE task_id=?", (row["id"],))]}
 
-    def _owned(self, db, task_id, owner):
-        row = db.execute("SELECT * FROM service_tasks WHERE id=? AND user_id=? "
+    def _owned(self, db, task_id, owner, agent_id=""):
+        row = db.execute("SELECT * FROM service_tasks WHERE id=? AND user_id=? AND agent_id=? "
                          "AND (expires_at>? OR status NOT IN ('completed','failed','cancelled'))",
-                         (task_id, owner, now())).fetchone()
+                         (task_id, owner, agent_id, now())).fetchone()
         if row is None:
             raise KeyError("任务不存在、已到期或无权访问")
         return row
@@ -219,11 +234,11 @@ class TaskService:
     def get(self, principal, task_id) -> dict:
         owner = require_scope(principal, "tasks:read")
         with self.store.connect() as db:
-            return self._view(db, self._owned(db, task_id, owner))
+            return self._view(db, self._owned(db, task_id, owner, principal.get("agent_id", "")))
 
     def list(self, principal, *, limit=50, offset=0, context_id=None, status=None, updated_after=None) -> dict:
         owner = require_scope(principal, "tasks:read")
-        where, args = "user_id=? AND (expires_at>? OR status NOT IN ('completed','failed','cancelled'))", [owner, now()]
+        where, args = "user_id=? AND agent_id=? AND (expires_at>? OR status NOT IN ('completed','failed','cancelled'))", [owner, principal.get("agent_id", ""), now()]
         for field, value in [("context_id", context_id)]:
             if value:
                 where += " AND " + field + "=?"
@@ -247,7 +262,7 @@ class TaskService:
         owner = require_scope(principal, "tasks:cancel")
         with self.store.connect() as db:
             db.execute("BEGIN IMMEDIATE")
-            row = self._owned(db, task_id, owner)
+            row = self._owned(db, task_id, owner, principal.get("agent_id", ""))
             if row["status"] not in TERMINAL:
                 status = "cancelled" if row["status"] == "queued" else "cancelling"
                 db.execute("UPDATE service_tasks SET cancel_requested=1,status=?,updated_at=?,completed_at=?,expires_at=? WHERE id=?",
@@ -263,7 +278,7 @@ class TaskService:
     def events(self, principal, task_id, after=0) -> list[dict]:
         owner = require_scope(principal, "tasks:read")
         with self.store.connect() as db:
-            self._owned(db, task_id, owner)
+            self._owned(db, task_id, owner, principal.get("agent_id", ""))
             return [{**dict(r), "data": json.loads(r["data"])} for r in db.execute(
                 "SELECT id,type,data,created_at FROM service_task_events WHERE task_id=? AND id>? ORDER BY id", (task_id, after))]
 
@@ -277,7 +292,7 @@ class TaskService:
     def artifact(self, principal, task_id, artifact_id) -> tuple[Path, str]:
         owner = require_scope(principal, "artifacts:read")
         with self.store.connect() as db:
-            row = self._owned(db, task_id, owner)
+            row = self._owned(db, task_id, owner, principal.get("agent_id", ""))
             item = db.execute("SELECT * FROM service_task_artifacts WHERE task_id=? AND id=?", (task_id, artifact_id)).fetchone()
         if item is None or not row["session_id"]:
             raise KeyError("产物不存在")
@@ -323,7 +338,8 @@ class TaskService:
                     self._event(db, task_id, "task.cancelled", {})
                     return
             payload = json.loads(row["input_json"])
-            session = self.service.create_session(user_id=row["user_id"], title="服务任务 " + task_id[-8:])
+            session = self.service.create_session(user_id=row["user_id"], title="服务任务 " + task_id[-8:],
+                                                  agent_snapshot=payload.get("agent_snapshot"))
             with self.store.connect() as db:
                 db.execute("UPDATE service_tasks SET session_id=? WHERE id=?", (session.id, task_id))
                 db.execute("UPDATE agent_sessions SET purpose='task' WHERE id=?", (session.id,))

@@ -10,7 +10,7 @@
 | UMEKO 进程 | 主服务进程的 RSS 内存、CPU、线程数；进程 CPU 100% 约等于占满一个核心，可能超过 100% |
 | 服务状态 | 网页会话、机器工作区、内存会话、Run 状态、数据库与 WAL 文件字节数 |
 | 模型队列 | 每模型并发上限、正在调用、等待调用 |
-| 机器任务 | 状态数量、任务 Worker / 队列 / 调用者容量、保留时间，最近 100 个任务、调用者、来源 IP 及停止按钮 |
+| 机器任务 | 状态数量、任务 Worker / 队列 / 调用者容量、保留时间，最近 100 个任务、所属 Agent、调用者、来源 IP 及停止按钮 |
 
 GPU 不在当前监控范围。远端模型服务器的 GPU、显存和模型平台流量需在 LiteLLM 或模型提供方监控中查看。容器部署时 psutil 的主机 / 容器可见范围与平台有关，不应把这些读数直接当作 cgroup 配额使用率。
 
@@ -18,7 +18,7 @@ GPU 不在当前监控范围。远端模型服务器的 GPU、显存和模型平
 
 免鉴权调用显示为“免鉴权调用”，共用任务身份；IP 只用于记录，不作鉴权。未知 IP 和升级前的任务显示“未知”。带凭据的调用仍显示服务账号名称。
 
-点击“服务接入”中的 Agent Card 超链接，用表单编辑名称、介绍、版本、地址和提供方，可查看只读 JSON 预览。技能自动同步已启用的默认 Skill，可通过弹窗入口前往维护，不单独编辑另一份清单；服务地址、协议能力及鉴权声明由服务维护。保存后立即更新公开 Card，配置保存在数据库中。
+“服务接入”下的“智能体管理”统一维护每个 Agent 的介绍、工作指引、默认模型和 Skill 选择。点击“配置与入口”查看独立地址与只读 Card 预览。任务列表显示所属 Agent，便于确认哪个服务在使用共享资源，见[智能体管理](agents.md)。
 
 API：
 
@@ -26,8 +26,7 @@ API：
 | --- | --- | --- |
 | GET | `/admin/v1/resources` | `current`、`history`、`interval_seconds` |
 | GET / PUT | `/admin/v1/service-access` | 接入方式 `auth_mode`：`required` 或 `anonymous` |
-| GET / PUT | `/admin/v1/agent-card` | 查看 / 保存 Card；PUT 请求体为 `{"card": {...}}`，返回 `card`、`editable_fields`、`public_url` |
-| GET | `/admin/v1/tasks` | 最近 100 个任务的归属、协议来源、`caller_ip`、状态与时间，不包含输入正文和模型密钥 |
+| GET | `/admin/v1/tasks` | 最近 100 个任务的 `agent_id`、`agent_name`、调用者、协议来源、`caller_ip`、状态与时间，不包含输入正文和模型密钥 |
 | POST | `/admin/v1/tasks/{task_id}/cancel` | 请求取消后的任务 |
 | GET / POST | `/admin/v1/service-accounts` | 账号列表 / 创建账号并返回一次性凭据 |
 | PATCH | `/admin/v1/service-accounts/{account_id}` | 启用、停用或更换凭据 |

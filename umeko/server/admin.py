@@ -16,7 +16,7 @@ from typing import Literal
 from fastapi import FastAPI, HTTPException, Request, Response
 from fastapi.responses import HTMLResponse, JSONResponse
 from pydantic import BaseModel, ConfigDict, Field
-from .agent_card import EDITABLE_FIELDS
+from .. import __version__
 from ..host.identities import SCOPES
 
 from ..config import Settings
@@ -141,9 +141,19 @@ class _ServiceAccessIn(BaseModel):
     auth_mode: Literal["required", "anonymous"]
 
 
-class _AgentCardIn(BaseModel):
+class _AgentIn(BaseModel):
     model_config = ConfigDict(extra="forbid")
-    card: dict
+    slug: str = Field(min_length=1, max_length=63)
+    name: str = Field(min_length=1, max_length=200)
+    description: str = Field(min_length=1, max_length=10000)
+    version: str = __version__
+    system_prompt: str = Field(default="", max_length=100000)
+    default_model_id: str | None = None
+    skill_names: list[str] = Field(default_factory=list)
+    enabled: bool = True
+    documentationUrl: str | None = None
+    iconUrl: str | None = None
+    provider: dict | None = None
 
 
 def create_admin_app(settings: Settings, service: AgentService, store: Store, public_url: str | None = None) -> FastAPI:
@@ -199,11 +209,8 @@ def create_admin_app(settings: Settings, service: AgentService, store: Store, pu
 
     @app.get("/admin/v1/service-accounts", tags=["service access"])
     def service_accounts() -> dict:
-        base = public_base
         return {"accounts": service.identity_store.list(), "scopes": sorted(SCOPES),
-                "auth_mode": service.identity_store.auth_mode(),
-                "endpoints": {"mcp": base + "/mcp", "a2a": base + "/a2a",
-                              "agent_card": base + "/.well-known/agent-card.json", "tasks": base + "/v1/tasks"}}
+                "auth_mode": service.identity_store.auth_mode()}
 
     @app.get("/admin/v1/service-access", tags=["service access"])
     def service_access() -> dict:
@@ -214,18 +221,64 @@ def create_admin_app(settings: Settings, service: AgentService, store: Store, pu
         service.identity_store.set_auth_mode(payload.auth_mode)
         return service_access()
 
-    @app.get("/admin/v1/agent-card", tags=["service access"])
-    def get_agent_card() -> dict:
-        return {"card": service.agent_card.render(public_base, service.identity_store.auth_mode()),
-                "editable_fields": list(EDITABLE_FIELDS), "public_url": public_base + "/.well-known/agent-card.json"}
+    def agent_view(definition):
+        base = public_base + "/agent/" + definition["slug"]
+        return {**definition, "endpoints": {"agent_card": base + "/.well-known/agent-card.json",
+                "a2a": base + "/a2a", "mcp": base + "/mcp", "tasks": base + "/v1/tasks"}}
 
-    @app.put("/admin/v1/agent-card", tags=["service access"])
-    def save_agent_card(payload: _AgentCardIn) -> dict:
+    @app.get("/admin/v1/agents", tags=["agents"])
+    def agents() -> dict:
+        skills = []
+        for item in store.default_skills():
+            pack = parse_skill_pack_text(item["content"])
+            if pack:
+                skills.append({"filename": item["name"], "name": pack.name,
+                               "description": pack.description, "enabled": bool(item["enabled"])})
+        return {"agents": [agent_view(item) for item in service.agent_registry.list()], "skills": skills, "default_version": __version__,
+                "models": [{"id": model["id"], "name": model["name"], "provider": provider["name"]}
+                           for provider in store.list_providers() for model in provider["models"]]}
+
+    @app.post("/admin/v1/agents", status_code=201, tags=["agents"])
+    def create_agent(payload: _AgentIn) -> dict:
         try:
-            service.agent_card.save(payload.card, public_base, service.identity_store.auth_mode())
+            return agent_view(service.agent_registry.save(payload.model_dump(exclude_none=True)))
         except ValueError as exc:
             raise HTTPException(400, str(exc)) from exc
-        return get_agent_card()
+
+    @app.put("/admin/v1/agents/{agent_id}", tags=["agents"])
+    def update_agent(agent_id: str, payload: _AgentIn) -> dict:
+        try:
+            return agent_view(service.agent_registry.save(payload.model_dump(exclude_none=True), agent_id))
+        except KeyError as exc:
+            raise HTTPException(404, str(exc)) from exc
+        except ValueError as exc:
+            raise HTTPException(400, str(exc)) from exc
+
+    @app.get("/admin/v1/agents/{agent_id}", tags=["agents"])
+    def get_agent(agent_id: str) -> dict:
+        try:
+            return agent_view(service.agent_registry.get(agent_id))
+        except KeyError as exc:
+            raise HTTPException(404, str(exc)) from exc
+
+    @app.delete("/admin/v1/agents/{agent_id}", status_code=204, tags=["agents"])
+    def delete_agent(agent_id: str) -> None:
+        try:
+            service.agent_registry.delete(agent_id)
+        except KeyError as exc:
+            raise HTTPException(404, str(exc)) from exc
+        except ValueError as exc:
+            raise HTTPException(409, str(exc)) from exc
+
+    @app.get("/admin/v1/agents/{agent_id}/card", tags=["agents"])
+    def managed_agent_card(agent_id: str) -> dict:
+        try:
+            definition = service.agent_registry.get(agent_id)
+        except KeyError as exc:
+            raise HTTPException(404, str(exc)) from exc
+        base = public_base + "/agent/" + definition["slug"]
+        return {"card": service.agent_card.render(base, service.identity_store.auth_mode(), definition),
+                "public_url": base + "/.well-known/agent-card.json"}
 
     @app.post("/admin/v1/service-accounts", status_code=201, tags=["service access"])
     def create_service_account(payload: _ServiceAccountIn, response: Response) -> dict:
@@ -248,19 +301,21 @@ def create_admin_app(settings: Settings, service: AgentService, store: Store, pu
     @app.get("/admin/v1/tasks", tags=["monitoring"])
     def monitored_tasks() -> list[dict]:
         with store.connect() as db:
-            rows = db.execute("SELECT t.id,t.source,t.status,t.created_at,t.updated_at,t.expires_at,t.caller_ip,"
+            rows = db.execute("SELECT t.id,t.source,t.status,t.created_at,t.updated_at,t.expires_at,t.caller_ip,t.agent_id,"
+                              "COALESCE(g.name,'历史入口') AS agent_name,"
                               "CASE WHEN u.kind='anonymous' THEN '免鉴权调用' ELSE COALESCE(a.name,u.username) END AS caller FROM service_tasks t "
                               "JOIN users u ON u.id=t.user_id LEFT JOIN service_accounts a ON a.user_id=t.user_id "
+                              "LEFT JOIN agent_definitions g ON g.id=t.agent_id "
                               "ORDER BY t.created_at DESC LIMIT 100").fetchall()
         return [dict(r) for r in rows]
 
     @app.post("/admin/v1/tasks/{task_id}/cancel", tags=["monitoring"])
     def stop_machine_task(task_id: str) -> dict:
         with store.connect() as db:
-            row = db.execute("SELECT user_id FROM service_tasks WHERE id=?", (task_id,)).fetchone()
+            row = db.execute("SELECT user_id,agent_id FROM service_tasks WHERE id=?", (task_id,)).fetchone()
         if row is None:
             raise HTTPException(404, "任务不存在")
-        return service.task_service.cancel({"user_id": row["user_id"], "scopes": sorted(SCOPES)}, task_id)
+        return service.task_service.cancel({"user_id": row["user_id"], "agent_id": row["agent_id"], "scopes": sorted(SCOPES)}, task_id)
 
     @app.get("/admin/v1/users")
     def users() -> list[dict]:

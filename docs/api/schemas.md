@@ -1217,22 +1217,105 @@
 }
 ```
 
-### _AgentCardIn
+### _AgentIn
 
 ```json
 {
   "additionalProperties": false,
   "properties": {
-    "card": {
-      "additionalProperties": true,
-      "title": "Card",
-      "type": "object"
+    "default_model_id": {
+      "anyOf": [
+        {
+          "type": "string"
+        },
+        {
+          "type": "null"
+        }
+      ],
+      "title": "Default Model Id"
+    },
+    "description": {
+      "maxLength": 10000,
+      "minLength": 1,
+      "title": "Description",
+      "type": "string"
+    },
+    "documentationUrl": {
+      "anyOf": [
+        {
+          "type": "string"
+        },
+        {
+          "type": "null"
+        }
+      ],
+      "title": "Documentationurl"
+    },
+    "enabled": {
+      "default": true,
+      "title": "Enabled",
+      "type": "boolean"
+    },
+    "iconUrl": {
+      "anyOf": [
+        {
+          "type": "string"
+        },
+        {
+          "type": "null"
+        }
+      ],
+      "title": "Iconurl"
+    },
+    "name": {
+      "maxLength": 200,
+      "minLength": 1,
+      "title": "Name",
+      "type": "string"
+    },
+    "provider": {
+      "anyOf": [
+        {
+          "additionalProperties": true,
+          "type": "object"
+        },
+        {
+          "type": "null"
+        }
+      ],
+      "title": "Provider"
+    },
+    "skill_names": {
+      "items": {
+        "type": "string"
+      },
+      "title": "Skill Names",
+      "type": "array"
+    },
+    "slug": {
+      "maxLength": 63,
+      "minLength": 1,
+      "title": "Slug",
+      "type": "string"
+    },
+    "system_prompt": {
+      "default": "",
+      "maxLength": 100000,
+      "title": "System Prompt",
+      "type": "string"
+    },
+    "version": {
+      "default": "0.1.2",
+      "title": "Version",
+      "type": "string"
     }
   },
   "required": [
-    "card"
+    "slug",
+    "name",
+    "description"
   ],
-  "title": "_AgentCardIn",
+  "title": "_AgentIn",
   "type": "object"
 }
 ```

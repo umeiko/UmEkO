@@ -42,17 +42,26 @@ def _mcp_call(fn, *args, **kwargs):
 
 def build_mcp(settings, tasks):
     server = MCPServer("UMEKO", version=__version__, instructions=(
-        "先 submit_task 提交文件处理任务，使用 get_task 查询状态。"
+        "先 get_agent_info 了解当前智能体，再 submit_task 提交任务，使用 get_task 查询状态。"
         "完成后使用 read_artifact 读取产物；取消用 cancel_task。"))
     def principal(ctx):
         return ctx.request_context.request.state.principal
+
+    @server.tool(structured_output=True, annotations=ToolAnnotations(readOnlyHint=True, openWorldHint=False))
+    def get_agent_info(ctx: Context) -> dict[str, Any]:
+        """读取当前路径所对应智能体的公开介绍和技能，不包含工作指引与模型密钥。"""
+        request = ctx.request_context.request
+        return tasks.service.agent_card.render(public_base(settings, request), tasks.service.identity_store.auth_mode(),
+                                               request.state.agent_definition)
 
     @server.tool(structured_output=True, annotations=ToolAnnotations(readOnlyHint=True, openWorldHint=False))
     def list_models(ctx: Context) -> dict[str, Any]:
         """列出可选模型 ID 与名称，不包含模型地址或密钥。未指定模型时使用管理员默认模型。"""
         _mcp_call(require_scope, principal(ctx), "tasks:create")
         active = tasks.store.active_model()
-        return {"default_model_id": active["model_id"] if active else None,
+        definition = principal(ctx).get("agent_definition")
+        default = (definition or {}).get("default_model_id") or (active["model_id"] if active else None)
+        return {"default_model_id": default,
                 "models": [{"id": m["id"], "name": m["name"], "vision": m["vision"], "provider": p["name"]}
                            for p in tasks.store.list_providers() for m in p["models"]]}
 
@@ -150,7 +159,7 @@ class A2AHandler(RequestHandler):
             status.message.CopyFrom(a2a.Message(message_id=record["id"] + "-status", role=a2a.Role.ROLE_AGENT,
                                                 parts=[a2a.Part(text=record["error"])]))
         task = a2a.Task(id=record["id"], context_id=record["context_id"], status=status)
-        ParseDict({"expiresAt": record["expires_at"], "source": record["source"]}, task.metadata)
+        ParseDict({"expiresAt": record["expires_at"], "source": record["source"], "agentId": record["agent_id"]}, task.metadata)
         if include_artifacts:
             if record["reply"]:
                 task.artifacts.append(a2a.Artifact(artifact_id="response", name="Agent response", parts=[a2a.Part(text=record["reply"])]))
@@ -330,7 +339,8 @@ class A2AHandler(RequestHandler):
 def add_a2a_routes(app, settings, tasks):
     async def card(request: Request):
         base = public_base(settings, request)
-        value = tasks.service.agent_card.render(base, tasks.service.identity_store.auth_mode())
+        value = tasks.service.agent_card.render(base, tasks.service.identity_store.auth_mode(),
+                                               request.state.agent_definition)
         return JSONResponse(value, headers={"Cache-Control": "no-cache"})
     app.add_api_route("/.well-known/agent-card.json", card, methods=["GET"], tags=["A2A"])
     app.router.routes.extend(create_jsonrpc_routes(A2AHandler(tasks), rpc_url="/a2a",

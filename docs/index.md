@@ -40,7 +40,7 @@
 | 用户工作台、独立管理端口 | 已实现 | [Web Server](architecture/webserver.md) |
 | REST API、文件处理与 SSE | 已实现 | [API](api/index.md) |
 | 每个模型独立的并发额度与调用排队 | 已实现，单进程内共享 | [模型配置](api/admin.md) |
-| MCP 服务 | 已实现，Streamable HTTP 与六个业务工具 | [MCP](api/mcp.md) |
+| MCP 服务 | 已实现，Streamable HTTP 与七个工具 | [MCP](api/mcp.md) |
 | A2A 服务 | 已实现，1.0 JSON-RPC、Agent Card 与流式 | [A2A](api/a2a.md) |
 | 机器身份、持久化任务队列、自动过期清理 | 已实现，单进程 | [机器任务](api/machine-tasks.md) |
 | 管理员资源监控与服务凭据管理 | 已实现 | [资源监控](api/monitoring.md) |

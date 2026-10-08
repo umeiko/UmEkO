@@ -6,7 +6,7 @@
 
 选择“免鉴权（无需凭据）”并保存后，MCP、A2A、REST `/v1/tasks` 及其事件、产物入口可不带 Authorization。只需配置服务地址；设置保存在数据库中，后续请求立即生效，重启后仍保留。网页登录和管理端登录不受此开关影响。
 
-所有不带凭据的机器调用共用一个持久化身份，能查询、取消及下载该身份下的任务与文件，也共用每账号队列额度。不会为每个请求或 IP 创建服务账号，不按 IP 鉴权或隔离数据。共享幂等键须由调用方使用唯一业务标识。
+所有不带凭据的机器调用共用一个持久化身份，能查询、取消及下载同一 Agent 内该身份下的任务与文件，也共用每账号队列额度。不会为每个请求或 IP 创建服务账号，不按 IP 鉴权或隔离数据。共享幂等键须由调用方使用唯一业务标识。
 
 带有效凭据的调用仍按对应服务账号隔离；传了无效或过期凭据会返回 401，不自动降级到免鉴权。切回“需要服务凭据”后，新的免凭据请求被拒绝，已接收任务继续执行。免鉴权任务可由管理员在资源监控中查看和停止。
 
@@ -14,7 +14,7 @@
 
 ## 地址和权限
 
-下面所有路径相对用户服务的完整基址，例如 `https://example.internal/doc-master/consistency/image-text`。这些入口不在管理端口上。
+下面所有路径相对具体 Agent 的完整基址，例如 `https://example.internal/doc-master/consistency/image-text/agent/image-qc`。每个 Agent 使用自己的工作指引、所选 Skill 和默认模型；调用者显式指定的 `model_id` 优先。配置方法见[智能体管理](agents.md)。
 
 | scope | 用途 |
 | --- | --- |
@@ -63,7 +63,7 @@ with httpx.Client(headers=headers, timeout=30) as client:
         Path(Path(artifact["name"]).name).write_bytes(response.content)
 ```
 
-同一账号的幂等键和输入相同返回原 Task；输入不同返回 `409`。结果到期后该键可以重新使用。输入最多 200000 字符、10 个文件、文件原始字节合计 20 MiB；JSON / A2A / MCP 请求体上限 30 MiB，含 base64 和其他字段。文件名不能包含路径。
+同一 Agent、同一账号的幂等键和输入相同返回原 Task；输入不同返回 `409`。结果到期清理后该键可以重新使用。输入最多 200000 字符、10 个文件、文件原始字节合计 20 MiB；JSON / A2A / MCP 请求体上限 30 MiB，含 base64 和其他字段。文件名不能包含路径。
 
 ## REST 操作
 
@@ -77,6 +77,8 @@ with httpx.Client(headers=headers, timeout=30) as client:
 | GET | `/v1/tasks/{task_id}/artifacts/{artifact_id}/content` | 授权下载 |
 
 状态为 `queued`、`running`、`cancelling`、`completed`、`failed`、`cancelled`。`expires_at` 在终态前为空；终态默认保留 24 小时。Task 中的 `artifacts` 含 `id`、`name`、`media_type`、`size`、`download_url`、`resource_uri`。
+
+Task 的 `agent_id` 标记所属 Agent。查询、列表、事件、取消和产物均限制在当前 Agent 与账号内，换用另一个 Agent 路径会返回 404。新增 Agent 的排队任务保留提交时的工作指引和主 Skill 文本副本；快照及停用规则见[多智能体架构](../architecture/agents.md)。
 
 SSE 每帧含 `id`、`event`、`data`，data 是 `id/type/data/created_at` 事件对象。只保留最近 500 条，不作为完整审计日志；重连缺失历史时以 GET Task 的最终结果为准。原生浏览器 EventSource 不能设置 Bearer Header，可用支持 Header 的 SSE 客户端。
 

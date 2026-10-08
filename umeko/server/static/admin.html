@@ -202,9 +202,6 @@
   .monitor-section h3 { margin:0 0 8px; font-size:15px; }
   .table-scroll { overflow:auto; }
   .metric.warn strong { color:#a13e34; }
-  .access-endpoints { display:grid; grid-template-columns:120px minmax(0,1fr); gap:8px; margin:16px 0; }
-  .access-endpoints code { overflow-wrap:anywhere; }
-  .access-endpoints a { color:var(--accent); text-decoration:underline; text-underline-offset:3px; }
   .secret-dialog { position:fixed; inset:0; margin:auto; width:min(600px,calc(100vw - 32px)); height:fit-content;
     max-height:calc(100dvh - 32px); overflow:auto; border:1px solid var(--line); border-radius:12px;
     padding:24px; color:var(--ink); background:var(--panel); box-shadow:0 20px 70px #17211e40; }
@@ -212,29 +209,31 @@
   .secret-dialog > p { margin:10px 0 18px; line-height:1.6; }
   .secret-dialog::backdrop { background:#17211e66; }
   .secret-dialog input { width:100%; font-family:ui-monospace,monospace; margin:8px 0; }
-  .agent-card-dialog { width:min(900px,calc(100vw - 32px)); }
-  .agent-card-form { margin-top:16px; }
-  .agent-card-fields { display:grid; grid-template-columns:repeat(2,minmax(0,1fr)); gap:12px 16px; }
-  .agent-card-fields label { display:grid; gap:6px; font-size:12px; color:var(--muted); }
-  .agent-card-fields .wide { grid-column:1 / -1; }
-  .agent-card-fields input { width:100%; margin:0; font:13px/1.5 inherit; }
-  .agent-card-fields textarea { width:100%; min-height:82px; padding:10px; border:1px solid var(--line);
+  .secret-dialog .checkline { white-space:nowrap; }
+  .secret-dialog .checkline input { width:auto; margin:0; }
+  .agent-definition-dialog { width:min(900px,calc(100vw - 32px)); }
+  .agent-definition-form { margin-top:16px; }
+  .agent-definition-fields { display:grid; grid-template-columns:repeat(2,minmax(0,1fr)); gap:12px 16px; }
+  .agent-definition-fields label { display:grid; gap:6px; font-size:12px; color:var(--muted); }
+  .agent-definition-fields .wide { grid-column:1 / -1; }
+  .agent-definition-fields input { width:100%; margin:0; font:13px/1.5 inherit; }
+  .agent-definition-fields textarea { width:100%; min-height:82px; padding:10px; border:1px solid var(--line);
     border-radius:7px; color:var(--ink); background:#fff; font:13px/1.5 inherit; resize:vertical; }
-  .agent-card-skills { display:grid; gap:8px; margin:10px 0; }
-  .agent-card-skill { padding:10px 12px; border:1px solid var(--line); border-radius:8px; background:#fff; }
-  .agent-card-skill strong { display:inline; font-size:13px; }
-  .agent-card-skill code { margin-left:8px; font-size:11px; color:var(--muted); overflow-wrap:anywhere; }
-  .agent-card-skill p { margin-top:6px; font-size:12px; line-height:1.6; overflow-wrap:anywhere; }
-  .agent-card-dialog details { margin-top:16px; }
-  .agent-card-dialog summary { cursor:pointer; color:var(--muted); font-size:12px; }
-  #agent-card-feedback { margin-top:14px; line-height:1.6; }
-  #agent-card-json { display:block; width:100%; height:240px; padding:12px; margin:10px 0 0;
-    border:1px solid var(--line); border-radius:8px; color:var(--ink); background:#fff;
-    font:12px/1.6 ui-monospace,monospace; resize:vertical; }
-  .agent-card-dialog a { color:var(--accent); }
-  @media(max-width:600px) { .agent-card-fields { grid-template-columns:1fr; } }
+  .agent-definition-skills { display:grid; gap:8px; margin:10px 0; }
+  .agent-skill-choice { display:flex; align-items:flex-start; gap:8px; padding:10px; border:1px solid var(--line); border-radius:8px; background:#fff; }
+  .agent-skill-choice input { width:auto; margin:3px 0; }
+  .agent-skill-choice span { min-width:0; font-size:12px; line-height:1.6; }
+  .agent-skill-choice b { font-size:13px; }
+  .agent-skill-choice small { display:block; color:var(--muted); overflow-wrap:anywhere; }
+  #agent-definition-prompt { min-height:120px; }
+  #agent-definition-feedback { margin-top:14px; font-size:12px; line-height:1.6; }
+  .agent-endpoints { display:grid; gap:6px; margin-top:12px; }
+  .agent-endpoints a { font:12px/1.6 ui-monospace,monospace; overflow-wrap:anywhere; }
+  .agent-definition-dialog details { margin-top:16px; }
+  .agent-definition-dialog summary { cursor:pointer; color:var(--muted); font-size:12px; }
+  @media(max-width:600px) { .agent-definition-fields { grid-template-columns:1fr; } }
   @media(max-width:900px) { .monitor-grid { grid-template-columns:repeat(2,minmax(0,1fr)); } .topbar { flex-wrap:wrap; height:auto; min-height:40px; align-items:center; } .tabs { flex-wrap:wrap; order:3; flex-basis:100%; } .topbar .who { margin-left:auto; } }
-  @media(max-width:500px) { .monitor-grid { grid-template-columns:1fr; } .access-endpoints { grid-template-columns:1fr; } }
+  @media(max-width:500px) { .monitor-grid { grid-template-columns:1fr; } }
   </style>
 </head>
 <body class="auth">
@@ -279,17 +278,17 @@
       <div class="table-scroll"><table><thead><tr><th>Provider</th><th>模型</th><th>并发上限</th><th>正在调用</th><th>等待调用</th></tr></thead><tbody id="monitor-models"></tbody></table></div>
     </div>
     <div class="monitor-section"><h3>机器任务队列</h3><p class="muted" id="monitor-queue"></p>
-      <div class="table-scroll"><table><thead><tr><th>任务</th><th>调用者</th><th>来源 IP</th><th>入口</th><th>状态</th><th>提交时间</th><th>操作</th></tr></thead><tbody id="monitor-tasks"></tbody></table></div>
+      <div class="table-scroll"><table><thead><tr><th>任务</th><th>智能体</th><th>调用者</th><th>来源 IP</th><th>入口</th><th>状态</th><th>提交时间</th><th>操作</th></tr></thead><tbody id="monitor-tasks"></tbody></table></div>
     </div>
   </div>
 
   <div id="page-access" class="card hidden">
     <strong>服务接入</strong>
+    <p class="muted" style="margin-top:8px">统一管理智能体、接入方式和服务凭据。每个智能体通过 /agent/&lt;name&gt;/ 下的独立地址提供服务。</p>
     <div class="row"><label for="service-auth-mode">接入方式</label><select id="service-auth-mode"><option value="required">需要服务凭据</option><option value="anonymous">免鉴权（无需凭据）</option></select><button class="primary" onclick="saveServiceAccess()">保存接入方式</button></div>
     <p class="muted" id="service-auth-note"></p>
     <p class="muted">也可为程序或其他 Agent 创建独立凭据。带凭据调用的任务和文件按服务账号隔离；停用或更换后，旧凭据立即失效。</p>
-    <div id="access-endpoints" class="access-endpoints"></div>
-    <p class="muted">以上入口使用用户服务的访问地址和前缀。生产部署请在 .env 设置 UMEKO_PUBLIC_URL，使 Agent Card 能返回完整外部地址。使用凭据时发送 Authorization: Bearer &lt;服务凭据&gt;；免鉴权调用可省略此项。</p>
+    <p class="muted">智能体地址包含用户服务的访问地址和部署前缀。生产部署请在 .env 设置 UMEKO_PUBLIC_URL，使 Agent Card 能返回完整外部地址。使用凭据时发送 Authorization: Bearer &lt;服务凭据&gt;；免鉴权调用可省略此项。</p>
     <div class="row"><input id="sa-name" placeholder="服务账号名称，如 document-worker" aria-label="服务账号名称" maxlength="80"><label for="sa-days" class="muted">有效天数</label><input id="sa-days" type="number" value="90" min="1" max="3650" style="width:90px"><button id="sa-create" class="primary" onclick="createServiceAccount()">创建服务账号</button></div>
     <div class="row" id="sa-scopes">
       <label class="checkline"><input type="checkbox" value="tasks:create" checked>提交任务</label>
@@ -299,36 +298,44 @@
     </div>
     <p id="sa-feedback" class="muted hidden" role="status" aria-live="polite" style="margin-top:12px"></p>
     <div class="table-scroll"><table><thead><tr><th>名称</th><th>权限</th><th>状态</th><th>到期时间</th><th>最近调用</th><th>操作</th></tr></thead><tbody id="service-accounts"></tbody></table></div>
+    <section id="agent-management" class="monitor-section">
+    <div class="row" style="margin-top:0;justify-content:space-between"><strong>智能体管理</strong><button class="primary" id="agent-new" onclick="editAgentDefinition()">新建智能体</button></div>
+    <p class="muted" style="margin-top:10px">每个智能体拥有独立访问路径、Agent Card、技能选择、工作指引和默认模型。共用执行引擎、服务接入方式与模型并发队列；任务、事件和文件按智能体与调用者归属查询。</p>
+    <div class="table-scroll"><table><thead><tr><th>智能体</th><th>路径</th><th>所选技能</th><th>默认模型</th><th>状态</th><th>操作</th></tr></thead><tbody id="agent-definitions"></tbody></table></div>
+    </section>
   </div>
+
+  <dialog id="agent-definition-editor" class="secret-dialog agent-definition-dialog" aria-labelledby="agent-definition-title" onclose="clearAgentDefinition()">
+    <strong id="agent-definition-title">新建智能体</strong>
+    <p class="muted">选择要下发的技能，Card 会自动生成公开说明。配置变更对新提交任务生效，已接收的任务保留提交时的配置。</p>
+    <form id="agent-definition-form" class="agent-definition-form" onsubmit="saveAgentDefinition(event)" novalidate>
+      <div class="agent-definition-fields">
+        <label>名称 *<input id="agent-definition-name" required placeholder="例如：图文质检 Agent"></label>
+        <label>访问路径 *<input id="agent-definition-slug" required placeholder="例如：image-qc"><small>生成 /agent/image-qc/，创建后保持不变。</small></label>
+        <label class="wide">介绍 *<textarea id="agent-definition-description" required placeholder="向调用方说明适用任务"></textarea></label>
+        <label>版本 *<input id="agent-definition-version" required></label>
+        <label>默认模型<select id="agent-definition-model"><option value="">跟随平台默认模型</option></select></label>
+        <label>文档地址（选填）<input id="agent-definition-documentation" type="url" placeholder="https://…"></label>
+        <label>图标地址（选填）<input id="agent-definition-icon" type="url" placeholder="https://…"></label>
+        <label>提供方名称（选填）<input id="agent-definition-provider-name"></label>
+        <label>提供方网址（选填）<input id="agent-definition-provider-url" type="url" placeholder="https://…"></label>
+        <label class="wide">工作指引（仅内部使用）<textarea id="agent-definition-prompt" placeholder="说明这个智能体的职责、处理要求和交付格式"></textarea></label>
+      </div>
+      <div class="row"><label class="checkline"><input id="agent-definition-enabled" type="checkbox" checked>启用对外入口</label><button type="button" onclick="manageDefinitionSkills()">维护默认 Skill</button></div>
+      <p class="muted" style="margin:12px 0 8px">所选技能中，仅下发已启用的默认 Skill。未选择任何技能时，可使用基础文件工具处理任务。停用入口会拒绝新请求，已接收任务继续执行。</p>
+      <div id="agent-definition-skills" class="agent-definition-skills"></div>
+      <div id="agent-definition-endpoints" class="agent-endpoints"></div>
+      <details id="agent-definition-card-preview"><summary>查看 Agent Card（只读）</summary><pre id="agent-definition-card" class="example"></pre></details>
+      <p id="agent-definition-feedback" role="status" aria-live="polite"></p>
+      <div class="row"><button type="submit" class="primary" id="agent-definition-save">保存</button><button type="button" onclick="document.getElementById('agent-definition-editor').close()">关闭</button></div>
+    </form>
+  </dialog>
 
   <dialog id="service-secret" class="secret-dialog" aria-labelledby="service-secret-title" onclose="clearServiceSecret()">
     <strong id="service-secret-title">服务账号已创建</strong><p class="muted">请保存以下凭据。凭据仅在创建或更换时显示一次，关闭后无法再次查看。</p>
     <label class="muted">服务账号 ID（OAuth client_id）</label><input id="service-client-id" readonly>
     <label class="muted">服务凭据（Bearer Token / OAuth client_secret）</label><input id="service-token" readonly>
     <div class="row"><button class="primary" onclick="copyServiceToken()">复制凭据</button><button onclick="clearServiceSecret();document.getElementById('service-secret').close()">已保存，关闭</button></div>
-  </dialog>
-
-  <dialog id="agent-card-editor" class="secret-dialog agent-card-dialog" aria-labelledby="agent-card-title" onclose="clearAgentCardEditor()">
-    <strong id="agent-card-title">Agent Card</strong>
-    <p class="muted">维护对外服务介绍。技能自动同步已启用的默认 Skill；服务地址、协议能力和鉴权方式由服务配置维护。</p>
-    <a id="agent-card-public" href="#" target="_blank" rel="noopener">查看公开 Agent Card</a>
-    <form id="agent-card-form" class="agent-card-form" onsubmit="saveAgentCard(event)" oninput="updateAgentCardPreview()" novalidate>
-      <div class="agent-card-fields">
-        <label>服务名称 *<input id="agent-card-name" required placeholder="例如：UMEKO 图像质检"></label>
-        <label>版本 *<input id="agent-card-version" required placeholder="例如：1.0.0"></label>
-        <label class="wide">服务介绍 *<textarea id="agent-card-description" required placeholder="说明服务适合处理什么任务"></textarea></label>
-        <label>文档地址（选填）<input id="agent-card-documentation" type="url" placeholder="https://…"></label>
-        <label>图标地址（选填）<input id="agent-card-icon" type="url" placeholder="https://…"></label>
-        <label>提供方名称（选填）<input id="agent-card-provider-name" placeholder="例如：图像质检团队"></label>
-        <label>提供方网址（选填）<input id="agent-card-provider-url" type="url" placeholder="https://…"></label>
-      </div>
-      <div class="row"><strong style="font-size:13px">对外技能</strong><span class="tag">自动同步</span><button type="button" onclick="manageAgentCardSkills()">管理默认 Skill</button></div>
-      <p class="muted" style="margin-top:8px">名称和简介来自 Skill 文档头部。启用、停用和更新会同步公开 Card，并影响新任务；已有任务保留原配置。公开介绍不包含技能正文或脚本。</p>
-      <div id="agent-card-skills" class="agent-card-skills"></div>
-      <details id="agent-card-preview"><summary>查看 JSON 预览（只读）</summary><textarea id="agent-card-json" aria-label="Agent Card JSON 预览" readonly spellcheck="false"></textarea></details>
-    <p id="agent-card-feedback" class="muted" role="status" aria-live="polite"></p>
-      <div class="row"><button type="button" id="agent-card-reload" onclick="loadAgentCardEditor()">重新读取</button><button type="submit" id="agent-card-save" class="primary">保存</button><button type="button" onclick="document.getElementById('agent-card-editor').close()">关闭</button></div>
-    </form>
   </dialog>
 
   <div id="page-users" class="card">
@@ -518,7 +525,7 @@ function showLogin() {
   clearTimeout(monitorTimer);
   clearServiceSecret();
   if ($('service-secret').open) $('service-secret').close();
-  if ($('agent-card-editor').open) $('agent-card-editor').close();
+  if ($('agent-definition-editor').open) $('agent-definition-editor').close();
   document.body.className = "auth";
   $("login").classList.remove("hidden"); $("main").classList.add("hidden");
 }
@@ -1051,7 +1058,7 @@ async function loadMonitor() {
     $('monitor-models').innerHTML=c.models.length?c.models.map(m=>`<tr><td>${safeHtml(m.provider)}</td><td>${safeHtml(m.name)}</td><td>${m.limit||'不限'}</td><td>${m.active}</td><td>${m.waiting}</td></tr>`).join(''):'<tr><td colspan="5" class="muted">尚未配置模型</td></tr>';
     $('monitor-queue').textContent=`等待 ${c.tasks.counts.queued||0} / ${c.tasks.queue_limit} · 执行或取消中 ${(c.tasks.counts.running||0)+(c.tasks.counts.cancelling||0)} / ${c.tasks.workers} · 每个调用者最多 ${c.tasks.caller_limit} 个未结束任务 · 完成后保留 ${Math.round(c.tasks.retention_seconds/3600)} 小时`;
     const labels={queued:'排队',running:'执行中',cancelling:'正在停止',completed:'已完成',failed:'失败',cancelled:'已取消'};
-    $('monitor-tasks').innerHTML=tasks.length?tasks.map(t=>`<tr><td title="${safeHtml(t.id)}"><code>${safeHtml(t.id.slice(-10))}</code></td><td>${safeHtml(t.caller)}</td><td>${safeHtml(t.caller_ip||'未知')}</td><td>${safeHtml(t.source.toUpperCase())}</td><td>${labels[t.status]||safeHtml(t.status)}</td><td>${new Date(t.created_at).toLocaleString()}</td><td>${['queued','running','cancelling'].includes(t.status)?`<button onclick="stopMachineTask('${safeHtml(t.id)}')">停止</button>`:'—'}</td></tr>`).join(''):'<tr><td colspan="7" class="muted">暂无机器调用任务</td></tr>';
+    $('monitor-tasks').innerHTML=tasks.length?tasks.map(t=>`<tr><td title="${safeHtml(t.id)}"><code>${safeHtml(t.id.slice(-10))}</code></td><td>${safeHtml(t.agent_name)}</td><td>${safeHtml(t.caller)}</td><td>${safeHtml(t.caller_ip||'未知')}</td><td>${safeHtml(t.source.toUpperCase())}</td><td>${labels[t.status]||safeHtml(t.status)}</td><td>${new Date(t.created_at).toLocaleString()}</td><td>${['queued','running','cancelling'].includes(t.status)?`<button onclick="stopMachineTask('${safeHtml(t.id)}')">停止</button>`:'—'}</td></tr>`).join(''):'<tr><td colspan="8" class="muted">暂无机器调用任务</td></tr>';
     $('monitor-updated').textContent='更新于 '+new Date(c.timestamp).toLocaleTimeString();
   } catch(e) { $('monitor-updated').textContent='读取失败：'+e.message; }
   finally { monitorLoading=false; if(activeTab==='resources' && !document.hidden && !document.body.classList.contains('auth')) monitorTimer=setTimeout(loadMonitor,5000); }
@@ -1059,13 +1066,11 @@ async function loadMonitor() {
 document.addEventListener('visibilitychange',()=>{clearTimeout(monitorTimer);if(!document.hidden && activeTab==='resources' && !document.body.classList.contains('auth')) loadMonitor();});
 async function stopMachineTask(id) { try { await api('POST',`/admin/v1/tasks/${id}/cancel`);toast('已请求停止');loadMonitor(); } catch(e){toast(e.message,true);} }
 async function loadServiceAccounts() {
+  loadAgentDefinitions();
   try {
     const data=await api('GET','/admin/v1/service-accounts');
     $('service-auth-mode').value=data.auth_mode;
     showServiceAuthNote(data.auth_mode);
-    $('access-endpoints').innerHTML=Object.entries(data.endpoints).map(([name,url])=>name==='agent_card'
-      ?`<a id="agent-card-link" href="#agent-card-editor" onclick="openAgentCardEditor(event)"><strong>Agent Card</strong></a><a href="#agent-card-editor" onclick="openAgentCardEditor(event)"><code>${safeHtml(url)}</code></a>`
-      :`<strong>${safeHtml(name.toUpperCase())}</strong><code>${safeHtml(url)}</code>`).join('');
     $('service-accounts').innerHTML=data.accounts.length?data.accounts.map(a=>`<tr><td>${safeHtml(a.name)}</td><td class="muted">${safeHtml(a.scopes.join(', '))}</td><td>${!a.enabled?'已停用':new Date(a.expires_at)<new Date()?'已过期':'可用'}</td><td>${new Date(a.expires_at).toLocaleDateString()}</td><td>${a.last_used_at?new Date(a.last_used_at).toLocaleString():'尚未使用'}</td><td><div class="row"><button onclick="rotateServiceAccount('${a.id}')">更换凭据</button><button onclick="toggleServiceAccount('${a.id}',${!a.enabled})">${a.enabled?'停用':'启用'}</button></div></td></tr>`).join(''):'<tr><td colspan="6" class="muted">暂无服务账号</td></tr>';
   } catch(e) {toast(e.message,true);}
 }
@@ -1078,78 +1083,79 @@ async function saveServiceAccess() {
   try {const result=await api('PUT','/admin/v1/service-access',{auth_mode:$('service-auth-mode').value});showServiceAuthNote(result.auth_mode);toast('接入方式已保存，立即生效');}
   catch(e){toast(e.message,true);loadServiceAccounts();}
 }
-function agentCardFeedback(message, bad=false) {const el=$('agent-card-feedback');el.textContent=message;el.style.color=bad?'#9d382e':'var(--muted)';}
-let agentCardCurrent=null;
-const agentCardFields={name:'agent-card-name',description:'agent-card-description',version:'agent-card-version',documentationUrl:'agent-card-documentation',iconUrl:'agent-card-icon'};
-function agentCardBusy(busy) {
-  for(const el of $('agent-card-form').querySelectorAll('input,textarea,button')) el.disabled=busy;
-  $('agent-card-save').textContent=busy?'请稍候…':'保存';
-}
-async function openAgentCardEditor(event) {
-  event.preventDefault();clearToast();
-  if($('agent-card-editor').open) return;
-  $('agent-card-editor').showModal();
-  await loadAgentCardEditor();
-}
-async function loadAgentCardEditor() {
-  agentCardBusy(true);agentCardFeedback('正在读取 Agent Card…');
+let agentDefinitionsData={agents:[],skills:[],models:[]}, editingAgentId=null;
+const definitionFields={name:'name',slug:'slug',description:'description',version:'version',system_prompt:'prompt',documentationUrl:'documentation',iconUrl:'icon'};
+function definitionFeedback(message,bad=false) {const el=$('agent-definition-feedback');el.textContent=bad?message.replaceAll('服务账号名称','智能体名称'):message;el.style.color=bad?'#9d382e':'var(--muted)';}
+function definitionEndpoints(endpoints) {return Object.entries(endpoints).map(([name,url])=>`<div><span class="muted">${name==='agent_card'?'Agent Card':name.toUpperCase()}：</span>${name==='agent_card'?`<a href="${safeHtml(url)}" target="_blank" rel="noopener">${safeHtml(url)}</a>`:`<code style="font-size:12px;overflow-wrap:anywhere">${safeHtml(url)}</code>`}</div>`).join('');}
+async function loadAgentDefinitions() {
   try {
-    const data=await api('GET','/admin/v1/agent-card');
-    renderAgentCardForm(data);
-    agentCardFeedback('已读取当前 Agent Card，修改后点击保存即可生效。');
-  } catch(e) {agentCardFeedback(e.message,true);}
-  finally {agentCardBusy(false);}
+    agentDefinitionsData=await api('GET','/admin/v1/agents');
+    const models=new Map(agentDefinitionsData.models.map(m=>[m.id,`${m.provider} / ${m.name}`]));
+    $('agent-definitions').innerHTML=agentDefinitionsData.agents.length?agentDefinitionsData.agents.map(a=>`<tr><td><strong style="font-size:13px">${safeHtml(a.name)}</strong><p class="muted">${safeHtml(a.description)}</p></td><td><code>/agent/${safeHtml(a.slug)}/</code></td><td>${a.skill_names.length}</td><td>${safeHtml(a.default_model_id?(models.get(a.default_model_id)||'模型已删除'):'跟随平台')}</td><td>${a.enabled?'已启用':'已停用'}</td><td><div class="row"><button onclick="editAgentDefinition('${safeHtml(a.id)}')">配置与入口</button><button class="danger" onclick="deleteAgentDefinition('${safeHtml(a.id)}')">删除</button></div></td></tr>`).join(''):'<tr><td colspan="6" class="muted">尚未创建智能体。创建并启用后，即可使用对应的 MCP、A2A 和任务 API。</td></tr>';
+  } catch(e) {toast(e.message,true);}
 }
-function renderAgentCardForm(data) {
-  agentCardCurrent=data.card;
-  for(const [field,id] of Object.entries(agentCardFields)) $(id).value=data.card[field]||'';
-  $('agent-card-provider-name').value=data.card.provider?.organization||'';
-  $('agent-card-provider-url').value=data.card.provider?.url||'';
-  $('agent-card-public').href=data.public_url;
-  const skills=data.card.skills||[];
-  $('agent-card-skills').innerHTML=skills.length?skills.map(skill=>`<article class="agent-card-skill"><strong>${safeHtml(skill.name)}</strong><code>${safeHtml(skill.id)}</code><p>${safeHtml(skill.description)}</p></article>`).join(''):'<p class="muted">尚未启用默认 Skill。可在“默认 Skill”页启用要下发的技能；服务仍可接收普通任务。</p>';
-  updateAgentCardPreview();
+async function editAgentDefinition(id=null) {
+  clearToast();
+  try {agentDefinitionsData=await api('GET','/admin/v1/agents');}
+  catch(e){toast(e.message,true);return;}
+  editingAgentId=id;
+  const a=id?agentDefinitionsData.agents.find(item=>item.id===id):{version:agentDefinitionsData.default_version,enabled:true,skill_names:[]};
+  if(!a){toast('智能体不存在，请刷新列表',true);return;}
+  $('agent-definition-title').textContent=id?'配置智能体':'新建智能体';
+  for(const [field,suffix] of Object.entries(definitionFields)) $('agent-definition-'+suffix).value=a[field]||'';
+  $('agent-definition-slug').readOnly=!!id;
+  $('agent-definition-enabled').checked=a.enabled;
+  $('agent-definition-provider-name').value=a.provider?.organization||'';
+  $('agent-definition-provider-url').value=a.provider?.url||'';
+  $('agent-definition-model').innerHTML='<option value="">跟随平台默认模型</option>'+agentDefinitionsData.models.map(m=>`<option value="${safeHtml(m.id)}">${safeHtml(m.provider+' / '+m.name)}</option>`).join('');
+  if(a.default_model_id&&!agentDefinitionsData.models.some(m=>m.id===a.default_model_id)) $('agent-definition-model').insertAdjacentHTML('beforeend',`<option value="${safeHtml(a.default_model_id)}">原模型已删除，请重新选择</option>`);
+  $('agent-definition-model').value=a.default_model_id||'';
+  $('agent-definition-skills').innerHTML=agentDefinitionsData.skills.length?agentDefinitionsData.skills.map(s=>`<label class="agent-skill-choice"><input type="checkbox" value="${safeHtml(s.filename)}" ${a.skill_names.includes(s.filename)?'checked':''}><span><b>${safeHtml(s.name)}</b> <small>${safeHtml(s.filename)} · ${s.enabled?'已启用':'已停用，当前不下发'}</small><small>${safeHtml(s.description)}</small></span></label>`).join(''):'<p class="muted">没有可选的默认 Skill。请先在默认 Skill 页面导入或创建技能。</p>';
+  $('agent-definition-endpoints').innerHTML=id?definitionEndpoints(a.endpoints):'<p class="muted">保存后显示完整调用入口。</p>';
+  $('agent-definition-card').textContent='';$('agent-definition-card-preview').open=false;
+  definitionFeedback('');
+  $('agent-definition-editor').showModal();
+  if(id) {
+    try {const data=await api('GET',`/admin/v1/agents/${id}/card`);$('agent-definition-card').textContent=JSON.stringify(data.card,null,2);}
+    catch(e){definitionFeedback(e.message,true);}
+  }
 }
-function agentCardMetadata(validate=false) {
-  const card={};
-  for(const [field,id] of Object.entries(agentCardFields)) {
-    const value=$(id).value.trim();
-    if(value||['name','description','version'].includes(field)) card[field]=value;
+async function saveAgentDefinition(event) {
+  event.preventDefault();
+  if($('agent-definition-save').disabled) return;
+  const value={};
+  for(const [field,suffix] of Object.entries(definitionFields)) {
+    const text=$('agent-definition-'+suffix).value.trim();
+    if(text||['name','slug','description','version','system_prompt'].includes(field)) value[field]=text;
   }
-  if(validate) {
-    for(const [field,label] of [['name','服务名称'],['description','服务介绍'],['version','版本']]) {
-      if(!card[field]) {$(agentCardFields[field]).focus();throw Error('请填写'+label);}
-    }
+  for(const [field,label] of [['name','名称'],['slug','访问路径'],['description','介绍'],['version','版本']]) {
+    if(!value[field]) {definitionFeedback('请填写'+label,true);$('agent-definition-'+definitionFields[field]).focus();return;}
   }
-  const organization=$('agent-card-provider-name').value.trim(), url=$('agent-card-provider-url').value.trim();
+  if(!/^[a-z0-9][a-z0-9-]{0,62}$/.test(value.slug)){definitionFeedback('访问路径请使用小写字母、数字和连字符，最多 63 位',true);return;}
+  const organization=$('agent-definition-provider-name').value.trim(), url=$('agent-definition-provider-url').value.trim();
   if(organization||url) {
-    if(validate && (!organization||!url)) throw Error('提供方名称和网址请同时填写，或同时留空');
-    card.provider={organization,url};
+    if(!organization||!url){definitionFeedback('提供方名称和网址请同时填写，或同时留空',true);return;}
+    value.provider={organization,url};
   }
-  return card;
-}
-function updateAgentCardPreview() {
-  if(!agentCardCurrent) return;
-  const preview={...agentCardCurrent};
-  for(const key of [...Object.keys(agentCardFields),'provider']) delete preview[key];
-  $('agent-card-json').value=JSON.stringify({...agentCardMetadata(),...preview},null,2);
-}
-async function saveAgentCard(event) {
-  event?.preventDefault();
-  if($('agent-card-save').disabled) return;
-  let card;
-  try {card=agentCardMetadata(true);}
-  catch(e) {agentCardFeedback(e.message,true);return;}
-  agentCardBusy(true);agentCardFeedback('正在保存…');
+  value.default_model_id=$('agent-definition-model').value||null;
+  value.enabled=$('agent-definition-enabled').checked;
+  value.skill_names=Array.from($('agent-definition-skills').querySelectorAll('input:checked'),el=>el.value);
+  const disabled=Array.from($('agent-definition-form').querySelectorAll('input,textarea,select,button'));
+  disabled.forEach(el=>el.disabled=true);$('agent-definition-save').textContent='正在保存…';definitionFeedback('正在保存…');
   try {
-    const data=await api('PUT','/admin/v1/agent-card',{card});
-    renderAgentCardForm(data);
-    agentCardFeedback('Agent Card 已保存，对外接口立即生效。');
-  } catch(e) {agentCardFeedback(e.message,true);}
-  finally {agentCardBusy(false);}
+    const saved=await api(editingAgentId?'PUT':'POST',editingAgentId?`/admin/v1/agents/${editingAgentId}`:'/admin/v1/agents',value);
+    editingAgentId=saved.id;$('agent-definition-slug').readOnly=true;
+    $('agent-definition-title').textContent='配置智能体';
+    $('agent-definition-endpoints').innerHTML=definitionEndpoints(saved.endpoints);
+    const data=await api('GET',`/admin/v1/agents/${saved.id}/card`);$('agent-definition-card').textContent=JSON.stringify(data.card,null,2);
+    definitionFeedback('已保存。新请求立即使用此配置；已有任务保留原配置。');
+    await loadAgentDefinitions();
+  } catch(e){definitionFeedback(e.message,true);}
+  finally {disabled.forEach(el=>el.disabled=false);$('agent-definition-save').textContent='保存';}
 }
-function clearAgentCardEditor() {agentCardCurrent=null;$('agent-card-form').reset();$('agent-card-json').value='';$('agent-card-skills').innerHTML='';$('agent-card-preview').open=false;agentCardFeedback('');}
-function manageAgentCardSkills() {$('agent-card-editor').close();showTab('dskills');loadDefaultSkills();}
+function clearAgentDefinition(){editingAgentId=null;$('agent-definition-form').reset();$('agent-definition-card').textContent='';$('agent-definition-endpoints').innerHTML='';definitionFeedback('');}
+function manageDefinitionSkills(){$('agent-definition-editor').close();showTab('dskills');loadDefaultSkills();}
+async function deleteAgentDefinition(id){if(!confirm('删除这个智能体配置？已有保留任务时需先停用，待任务清理后才能删除。'))return;try{await api('DELETE',`/admin/v1/agents/${id}`);await loadAgentDefinitions();toast('智能体已删除');}catch(e){toast(e.message,true);}}
 function showServiceSecret(account, title='服务账号已创建') { clearToast();$('service-secret-title').textContent=title;$('service-client-id').value=account.id;$('service-token').value=account.token;$('service-secret').showModal(); }
 function clearServiceSecret() { $('service-client-id').value='';$('service-token').value=''; }
 async function copyServiceToken() {try{await navigator.clipboard.writeText($('service-token').value);toast('已复制');}catch(_){$('service-token').select();toast('请复制选中的凭据');}}

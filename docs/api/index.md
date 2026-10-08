@@ -9,7 +9,7 @@
 | 用户 API | `http://127.0.0.1:8000` | `POST /v1/auth/login` | `umeko_auth` |
 | 管理 API | `http://127.0.0.1:9000` | `POST /admin/login` | `umeko_admin` |
 
-网页 Session API 使用 Cookie 登录，用户 Cookie 与管理 Cookie 分开。机器 `/v1/tasks`、MCP、A2A 支持服务 Bearer 凭据与 OAuth `client_credentials`。管理接口只能向管理端口调用，并使用管理员 Cookie。
+网页 Session API 使用 Cookie 登录，用户 Cookie 与管理 Cookie 分开。机器 `/agent/{slug}/v1/tasks`、MCP、A2A 支持服务 Bearer 凭据与 OAuth `client_credentials`。管理接口只能向管理端口调用，并使用管理员 Cookie。
 
 带路径前缀时，用户服务基址包含完整前缀，例如：
 
@@ -18,7 +18,7 @@ BASE_URL=https://example.internal/doc-master/consistency/image-text
 GET BASE_URL/v1/sessions
 ```
 
-文档中的 `/v1/...` 是内部路由。管理面不自动继承用户面的 `UMEKO_BASE_PATH`；它有独立入口与 Cookie Path，代理部署需单独规划。
+网页文档中的 `/v1/...` 相对用户服务基址。机器任务示例中的 `/v1/tasks` 相对具体 Agent 的基址，即用户服务基址加 `/agent/{slug}`。管理面不自动继承用户面的 `UMEKO_BASE_PATH`；它有独立入口与 Cookie Path，代理部署需单独规划。
 
 ## 按能力阅读
 
@@ -30,6 +30,7 @@ GET BASE_URL/v1/sessions
 | 工作区、附件、产物、会话技能 | [文件与技能](files-skills.md) |
 | 一个请求上传文件并发起任务 | [一次性调用](proxy.md) |
 | 无网页账号的有界任务与服务凭据 | [机器任务](machine-tasks.md) |
+| 多个 Agent 的配置、技能与独立路径 | [智能体管理](agents.md) |
 | 工具发现、提交、查询与产物资源 | [MCP](mcp.md) |
 | Agent Card、发送、订阅与流式产物 | [A2A](a2a.md) |
 | CPU、内存、磁盘、模型与任务队列 | [资源监控](monitoring.md) |

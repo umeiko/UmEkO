@@ -31,11 +31,24 @@ class Session:
         output_dir: str | Path,
         *,
         skill_dir: str | Path | None = None,
+        allowed_skill_packs: set[str] | None = None,
     ):
         self._settings = settings
         self._output_dir = Path(output_dir).resolve()
         self._skill_dir = Path(skill_dir).resolve() if skill_dir is not None else None
         self._active_skill_names: set[str] = set()
+        self.allowed_skill_packs = allowed_skill_packs
+
+    def authorize_skill_pack(self, pack: str) -> None:
+        if self.allowed_skill_packs is not None and pack not in self.allowed_skill_packs:
+            raise ValueError("当前智能体未配置该技能包：" + pack)
+
+    def call_skill_pack(self, pack, handler, **kwargs):
+        try:
+            self.authorize_skill_pack(pack)
+        except ValueError as exc:
+            return f"错误：{exc}"
+        return handler(pack=pack, **kwargs)
 
     @property
     def output_dir(self) -> Path:
@@ -97,6 +110,10 @@ class Session:
             except ValueError as e:
                 return f"错误：{e}"
             from .skills.pack_reader import read_pack_file
+            try:
+                self.authorize_skill_pack(pack_name)
+            except ValueError as e:
+                return f"错误：{e}"
             result = read_pack_file(pack_name, member)
             if result.startswith("错误："):
                 return result
@@ -132,6 +149,8 @@ class Session:
 
     def create_skill(self, name: str, description: str, should_cancel=None) -> str:
         """生成并校验一个 Session 目录中的提示词型 Skill。"""
+        if self.allowed_skill_packs is not None:
+            return "错误：当前智能体的技能由管理员配置，请在技能管理中维护。"
         from .skill_agent import SkillAgent  # 延迟导入：仅用到时加载
 
         result = SkillAgent(self._settings, self._skill_dir).create(

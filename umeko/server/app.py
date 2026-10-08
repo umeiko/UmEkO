@@ -19,9 +19,11 @@ from ..host.service import AgentService, SessionState
 from ..host.storage import Store
 from ..host.identities import IdentityStore, SCOPES
 from ..host.tasks import TaskService
+from ..host.agents import AgentRegistry
 from .monitor import ResourceMonitor
 from .body_limit import MachineBodyLimitMiddleware
-from .agent_card import AgentCardConfig
+from .agent_card import AgentCards
+from .agent_routing import AgentRoutingMiddleware, publish_agent_schema
 from .protocols import add_a2a_routes, build_mcp
 from .task_api import add_task_routes, public_base
 from ..runner import Run as RunState
@@ -131,7 +133,8 @@ def create_app(
     app.state.profile = profile
     identities = IdentityStore(store)
     service.identity_store = identities
-    service.agent_card = AgentCardConfig(store)
+    service.agent_registry = AgentRegistry(store)
+    service.agent_card = AgentCards(store)
     service.task_service = TaskService(service, settings)
     service.resource_monitor = ResourceMonitor(service, service.task_service)
     app.state.task_service = service.task_service
@@ -172,7 +175,9 @@ def create_app(
                 metadata = public_base(settings, request) + "/.well-known/oauth-protected-resource/mcp"
                 return JSONResponse({"detail": "需要有效的服务凭据"}, status_code=401,
                                     headers={"WWW-Authenticate": f'Bearer resource_metadata="{metadata}"' if path == "/mcp" else "Bearer"})
-            request.state.principal = principal
+            definition = request.state.agent_definition
+            request.state.principal = {**principal, "agent_id": definition["id"],
+                                       "agent_definition": definition}
             length = request.headers.get("Content-Length", "0")
             if length.isdigit() and int(length) > 30 * 1024 * 1024:
                 return JSONResponse({"detail": "请求超过 30 MiB"}, status_code=413)
@@ -197,9 +202,22 @@ def create_app(
             raise HTTPException(404, str(exc)) from exc
 
     @app.get("/", response_class=HTMLResponse, include_in_schema=False)
-    def web_app() -> HTMLResponse:
+    def web_app(request: Request):
+        definition = getattr(request.state, "agent_definition", None)
+        if definition:
+            base = public_base(settings, request)
+            return JSONResponse({"name": definition["name"], "description": definition["description"],
+                                 "agent_card": base + "/.well-known/agent-card.json", "a2a": base + "/a2a",
+                                 "mcp": base + "/mcp", "tasks": base + "/v1/tasks"})
         template = (STATIC_DIR / "index.html").read_text(encoding="utf-8")
         return HTMLResponse(template.replace("__UMEKO_BASE_PATH__", html.escape(base_path, quote=True)))
+
+    @app.get("/agent", tags=["agent discovery"])
+    def agent_catalogue(request: Request) -> dict:
+        base = public_base(settings, request)
+        return {"agents": [{"name": item["name"], "description": item["description"], "slug": item["slug"],
+                             "agent_card": base + "/agent/" + item["slug"] + "/.well-known/agent-card.json"}
+                            for item in service.agent_registry.list() if item["enabled"]]}
 
     @app.get("/health", tags=["system"])
     def health() -> dict:
@@ -1010,4 +1028,9 @@ def create_app(
         )
 
     app.mount("/", mcp_app)
+    app.add_middleware(AgentRoutingMiddleware, registry=service.agent_registry)
+    internal_openapi = app.openapi
+    def agent_openapi():
+        return publish_agent_schema(internal_openapi())
+    app.openapi = agent_openapi
     return app

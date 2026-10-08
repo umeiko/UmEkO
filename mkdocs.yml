@@ -69,6 +69,7 @@ nav:
   - 快速上手: quickstart.md
   - 架构设计:
       - 概览: architecture/index.md
+      - 多智能体管理: architecture/agents.md
       - CLI: architecture/cli.md
       - Web Server: architecture/webserver.md
       - API 服务: architecture/api-service.md
@@ -82,6 +83,7 @@ nav:
       - 文件与技能: api/files-skills.md
       - 一次性调用: api/proxy.md
       - 机器任务与凭据: api/machine-tasks.md
+      - 智能体管理: api/agents.md
       - MCP: api/mcp.md
       - A2A: api/a2a.md
       - 资源监控: api/monitoring.md

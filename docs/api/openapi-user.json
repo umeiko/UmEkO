@@ -1001,9 +1001,45 @@
   },
   "openapi": "3.1.0",
   "paths": {
-    "/.well-known/agent-card.json": {
+    "/agent": {
+      "get": {
+        "operationId": "agent_catalogue_agent_get",
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "additionalProperties": true,
+                  "title": "Response Agent Catalogue Agent Get",
+                  "type": "object"
+                }
+              }
+            },
+            "description": "Successful Response"
+          }
+        },
+        "security": [],
+        "summary": "Agent Catalogue",
+        "tags": [
+          "agent discovery"
+        ]
+      }
+    },
+    "/agent/{agent_name}/.well-known/agent-card.json": {
       "get": {
         "operationId": "card__well_known_agent_card_json_get",
+        "parameters": [
+          {
+            "description": "管理员配置的智能体访问路径名称（slug）",
+            "in": "path",
+            "name": "agent_name",
+            "required": true,
+            "schema": {
+              "pattern": "^[a-z0-9][a-z0-9-]{0,62}$",
+              "type": "string"
+            }
+          }
+        ],
         "responses": {
           "200": {
             "content": {
@@ -1021,9 +1057,21 @@
         ]
       }
     },
-    "/.well-known/oauth-authorization-server": {
+    "/agent/{agent_name}/.well-known/oauth-authorization-server": {
       "get": {
         "operationId": "oauth_server__well_known_oauth_authorization_server_get",
+        "parameters": [
+          {
+            "description": "管理员配置的智能体访问路径名称（slug）",
+            "in": "path",
+            "name": "agent_name",
+            "required": true,
+            "schema": {
+              "pattern": "^[a-z0-9][a-z0-9-]{0,62}$",
+              "type": "string"
+            }
+          }
+        ],
         "responses": {
           "200": {
             "content": {
@@ -1045,9 +1093,21 @@
         ]
       }
     },
-    "/.well-known/oauth-protected-resource/mcp": {
+    "/agent/{agent_name}/.well-known/oauth-protected-resource/mcp": {
       "get": {
         "operationId": "oauth_resource__well_known_oauth_protected_resource_mcp_get",
+        "parameters": [
+          {
+            "description": "管理员配置的智能体访问路径名称（slug）",
+            "in": "path",
+            "name": "agent_name",
+            "required": true,
+            "schema": {
+              "pattern": "^[a-z0-9][a-z0-9-]{0,62}$",
+              "type": "string"
+            }
+          }
+        ],
         "responses": {
           "200": {
             "content": {
@@ -1069,33 +1129,21 @@
         ]
       }
     },
-    "/health": {
-      "get": {
-        "operationId": "health_health_get",
-        "responses": {
-          "200": {
-            "content": {
-              "application/json": {
-                "schema": {
-                  "additionalProperties": true,
-                  "title": "Response Health Health Get",
-                  "type": "object"
-                }
-              }
-            },
-            "description": "Successful Response"
-          }
-        },
-        "security": [],
-        "summary": "Health",
-        "tags": [
-          "system"
-        ]
-      }
-    },
-    "/oauth/token": {
+    "/agent/{agent_name}/oauth/token": {
       "post": {
         "operationId": "oauth_token_oauth_token_post",
+        "parameters": [
+          {
+            "description": "管理员配置的智能体访问路径名称（slug）",
+            "in": "path",
+            "name": "agent_name",
+            "required": true,
+            "schema": {
+              "pattern": "^[a-z0-9][a-z0-9-]{0,62}$",
+              "type": "string"
+            }
+          }
+        ],
         "requestBody": {
           "content": {
             "application/x-www-form-urlencoded": {
@@ -1145,6 +1193,438 @@
         "summary": "Oauth Token",
         "tags": [
           "machine auth"
+        ]
+      }
+    },
+    "/agent/{agent_name}/v1/tasks": {
+      "get": {
+        "description": "管理员开启免鉴权后可省略凭据；免鉴权调用共用任务身份。默认仍需要凭据。",
+        "operationId": "list_tasks_v1_tasks_get",
+        "parameters": [
+          {
+            "description": "管理员配置的智能体访问路径名称（slug）",
+            "in": "path",
+            "name": "agent_name",
+            "required": true,
+            "schema": {
+              "pattern": "^[a-z0-9][a-z0-9-]{0,62}$",
+              "type": "string"
+            }
+          },
+          {
+            "in": "query",
+            "name": "limit",
+            "required": false,
+            "schema": {
+              "default": 50,
+              "maximum": 100,
+              "minimum": 1,
+              "title": "Limit",
+              "type": "integer"
+            }
+          },
+          {
+            "in": "query",
+            "name": "offset",
+            "required": false,
+            "schema": {
+              "default": 0,
+              "minimum": 0,
+              "title": "Offset",
+              "type": "integer"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "additionalProperties": true,
+                  "title": "Response List Tasks V1 Tasks Get",
+                  "type": "object"
+                }
+              }
+            },
+            "description": "Successful Response"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            },
+            "description": "Validation Error"
+          }
+        },
+        "security": [
+          {
+            "serviceBearer": []
+          },
+          {
+            "umeko_auth": []
+          }
+        ],
+        "summary": "List Tasks",
+        "tags": [
+          "machine tasks"
+        ]
+      },
+      "post": {
+        "description": "管理员开启免鉴权后可省略凭据；免鉴权调用共用任务身份。默认仍需要凭据。",
+        "operationId": "submit_task_v1_tasks_post",
+        "parameters": [
+          {
+            "description": "管理员配置的智能体访问路径名称（slug）",
+            "in": "path",
+            "name": "agent_name",
+            "required": true,
+            "schema": {
+              "pattern": "^[a-z0-9][a-z0-9-]{0,62}$",
+              "type": "string"
+            }
+          }
+        ],
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/TaskCreateInput"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "202": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "additionalProperties": true,
+                  "title": "Response Submit Task V1 Tasks Post",
+                  "type": "object"
+                }
+              }
+            },
+            "description": "Successful Response"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            },
+            "description": "Validation Error"
+          }
+        },
+        "security": [
+          {
+            "serviceBearer": []
+          },
+          {
+            "umeko_auth": []
+          }
+        ],
+        "summary": "Submit Task",
+        "tags": [
+          "machine tasks"
+        ]
+      }
+    },
+    "/agent/{agent_name}/v1/tasks/{task_id}": {
+      "get": {
+        "description": "管理员开启免鉴权后可省略凭据；免鉴权调用共用任务身份。默认仍需要凭据。",
+        "operationId": "get_task_v1_tasks__task_id__get",
+        "parameters": [
+          {
+            "description": "管理员配置的智能体访问路径名称（slug）",
+            "in": "path",
+            "name": "agent_name",
+            "required": true,
+            "schema": {
+              "pattern": "^[a-z0-9][a-z0-9-]{0,62}$",
+              "type": "string"
+            }
+          },
+          {
+            "in": "path",
+            "name": "task_id",
+            "required": true,
+            "schema": {
+              "title": "Task Id",
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "additionalProperties": true,
+                  "title": "Response Get Task V1 Tasks  Task Id  Get",
+                  "type": "object"
+                }
+              }
+            },
+            "description": "Successful Response"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            },
+            "description": "Validation Error"
+          }
+        },
+        "security": [
+          {
+            "serviceBearer": []
+          },
+          {
+            "umeko_auth": []
+          }
+        ],
+        "summary": "Get Task",
+        "tags": [
+          "machine tasks"
+        ]
+      }
+    },
+    "/agent/{agent_name}/v1/tasks/{task_id}/artifacts/{artifact_id}/content": {
+      "get": {
+        "description": "管理员开启免鉴权后可省略凭据；免鉴权调用共用任务身份。默认仍需要凭据。",
+        "operationId": "download_artifact_v1_tasks__task_id__artifacts__artifact_id__content_get",
+        "parameters": [
+          {
+            "description": "管理员配置的智能体访问路径名称（slug）",
+            "in": "path",
+            "name": "agent_name",
+            "required": true,
+            "schema": {
+              "pattern": "^[a-z0-9][a-z0-9-]{0,62}$",
+              "type": "string"
+            }
+          },
+          {
+            "in": "path",
+            "name": "task_id",
+            "required": true,
+            "schema": {
+              "title": "Task Id",
+              "type": "string"
+            }
+          },
+          {
+            "in": "path",
+            "name": "artifact_id",
+            "required": true,
+            "schema": {
+              "title": "Artifact Id",
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "content": {
+              "application/octet-stream": {
+                "schema": {
+                  "format": "binary",
+                  "type": "string"
+                }
+              }
+            },
+            "description": "文件响应；实际 Content-Type 随文件类型变化，目录下载为 ZIP。"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            },
+            "description": "Validation Error"
+          }
+        },
+        "security": [
+          {
+            "serviceBearer": []
+          },
+          {
+            "umeko_auth": []
+          }
+        ],
+        "summary": "Download Artifact",
+        "tags": [
+          "machine tasks"
+        ]
+      }
+    },
+    "/agent/{agent_name}/v1/tasks/{task_id}/cancel": {
+      "post": {
+        "description": "管理员开启免鉴权后可省略凭据；免鉴权调用共用任务身份。默认仍需要凭据。",
+        "operationId": "cancel_task_v1_tasks__task_id__cancel_post",
+        "parameters": [
+          {
+            "description": "管理员配置的智能体访问路径名称（slug）",
+            "in": "path",
+            "name": "agent_name",
+            "required": true,
+            "schema": {
+              "pattern": "^[a-z0-9][a-z0-9-]{0,62}$",
+              "type": "string"
+            }
+          },
+          {
+            "in": "path",
+            "name": "task_id",
+            "required": true,
+            "schema": {
+              "title": "Task Id",
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "additionalProperties": true,
+                  "title": "Response Cancel Task V1 Tasks  Task Id  Cancel Post",
+                  "type": "object"
+                }
+              }
+            },
+            "description": "Successful Response"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            },
+            "description": "Validation Error"
+          }
+        },
+        "security": [
+          {
+            "serviceBearer": []
+          },
+          {
+            "umeko_auth": []
+          }
+        ],
+        "summary": "Cancel Task",
+        "tags": [
+          "machine tasks"
+        ]
+      }
+    },
+    "/agent/{agent_name}/v1/tasks/{task_id}/events": {
+      "get": {
+        "description": "管理员开启免鉴权后可省略凭据；免鉴权调用共用任务身份。默认仍需要凭据。",
+        "operationId": "task_events_v1_tasks__task_id__events_get",
+        "parameters": [
+          {
+            "description": "管理员配置的智能体访问路径名称（slug）",
+            "in": "path",
+            "name": "agent_name",
+            "required": true,
+            "schema": {
+              "pattern": "^[a-z0-9][a-z0-9-]{0,62}$",
+              "type": "string"
+            }
+          },
+          {
+            "in": "path",
+            "name": "task_id",
+            "required": true,
+            "schema": {
+              "title": "Task Id",
+              "type": "string"
+            }
+          },
+          {
+            "in": "query",
+            "name": "after",
+            "required": false,
+            "schema": {
+              "default": 0,
+              "minimum": 0,
+              "title": "After",
+              "type": "integer"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "content": {
+              "text/event-stream": {
+                "schema": {
+                  "type": "string"
+                }
+              }
+            },
+            "description": "持久化任务事件 SSE；保留最近 500 条，支持 after 与 Last-Event-ID。"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            },
+            "description": "Validation Error"
+          }
+        },
+        "security": [
+          {
+            "serviceBearer": []
+          },
+          {
+            "umeko_auth": []
+          }
+        ],
+        "summary": "Task Events",
+        "tags": [
+          "machine tasks"
+        ]
+      }
+    },
+    "/health": {
+      "get": {
+        "operationId": "health_health_get",
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "additionalProperties": true,
+                  "title": "Response Health Health Get",
+                  "type": "object"
+                }
+              }
+            },
+            "description": "Successful Response"
+          }
+        },
+        "security": [],
+        "summary": "Health",
+        "tags": [
+          "system"
         ]
       }
     },
@@ -3586,352 +4066,6 @@
         "summary": "Workspace Tree",
         "tags": [
           "workspace"
-        ]
-      }
-    },
-    "/v1/tasks": {
-      "get": {
-        "description": "管理员开启免鉴权后可省略凭据；免鉴权调用共用任务身份。默认仍需要凭据。",
-        "operationId": "list_tasks_v1_tasks_get",
-        "parameters": [
-          {
-            "in": "query",
-            "name": "limit",
-            "required": false,
-            "schema": {
-              "default": 50,
-              "maximum": 100,
-              "minimum": 1,
-              "title": "Limit",
-              "type": "integer"
-            }
-          },
-          {
-            "in": "query",
-            "name": "offset",
-            "required": false,
-            "schema": {
-              "default": 0,
-              "minimum": 0,
-              "title": "Offset",
-              "type": "integer"
-            }
-          }
-        ],
-        "responses": {
-          "200": {
-            "content": {
-              "application/json": {
-                "schema": {
-                  "additionalProperties": true,
-                  "title": "Response List Tasks V1 Tasks Get",
-                  "type": "object"
-                }
-              }
-            },
-            "description": "Successful Response"
-          },
-          "422": {
-            "content": {
-              "application/json": {
-                "schema": {
-                  "$ref": "#/components/schemas/HTTPValidationError"
-                }
-              }
-            },
-            "description": "Validation Error"
-          }
-        },
-        "security": [
-          {
-            "serviceBearer": []
-          },
-          {
-            "umeko_auth": []
-          }
-        ],
-        "summary": "List Tasks",
-        "tags": [
-          "machine tasks"
-        ]
-      },
-      "post": {
-        "description": "管理员开启免鉴权后可省略凭据；免鉴权调用共用任务身份。默认仍需要凭据。",
-        "operationId": "submit_task_v1_tasks_post",
-        "requestBody": {
-          "content": {
-            "application/json": {
-              "schema": {
-                "$ref": "#/components/schemas/TaskCreateInput"
-              }
-            }
-          },
-          "required": true
-        },
-        "responses": {
-          "202": {
-            "content": {
-              "application/json": {
-                "schema": {
-                  "additionalProperties": true,
-                  "title": "Response Submit Task V1 Tasks Post",
-                  "type": "object"
-                }
-              }
-            },
-            "description": "Successful Response"
-          },
-          "422": {
-            "content": {
-              "application/json": {
-                "schema": {
-                  "$ref": "#/components/schemas/HTTPValidationError"
-                }
-              }
-            },
-            "description": "Validation Error"
-          }
-        },
-        "security": [
-          {
-            "serviceBearer": []
-          },
-          {
-            "umeko_auth": []
-          }
-        ],
-        "summary": "Submit Task",
-        "tags": [
-          "machine tasks"
-        ]
-      }
-    },
-    "/v1/tasks/{task_id}": {
-      "get": {
-        "description": "管理员开启免鉴权后可省略凭据；免鉴权调用共用任务身份。默认仍需要凭据。",
-        "operationId": "get_task_v1_tasks__task_id__get",
-        "parameters": [
-          {
-            "in": "path",
-            "name": "task_id",
-            "required": true,
-            "schema": {
-              "title": "Task Id",
-              "type": "string"
-            }
-          }
-        ],
-        "responses": {
-          "200": {
-            "content": {
-              "application/json": {
-                "schema": {
-                  "additionalProperties": true,
-                  "title": "Response Get Task V1 Tasks  Task Id  Get",
-                  "type": "object"
-                }
-              }
-            },
-            "description": "Successful Response"
-          },
-          "422": {
-            "content": {
-              "application/json": {
-                "schema": {
-                  "$ref": "#/components/schemas/HTTPValidationError"
-                }
-              }
-            },
-            "description": "Validation Error"
-          }
-        },
-        "security": [
-          {
-            "serviceBearer": []
-          },
-          {
-            "umeko_auth": []
-          }
-        ],
-        "summary": "Get Task",
-        "tags": [
-          "machine tasks"
-        ]
-      }
-    },
-    "/v1/tasks/{task_id}/artifacts/{artifact_id}/content": {
-      "get": {
-        "description": "管理员开启免鉴权后可省略凭据；免鉴权调用共用任务身份。默认仍需要凭据。",
-        "operationId": "download_artifact_v1_tasks__task_id__artifacts__artifact_id__content_get",
-        "parameters": [
-          {
-            "in": "path",
-            "name": "task_id",
-            "required": true,
-            "schema": {
-              "title": "Task Id",
-              "type": "string"
-            }
-          },
-          {
-            "in": "path",
-            "name": "artifact_id",
-            "required": true,
-            "schema": {
-              "title": "Artifact Id",
-              "type": "string"
-            }
-          }
-        ],
-        "responses": {
-          "200": {
-            "content": {
-              "application/octet-stream": {
-                "schema": {
-                  "format": "binary",
-                  "type": "string"
-                }
-              }
-            },
-            "description": "文件响应；实际 Content-Type 随文件类型变化，目录下载为 ZIP。"
-          },
-          "422": {
-            "content": {
-              "application/json": {
-                "schema": {
-                  "$ref": "#/components/schemas/HTTPValidationError"
-                }
-              }
-            },
-            "description": "Validation Error"
-          }
-        },
-        "security": [
-          {
-            "serviceBearer": []
-          },
-          {
-            "umeko_auth": []
-          }
-        ],
-        "summary": "Download Artifact",
-        "tags": [
-          "machine tasks"
-        ]
-      }
-    },
-    "/v1/tasks/{task_id}/cancel": {
-      "post": {
-        "description": "管理员开启免鉴权后可省略凭据；免鉴权调用共用任务身份。默认仍需要凭据。",
-        "operationId": "cancel_task_v1_tasks__task_id__cancel_post",
-        "parameters": [
-          {
-            "in": "path",
-            "name": "task_id",
-            "required": true,
-            "schema": {
-              "title": "Task Id",
-              "type": "string"
-            }
-          }
-        ],
-        "responses": {
-          "200": {
-            "content": {
-              "application/json": {
-                "schema": {
-                  "additionalProperties": true,
-                  "title": "Response Cancel Task V1 Tasks  Task Id  Cancel Post",
-                  "type": "object"
-                }
-              }
-            },
-            "description": "Successful Response"
-          },
-          "422": {
-            "content": {
-              "application/json": {
-                "schema": {
-                  "$ref": "#/components/schemas/HTTPValidationError"
-                }
-              }
-            },
-            "description": "Validation Error"
-          }
-        },
-        "security": [
-          {
-            "serviceBearer": []
-          },
-          {
-            "umeko_auth": []
-          }
-        ],
-        "summary": "Cancel Task",
-        "tags": [
-          "machine tasks"
-        ]
-      }
-    },
-    "/v1/tasks/{task_id}/events": {
-      "get": {
-        "description": "管理员开启免鉴权后可省略凭据；免鉴权调用共用任务身份。默认仍需要凭据。",
-        "operationId": "task_events_v1_tasks__task_id__events_get",
-        "parameters": [
-          {
-            "in": "path",
-            "name": "task_id",
-            "required": true,
-            "schema": {
-              "title": "Task Id",
-              "type": "string"
-            }
-          },
-          {
-            "in": "query",
-            "name": "after",
-            "required": false,
-            "schema": {
-              "default": 0,
-              "minimum": 0,
-              "title": "After",
-              "type": "integer"
-            }
-          }
-        ],
-        "responses": {
-          "200": {
-            "content": {
-              "text/event-stream": {
-                "schema": {
-                  "type": "string"
-                }
-              }
-            },
-            "description": "持久化任务事件 SSE；保留最近 500 条，支持 after 与 Last-Event-ID。"
-          },
-          "422": {
-            "content": {
-              "application/json": {
-                "schema": {
-                  "$ref": "#/components/schemas/HTTPValidationError"
-                }
-              }
-            },
-            "description": "Validation Error"
-          }
-        },
-        "security": [
-          {
-            "serviceBearer": []
-          },
-          {
-            "umeko_auth": []
-          }
-        ],
-        "summary": "Task Events",
-        "tags": [
-          "machine tasks"
         ]
       }
     }

@@ -1,6 +1,6 @@
 # 架构设计概览
 
-**CLI、Web、REST、MCP、A2A 和持久化机器任务服务均已实现。** 网页聊天与机器任务共用执行引擎，使用不同的生命周期。
+**CLI、Web、REST、MCP、A2A、多智能体管理和持久化机器任务服务均已实现。** 网页聊天与机器任务共用执行引擎，使用不同的生命周期。多个 Agent 可使用不同路径、介绍、工作指引和技能选择，共享 Provider 与模型并发队列。
 
 ## 当前分层
 
@@ -24,7 +24,7 @@ flowchart TB
 | --- | --- | --- |
 | L0 基础能力 | 模型客户端、并发控制、图片、技能包、取消信号 | `umeko/llm/`、`skillpacks.py`、`cancellation.py` |
 | L1 执行引擎 | 主 Agent / 子 Agent、上下文、单次 Run 与事件 | `agent.py`、`sub_agent.py`、`session.py`、`runner.py` |
-| L2 宿主服务 | 用户会话、服务身份、任务队列、文件隔离、持久化、模型选择 | `umeko/host/` |
+| L2 宿主服务 | Agent 配置、用户会话、服务身份、任务队列、文件隔离、持久化、模型选择 | `umeko/host/` |
 | L3 接入层 | CLI、用户 / 管理 HTTP、REST、MCP、A2A、本地工作台、资源采样 | `cli.py`、`server/`、`local.py` |
 
 CLI 目前直接使用执行引擎；它共享 Provider 配置，却没有复用 Web 的用户登录和持久化会话流程。Web 与 REST 使用同一个 `AgentService`。管理面共享服务与数据库，但监听独立端口。
@@ -63,5 +63,6 @@ flowchart TB
 3. [API 服务](api-service.md)：现有接口和机器调用的扩展基础。
 4. [MCP](mcp.md)：把能力作为工具交给其他模型客户端。
 5. [A2A](a2a.md)：把 UMEKO 作为可协作的 Agent 服务。
+6. [多智能体管理](agents.md)：独立路径、技能选择、执行快照与共享额度。
 
 源码导航：[GitHub umeko 目录](https://github.com/umeiko/UmEkO/tree/main/umeko)。
