@@ -27,3 +27,6 @@ Thumbs.db
 .idea/
 .vscode/
 smoke/
+
+# 静态文档构建产物
+/site/

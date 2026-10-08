@@ -17,6 +17,8 @@
 
 一个领域无关的**通用 Agent 平台**：对话式处理文件、派发子任务、管理模型与用户——既可做云服务，也能以单文件 exe 本地部署。
 
+**[在线文档站](https://umeiko.github.io/UmEkO/)** · [架构设计](https://umeiko.github.io/UmEkO/architecture/) · [API 文档](https://umeiko.github.io/UmEkO/api/)
+
 | ![](docs/screenshots/workspace.png) | ![](docs/screenshots/admin.png) |
 |:---:|:---:|
 | 工作台：流式对话 + 工具调用实时检视 + 文件树 | 管理控制台：用户 / Session / 供应商注册表 |

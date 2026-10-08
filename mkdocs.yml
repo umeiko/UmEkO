@@ -1,0 +1,89 @@
+site_name: UMEKO 文档
+site_description: UMEKO 的架构设计、API 参考和部署指南
+site_url: https://umeiko.github.io/UmEkO/
+repo_url: https://github.com/umeiko/UmEkO
+repo_name: umeiko/UmEkO
+edit_uri: edit/main/docs/
+docs_dir: docs
+site_dir: site
+exclude_docs: |
+  README.md
+theme:
+  name: material
+  language: zh
+  font: false
+  icon:
+    logo: material/hexagon-multiple
+    repo: fontawesome/brands/github
+  palette:
+    - scheme: default
+      primary: teal
+      accent: teal
+      toggle:
+        icon: material/weather-night
+        name: 切换深色模式
+    - scheme: slate
+      primary: teal
+      accent: teal
+      toggle:
+        icon: material/weather-sunny
+        name: 切换浅色模式
+  features:
+    - navigation.tabs
+    - navigation.sections
+    - navigation.indexes
+    - navigation.top
+    - content.code.copy
+    - content.action.edit
+    - search.suggest
+    - search.highlight
+plugins:
+  - search:
+      lang: [zh, en]
+markdown_extensions:
+  - admonition
+  - attr_list
+  - md_in_html
+  - tables
+  - toc:
+      permalink: true
+  - pymdownx.details
+  - pymdownx.highlight:
+      anchor_linenums: true
+  - pymdownx.superfences:
+      custom_fences:
+        - name: mermaid
+          class: mermaid
+          format: !!python/name:pymdownx.superfences.fence_code_format
+extra_css:
+  - assets/stylesheets/extra.css
+validation:
+  nav:
+    omitted_files: info
+  links:
+    not_found: warn
+    anchors: warn
+nav:
+  - 首页: index.md
+  - 快速上手: quickstart.md
+  - 架构设计:
+      - 概览: architecture/index.md
+      - CLI: architecture/cli.md
+      - Web Server: architecture/webserver.md
+      - API 服务: architecture/api-service.md
+      - MCP 接入设计: architecture/mcp.md
+      - A2A 接入设计: architecture/a2a.md
+  - API 文档:
+      - 概览: api/index.md
+      - 调用入门: api/quickstart.md
+      - 登录与模型: api/auth-models.md
+      - 会话与运行: api/sessions-runs.md
+      - 文件与技能: api/files-skills.md
+      - 一次性调用: api/proxy.md
+      - 管理 API: api/admin.md
+      - 流式事件: api/events.md
+      - 用户接口完整参考: api/reference-user.md
+      - 管理接口完整参考: api/reference-admin.md
+      - 数据结构: api/schemas.md
+  - 部署指南: deployment.md
+  - 文档维护: contributing.md

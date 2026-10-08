@@ -17,6 +17,8 @@
 
 A domain-agnostic **general-purpose Agent platform**: chat with files, delegate sub-tasks, manage models and users — deployable as a cloud service or a local single-exe server.
 
+**[Documentation site](https://umeiko.github.io/UmEkO/)** · [Architecture](https://umeiko.github.io/UmEkO/architecture/) · [API reference](https://umeiko.github.io/UmEkO/api/)
+
 | ![](docs/screenshots/workspace.png) | ![](docs/screenshots/admin.png) |
 |:---:|:---:|
 | WebUI — Workspace & tool calls | Admin console |

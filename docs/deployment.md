@@ -15,7 +15,7 @@ uv sync --extra server
 没有 `uv` 时，用 `python -m pip install -e ".[server]"`，之后直接使用 `python -m ...` 启动。
 普通 `uv sync` 只安装基础模型客户端依赖，Web 服务还需要 `server` 中的 FastAPI、Uvicorn 和文件上传依赖。
 
-首次部署从 [.env.example](../.env.example) 复制 `.env`；已经有 `.env` 时保留现有文件。
+首次部署从 [.env.example](https://github.com/umeiko/UmEkO/blob/main/.env.example) 复制 `.env`；已经有 `.env` 时保留现有文件。
 Windows PowerShell 可以使用：
 
 ```powershell
@@ -237,7 +237,7 @@ JSON 导入也支持模型字段 `max_concurrent_requests`，省略时不会覆�
 有进程重启、模型选择变化或部署配置变化时，重新验证第 4、5 步。
 路径修复后仍没有回答，要看 `run.failed` 中的实际错误；可能是模型 CA、网络、密钥或模型接口配置。
 
-实际红帽 UBI 容器实验命令和入口见 [代理实验](../scripts/proxy_lab/README.md)。
+实际红帽 UBI 容器实验命令和入口见 [代理实验](https://github.com/umeiko/UmEkO/blob/main/scripts/proxy_lab/README.md)。
 实验覆盖根路径和此前缀、真实 UmEkO 前端及 Agent、独立的网站/模型 CA、文件预览下载和流式输出。
 故意让事件接口返回 404 时，前端会查询任务最终结果；任务状态也不可用时，显示失败提示并恢复输入。
 假模型只验证调用链路，不替代公司真实模型和真实 ALB 的现场验证。

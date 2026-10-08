@@ -1,5 +1,8 @@
 # Umeko 分层架构
 
+> 本文件保留 2026-09-11 的历史设计。当前实现已改为共享 Provider 数据库配置，并增加每模型并发控制；旧文中的环境变量与配置优先级不能作为当前部署依据。
+> 最新架构说明请阅读[在线架构设计](https://umeiko.github.io/UmEkO/architecture/)或 [docs/architecture/index.md](docs/architecture/index.md)，覆盖 CLI、Web Server、API、MCP 与 A2A。
+
 > UMEKO — Unified Multi-agent Execution Kernel & Orchestrator
 > 统一多智能体执行内核与编排器 · 架构设计 v1（2026-09-11 定稿）
 
