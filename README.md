@@ -7,7 +7,6 @@
 [![CI](https://github.com/umeiko/UmEkO/actions/workflows/ci.yml/badge.svg)](https://github.com/umeiko/UmEkO/actions/workflows/ci.yml)
 [![Release](https://img.shields.io/github/v/release/umeiko/UmEkO?include_prereleases)](https://github.com/umeiko/UmEkO/releases)
 [![Python](https://img.shields.io/badge/python-3.10+-blue)](https://www.python.org)
-[![License](https://img.shields.io/badge/license-MIT-green)](LICENSE)
 
 **English** | [简体中文](READMECN.md)
 
@@ -15,34 +14,36 @@
 
 ---
 
-A domain-agnostic **general-purpose Agent platform**: chat with files, delegate sub-tasks, manage models and users — deployable as a cloud service or a local single-exe server.
+UMEKO is a Python agent service for working with files. It provides a web interface,
+a CLI and an HTTP API, with model configuration, user management and skill packs.
 
 **[Documentation site](https://umeiko.github.io/UmEkO/)** · [Architecture](https://umeiko.github.io/UmEkO/architecture/) · [API reference](https://umeiko.github.io/UmEkO/api/)
 
 | ![](docs/screenshots/workspace.png) | ![](docs/screenshots/admin.png) |
 |:---:|:---:|
-| WebUI — Workspace & tool calls | Admin console |
+| Workspace and tool calls | Admin console |
 
-## Highlights ✨
+## Features
 
-- 🖥 **WebUI** — streaming chat, tool-call inspector (live streaming output + image thumbnails), file tree with filter, workspace preview, 7 languages
-- 🤖 **Two-tier agents** — main agent + sandboxed file sub-agent (`delegate_task`); sub-agent context is destroyed after reporting
-- 👁 **Vision pipeline** — `image_reasoning` analyzes images with any prompt (OCR included) and streams output into the tool card in real time
-- 🗂 **Provider registry** — multi-provider / multi-model management, vision flags, JSON import, one-click activation with instant hot-reload
-- 👥 **Admin console** — user & session management, skill-pack authoring (prompts + sandboxed Python scripts), config hot-reload with instant eviction
-- 📦 **File ops** — sandboxed read/grep/edit/write, archive extraction (7-Zip), directory-tree guards, drag-drop uploads
-- 💾 **Durable history** — tool calls & attachment mappings persisted in SQLite
-- ⚡ **Cancellation & streaming** — cooperative cancel, SSE everywhere
+- **Web interface**: streaming chat, tool details and call history, file filtering and previews, with seven interface languages.
+- **Agent delegation**: the main agent delegates file tasks through `delegate_task`. Sub-agent context is released after it returns a result.
+- **Image analysis**: `image_reasoning` supports image analysis and text extraction, with progress displayed in the tool details.
+- **Model configuration**: multiple providers and models, vision flags, JSON import and per-model concurrency limits.
+- **Administration**: a separate port for managing users, sessions, models and skill packs.
+- **File operations**: reading, searching, editing and writing within session directories, archive extraction with 7-Zip and drag-and-drop uploads.
+- **History**: messages, tool calls and attachment mappings are stored in SQLite.
+- **Run control**: SSE output and cooperative cancellation.
 
-## Quick Start 🚀
+## Quick start
 
 ### Download exe (Windows)
 
-Grab `umeko-server.exe` from [Releases](https://github.com/umeiko/UmEkO/releases), drop it in an empty folder and double-click.
+Download `umeko-server.exe` from [Releases](https://github.com/umeiko/UmEkO/releases),
+place it in a directory and run it.
 
-Zero-config first run: the server boots immediately with a default admin account
-(your-admin-name / your-admin-password) and generates a deployment `.env` template. Configure model
-credentials in the admin Provider / Model page or the shared CLI registry.
+On first startup, the server creates a default admin account (your-admin-name / your-admin-password)
+and a deployment `.env` template. Configure and activate a model in the admin
+Provider / Model page or through the CLI before starting a conversation.
 
 ```ini
 UMEKO_DATA_ROOT=server_data
@@ -77,37 +78,33 @@ unauthenticated workspace. Configure and activate models in Provider / Model,
 persist `UMEKO_DATA_ROOT`, keep the admin port private, and use a single application
 process. Deployment changes in `.env` require a restart.
 
-## Architecture 🏗
+## Architecture
 
-```
-┌────────────────────── Delivery (L3) ────────────────────────┐
-│  server/ (FastAPI + WebUI + admin)  local.py  cli.py (REPL) │
-├────────────────────── Host services (L2) ───────────────────┤
-│  service.py (sessions/runs/config)  storage.py  profile.py  │
-├────────────────────── Runtime (L1) ─────────────────────────┤
-│  agent.py  sub_agent.py  runner.py (Run lifecycle)  events  │
-├────────────────────── Kernel (L0) ──────────────────────────┤
-│  llm/ (OpenAI-compat, streaming)  skills/  cancellation.py  │
-└──────────────────────────────────────────────────────────────┘
-```
+| Layer | Responsibility | Source |
+| --- | --- | --- |
+| L3: interfaces | Web, administration, local workspace and CLI | `server/`, `local.py`, `cli.py` |
+| L2: host services | Sessions, storage, profiles and configuration | `host/` |
+| L1: runtime | Agents, Run lifecycle and events | `agent.py`, `sub_agent.py`, `runner.py`, `events.py` |
+| L0: core | Model clients, tools, skills and cancellation | `llm/`, `skills/`, `cancellation.py` |
 
-One event channel (`events.py`) feeds every delivery surface — Web, CLI and
-future IDE clients see the same stream. See [ARCHITECTURE.md](ARCHITECTURE.md).
+Web and CLI use the event definitions in `events.py` to display execution progress.
+See the [architecture documentation](https://umeiko.github.io/UmEkO/architecture/)
+for current implementation details and planned MCP / A2A support.
 
-## Skill Packs
+## Skill packs
 
-A skill pack is a folder with a same-named `.md` (the prompt) plus optional
-member files — data docs (check-item catalogs, read on demand via
-`read_pack_file`) and sandboxed Python scripts (executed deterministically via
-`run_skill_script` with timeout & cancellation). Admins author, dispatch,
-enable/disable and version-check packs from the admin console; users mount them
-per session with one click.
+A skill pack contains a Markdown prompt and optional supporting documents and
+Python scripts. Agents read supporting files with `read_pack_file` and execute
+scripts with `run_skill_script`, which supports timeouts and cancellation.
+
+Administrators edit, distribute, enable and disable packs in the admin console.
+Users mount packs in individual sessions.
 
 ## Configuration
 
-Model credentials, names, proxies and vision flags live in the **shared Provider
-registry** (`UMEKO_DATA_ROOT/umeko.db`). Web, local mode and CLI share the same
-resolver. `.env` contains deployment settings and runtime defaults.
+Model credentials, names, proxies, vision flags and concurrency limits are stored
+in the Provider registry (`UMEKO_DATA_ROOT/umeko.db`). Web, local mode and CLI share
+the same resolver. `.env` contains deployment settings and runtime defaults.
 
 | Key | Description |
 |---|---|
@@ -134,7 +131,7 @@ existing credentials or active selections. Remove old `.env` model entries with
 See [deployment and migration](docs/deployment.md) for NGINX prefix stripping,
 private model CAs and the [Red Hat Docker verification lab](scripts/proxy_lab/README.md).
 
-## For Developers
+## Development
 
 ```bash
 uv sync --extra dev              # test and packaging dependencies
@@ -142,5 +139,5 @@ uv run pytest tests/ -q          # project tests
 uv run pyinstaller umeko.spec    # build the single-file server exe
 ```
 
-Domain flows (diagram generation, document QC…) inject via skill packs —
-the kernel stays clean.
+Add domain workflows, such as diagram generation or document quality checks,
+through skill packs.

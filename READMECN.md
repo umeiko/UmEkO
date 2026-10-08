@@ -7,7 +7,6 @@
 [![CI](https://github.com/umeiko/UmEkO/actions/workflows/ci.yml/badge.svg)](https://github.com/umeiko/UmEkO/actions/workflows/ci.yml)
 [![Release](https://img.shields.io/github/v/release/umeiko/UmEkO?include_prereleases)](https://github.com/umeiko/UmEkO/releases)
 [![Python](https://img.shields.io/badge/python-3.10+-blue)](https://www.python.org)
-[![License](https://img.shields.io/badge/license-MIT-green)](LICENSE)
 
 [English](README.md) | **简体中文**
 
@@ -15,32 +14,32 @@
 
 ---
 
-一个领域无关的**通用 Agent 平台**：对话式处理文件、派发子任务、管理模型与用户——既可做云服务，也能以单文件 exe 本地部署。
+UMEKO 是一个用于处理文件的 Python Agent 服务，提供网页工作台、CLI 和 HTTP API，支持模型配置、用户管理和技能包扩展。
 
 **[在线文档站](https://umeiko.github.io/UmEkO/)** · [架构设计](https://umeiko.github.io/UmEkO/architecture/) · [API 文档](https://umeiko.github.io/UmEkO/api/)
 
 | ![](docs/screenshots/workspace.png) | ![](docs/screenshots/admin.png) |
 |:---:|:---:|
-| 工作台：流式对话 + 工具调用实时检视 + 文件树 | 管理控制台：用户 / Session / 供应商注册表 |
+| 工作台与工具调用 | 管理控制台 |
 
-## 特性
+## 功能
 
-- **WebUI**：流式对话、工具调用详情（执行中实时滚动输出 + 涉及图片缩略图预览）、文件树过滤、图片/CSV/Markdown 预览、7 种界面语言
-- **双 Agent**：主 Agent + 受限文件子 Agent（`delegate_task`），子 Agent 上下文汇报后销毁，保护主上下文
-- **视觉管线**：`image_reasoning` 按任意 prompt 分析图片（写「提取全部文字」即 OCR），输出实时流进工具卡片
-- **供应商注册表**：多 Provider 多模型、视觉能力标记、粘贴 JSON 批量导入、一键切换并全员即时生效
-- **管理面**：独立端口（默认 9000）、用户/Session 管理、技能包编写（提示词 + 沙箱 Python 脚本）、配置热更新即时驱逐
-- **文件工具**：沙箱读写、正则/grep 搜索、目录树（单目录 50 项折叠 + 整树上限）、7-Zip 解压、拖拽上传到指定目录
-- **持久化**：工具调用历史、附件映射、配置覆盖层全部 SQLite 落盘
-- **取消与流式**：协作式取消、全链路 SSE
+- **网页工作台**：流式对话、工具详情与调用历史、文件过滤和预览，支持 7 种界面语言。
+- **任务委派**：主 Agent 通过 `delegate_task` 派发文件任务，子 Agent 返回结果后释放上下文。
+- **图像分析**：`image_reasoning` 支持图像分析和文字提取，执行进度显示在工具详情中。
+- **模型配置**：支持多个 Provider 和模型、视觉能力标记、JSON 导入及每模型并发上限。
+- **管理面**：通过独立端口管理用户、会话、模型和技能包。
+- **文件操作**：在会话目录内读取、搜索、编辑和写入文件，支持 7-Zip 解压及拖拽上传。
+- **历史记录**：消息、工具调用和附件映射保存在 SQLite 中。
+- **运行控制**：通过 SSE 返回执行输出，支持协作式取消。
 
 ## 快速开始
 
 ### 下载 exe（Windows）
 
-从 [Releases](https://github.com/umeiko/UmEkO/releases) 下载 `umeko-server.exe`，放到空目录双击即用。
+从 [Releases](https://github.com/umeiko/UmEkO/releases) 下载 `umeko-server.exe`，放到固定目录后运行。
 
-零配置首启：服务直接起来，默认管理员 your-admin-name / your-admin-password，自动生成部署 `.env` 模板。模型地址、密钥在管理面 Provider / Model 或共享 CLI 注册表中配置。
+首次启动会创建默认管理员 your-admin-name / your-admin-password，并生成部署 `.env` 模板。开始对话前，在管理面 Provider / Model 或 CLI 中配置并激活模型。
 
 ```ini
 UMEKO_DATA_ROOT=server_data
@@ -72,27 +71,24 @@ uv run python -m umeko.local  --port 8765 # 本地模式（免登录）
 
 ## 架构
 
-```
-┌────────────────────── 交付层 (L3) ──────────────────────────┐
-│  server/（FastAPI + WebUI + 管理面）  local.py  cli.py(REPL) │
-├────────────────────── 宿主服务 (L2) ────────────────────────┤
-│  service.py（Session/Run/配置）  storage.py  profile.py     │
-├────────────────────── 运行时 (L1) ──────────────────────────┤
-│  agent.py  sub_agent.py  runner.py（Run 生命周期）  events   │
-├────────────────────── 内核件 (L0) ──────────────────────────┤
-│  llm/（OpenAI 兼容，流式）  skills/  cancellation.py        │
-└──────────────────────────────────────────────────────────────┘
-```
+| 层 | 职责 | 源码 |
+| --- | --- | --- |
+| L3：接口 | 网页、管理面、本地工作台和 CLI | `server/`、`local.py`、`cli.py` |
+| L2：宿主服务 | 会话、存储、运行模式和配置 | `host/` |
+| L1：运行时 | Agent、Run 生命周期和事件 | `agent.py`、`sub_agent.py`、`runner.py`、`events.py` |
+| L0：核心能力 | 模型客户端、工具、技能和取消 | `llm/`、`skills/`、`cancellation.py` |
 
-单一事件通道（`events.py`）：Web、CLI 与未来的 IDE 客户端共享同一事件流。详见 [ARCHITECTURE.md](ARCHITECTURE.md)。
+Web 和 CLI 使用 `events.py` 中的事件定义展示执行进度。当前实现和 MCP / A2A 扩展方案见[架构文档](https://umeiko.github.io/UmEkO/architecture/)。
 
 ## 技能包
 
-一个技能包 = 同名 `.md`（提示词）+ 同名文件夹（附属资产）：数据文档（如检查项清单，Agent 用 `read_pack_file` 按需读最新版）和沙箱 Python 脚本（`run_skill_script` 确定性执行，带超时与取消）。管理员在管理面编写、下发、启停、检测版本；用户在会话里一键挂载。
+技能包包含 Markdown 提示词，以及可选的参考文档和 Python 脚本。Agent 通过 `read_pack_file` 读取附属文件，通过 `run_skill_script` 执行脚本，支持超时和取消。
+
+管理员在管理面编辑、下发、启用和停用技能包，用户在各自会话中挂载。
 
 ## 配置
 
-模型地址、密钥、代理、模型名和视觉能力统一存储在 **Provider 注册表**（`UMEKO_DATA_ROOT/umeko.db`）。管理面、CLI 和本地工作台共用解析逻辑；`.env` 保留部署配置及运行参数默认值。
+模型地址、密钥、代理、模型名、视觉能力和并发上限保存在 Provider 注册表（`UMEKO_DATA_ROOT/umeko.db`）。管理面、CLI 和本地工作台共用解析逻辑；`.env` 保存部署配置及运行参数默认值。
 
 | 部署项 | 用途 |
 | --- | --- |
@@ -122,4 +118,4 @@ uv run pytest tests/ -q          # 项目测试
 uv run pyinstaller umeko.spec    # 构建单文件服务端 exe
 ```
 
-领域流程（作图、文档质检……）不进基座：以技能包注入即可。
+作图、文档质检等领域流程通过技能包扩展。
