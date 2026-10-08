@@ -22,7 +22,9 @@ class AgentRegistry:
 
     @staticmethod
     def _view(row):
-        return {**json.loads(row["definition_json"]), "id": row["id"],
+        value = json.loads(row["definition_json"])
+        value.setdefault("default_vision_model_id", None)
+        return {**value, "id": row["id"],
                 "created_at": row["created_at"], "updated_at": row["updated_at"]}
 
     def list(self):
@@ -55,6 +57,7 @@ class AgentRegistry:
             value[key] = text.strip()
         value.setdefault("system_prompt", "")
         value.setdefault("default_model_id", None)
+        value.setdefault("default_vision_model_id", None)
         value.setdefault("skill_names", [])
         value.setdefault("enabled", True)
         if not isinstance(value["system_prompt"], str) or len(value["system_prompt"]) > 100_000:
@@ -69,6 +72,12 @@ class AgentRegistry:
             raise ValueError("技能不能重复选择")
         if value["default_model_id"] and self.store.model_by_id(value["default_model_id"]) is None:
             raise ValueError("默认模型不存在")
+        if value["default_vision_model_id"]:
+            vision = self.store.model_by_id(value["default_vision_model_id"])
+            if vision is None:
+                raise ValueError("默认视觉模型不存在")
+            if not vision["vision"]:
+                raise ValueError("默认视觉模型须具备视觉能力，请先在 Provider / Model 中标记")
         for key in ("documentationUrl", "iconUrl"):
             if not value.get(key):
                 value.pop(key, None)
@@ -89,7 +98,7 @@ class AgentRegistry:
         stamp = datetime.now(timezone.utc).isoformat()
         agent_id = agent_id or "agt_" + uuid.uuid4().hex
         # Store only the definition, never IDs or timestamps supplied by a client.
-        allowed = {"slug", "name", "description", "version", "system_prompt", "default_model_id", "skill_names", "enabled", "documentationUrl", "iconUrl", "provider"}
+        allowed = {"slug", "name", "description", "version", "system_prompt", "default_model_id", "default_vision_model_id", "skill_names", "enabled", "documentationUrl", "iconUrl", "provider"}
         value = {key: val for key, val in value.items() if key in allowed}
         with self.store.connect() as db:
             db.execute("BEGIN IMMEDIATE")

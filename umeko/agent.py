@@ -109,11 +109,10 @@ class UmekoAgent:
         self._readable_root = readable_root
         self._readable_roots = readable_roots
         self._on_progress = on_progress  # 界面层进度提示
-        # 主模型无视觉能力且配置了视觉模型时，用视觉模型提供 image_reasoning 工具
+        # 显式视觉配置优先；未配置时，原生视觉主模型也可作为工具使用。
+        vision_config = settings.vision_model or (settings.text_model if self._vision else None)
         vision_llm = (
-            None
-            if self._vision or settings.vision_model is None
-            else LLMClient(settings.vision_model)
+            LLMClient(vision_config) if vision_config is not None else None
         )
         self._vision_llm = vision_llm
         skills = build_file_tools(

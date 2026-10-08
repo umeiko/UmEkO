@@ -102,12 +102,11 @@ class FileSubAgent:
         self._system_prompt = SUBAGENT_SYSTEM + (
             _SERVER_SESSION_PATH_POLICY if readable_root is not None else ""
         )
-        self._image_reasoning_llm = (
-            LLMClient(settings.vision_model) if settings.vision_model is not None else None
-        )
+        image_config = settings.vision_model or (sub_config if self._vision else None)
+        self._image_reasoning_llm = LLMClient(image_config) if image_config is not None else None
         vision_llm = (
             None
-            if self._vision or settings.vision_model is None
+            if settings.vision_model is None
             else LLMClient(settings.vision_model)
         )
         self._vision_llm = vision_llm

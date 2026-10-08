@@ -62,6 +62,7 @@ def build_mcp(settings, tasks):
         definition = principal(ctx).get("agent_definition")
         default = (definition or {}).get("default_model_id") or (active["model_id"] if active else None)
         return {"default_model_id": default,
+                "default_vision_model_id": (definition or {}).get("default_vision_model_id"),
                 "models": [{"id": m["id"], "name": m["name"], "vision": m["vision"], "provider": p["name"]}
                            for p in tasks.store.list_providers() for m in p["models"]]}
 

@@ -9,7 +9,7 @@
 | 工具 | 参数 | 结果 |
 | --- | --- | --- |
 | `get_agent_info` | 无 | 当前路径对应的公开 Agent Card，含介绍和实际披露的技能 |
-| `list_models` | 无 | 当前 Agent 默认模型 ID、可选模型 ID / 名称 / vision / Provider 名称 |
+| `list_models` | 无 | 当前 Agent 默认模型与默认视觉模型 ID、可选模型 ID / 名称 / vision / Provider 名称 |
 | `submit_task` | `prompt`，可选 `files`、`model_id`、`idempotency_key` | Task 与任务 ID，立即返回 |
 | `get_task` | `task_id` | 状态、最终回复、错误、产物与到期时间 |
 | `list_tasks` | 可选 `limit=50`、`offset=0` | `tasks` 与 `total`，最多 100 条 |
@@ -17,6 +17,8 @@
 | `read_artifact` | `task_id`、`artifact_id` | `name/media_type` 和 UTF-8 `text` 或二进制 `content_base64` |
 
 `files` 为 `[{"name":"input.txt","content_base64":"..."}]`，不接受服务器路径。输入限制、权限与幂等规则见 [机器任务](machine-tasks.md)。`read_artifact` 与资源读取上限均为 256 KiB；大文件使用 GET Task 的 `download_url`，下载仍需授权。
+
+`list_models` 返回的 `default_vision_model_id` 为该 Agent 显式选择的视觉模型 ID；值为 `null` 表示自动选择。视觉模型在智能体管理中配置，`submit_task.model_id` 只覆盖主模型。选择规则见[智能体管理](agents.md)。
 
 资源模板：`umeko://tasks/{task_id}/artifacts/{artifact_id}`。模板读取返回二进制资源（blob）；需要文本内容可直接使用 `read_artifact`。
 

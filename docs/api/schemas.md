@@ -1234,6 +1234,17 @@
       ],
       "title": "Default Model Id"
     },
+    "default_vision_model_id": {
+      "anyOf": [
+        {
+          "type": "string"
+        },
+        {
+          "type": "null"
+        }
+      ],
+      "title": "Default Vision Model Id"
+    },
     "description": {
       "maxLength": 10000,
       "minLength": 1,

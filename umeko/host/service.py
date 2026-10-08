@@ -435,6 +435,7 @@ class AgentService:
         agent_snapshot: dict | None = None,
     ) -> SessionState:
         effective = settings if settings is not None else self.settings
+        effective = self._agent_vision_settings(effective, agent_snapshot)
         session_id = _restore_id or f"sess_{uuid.uuid4().hex}"
         root = self.data_root / "users" / user_id / "sessions" / session_id
         root.mkdir(parents=True, exist_ok=bool(_restore_id))
@@ -605,7 +606,8 @@ class AgentService:
             raise ValueError("当前 Session 已有任务正在运行")
         # 用户级/会话级模型选择在每个新 Run 生效：配置有变化就重装配该 Session
         # （DB 历史保留，重建后自动恢复上下文，不影响其他在线 Session）。
-        effective = self.effective_settings_for(session.user_id, session_id)
+        effective = self._agent_vision_settings(
+            self.effective_settings_for(session.user_id, session_id), session.agent_snapshot)
         if effective != session.agent.settings:
             record = self.store.session_by_id(session_id)
             self.evict_session(session_id)
@@ -794,6 +796,15 @@ class AgentService:
         return evicted
 
     # ---------- 用户级模型解析 ----------
+
+    def _agent_vision_settings(self, settings: Settings, snapshot: dict | None) -> Settings:
+        vision_id = (snapshot or {}).get("default_vision_model_id")
+        if not vision_id:
+            return settings
+        row = self.store.model_by_id(vision_id)
+        if row is None or not row["vision"]:
+            raise ValueError("智能体的默认视觉模型已删除或不再具备视觉能力，请管理员重新配置")
+        return replace(settings, vision_model=model_from_row(row, settings.text_model))
 
     def effective_settings_for(
         self, user_id: str, session_id: str | None = None

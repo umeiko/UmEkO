@@ -1,4 +1,5 @@
 import asyncio
+import base64
 from dataclasses import replace
 import json
 import time
@@ -14,6 +15,8 @@ from mcp.client.streamable_http import streamable_http_client
 
 from umeko.agent import UmekoAgent
 from umeko.host.tasks import TaskService
+from umeko.llm import LLMClient
+from umeko.llm.concurrency import model_call_queue
 from umeko.server.admin import create_admin_app
 from umeko.server.app import create_app
 
@@ -202,6 +205,109 @@ def test_agent_default_model_and_explicit_request_override(machine_client, monke
         assert observed[-1][0] == expected
         assert observed[-1][1] == {"alpha"}
         assert "PRIVATE ALPHA ROLE" in observed[-1][2]
+
+
+def test_agent_vision_model_admin_validation_and_legacy_defaults(machine_app):
+    app, _, _, settings = machine_app
+    service, store = app.state.agent_service, app.state.store
+    provider = store.create_provider("vision-fixture", "http://unused.invalid", "fixture-key")
+    text = store.add_model(provider["id"], "text")
+    vision = store.add_model(provider["id"], "vision", vision=True)
+    user = store.create_user("vision-admin", "fixture-pass", "admin")
+    definition = app.state.fixture_agent
+    path = "/admin/v1/agents/" + definition["id"]
+    payload = {"slug": definition["slug"], "name": definition["name"], "description": definition["description"]}
+    with TestClient(create_admin_app(settings, service, store)) as admin:
+        admin.cookies.set("umeko_admin", store.issue_token(user["id"]))
+        models = {model["id"]: model for model in admin.get("/admin/v1/agents").json()["models"]}
+        assert models[vision["id"]]["vision"] is True and models[text["id"]]["vision"] is False
+        for value, message in [("missing", "不存在"), (text["id"], "视觉能力")]:
+            response = admin.put(path, json={**payload, "default_vision_model_id": value})
+            assert response.status_code == 400 and message in response.json()["detail"]
+        response = admin.put(path, json={**payload, "default_vision_model_id": vision["id"]})
+        assert response.status_code == 200 and response.json()["default_vision_model_id"] == vision["id"]
+        card = admin.get(path + "/card").json()["card"]
+        assert "default_vision_model_id" not in card
+        assert admin.put(path, json={**payload, "default_vision_model_id": None}).json()["default_vision_model_id"] is None
+    # Existing JSON definitions do not need a database column migration.
+    with store.connect() as db:
+        legacy = json.loads(db.execute("SELECT definition_json FROM agent_definitions WHERE id=?", (definition["id"],)).fetchone()[0])
+        legacy.pop("default_vision_model_id")
+        db.execute("UPDATE agent_definitions SET definition_json=? WHERE id=?", (json.dumps(legacy), definition["id"]))
+    assert service.agent_registry.get(definition["id"])["default_vision_model_id"] is None
+
+
+@pytest.mark.parametrize("main_vision", [False, True])
+def test_agent_vision_routes_real_tools_and_keeps_queued_choice(machine_client, monkeypatch, main_vision):
+    client, app, _, _ = machine_client
+    service, store, tasks = app.state.agent_service, app.state.store, app.state.task_service
+    definition, _ = seed(app)
+    provider = store.create_provider("main", "http://unused.invalid", "fixture-key")
+    main = store.add_model(provider["id"], "main", vision=main_vision)
+    override = store.add_model(provider["id"], "override", vision=True)
+    visual_provider = store.create_provider("visual", "http://visual.invalid", "fixture-key", proxy="http://localhost:7890")
+    first = store.add_model(visual_provider["id"], "vision-one", vision=True, max_concurrent_requests=2)
+    second = store.add_model(visual_provider["id"], "vision-two", vision=True, max_concurrent_requests=3)
+    store.set_active_model(main["id"])
+    definition = service.agent_registry.save({**definition, "default_model_id": main["id"], "default_vision_model_id": first["id"]}, definition["id"])
+    app.state.identity_store.set_auth_mode("anonymous")
+    calls, text_models = [], []
+    def visual_chat(llm, messages, image_paths, **kwargs):
+        assert len(image_paths) == 1 and image_paths[0].is_file()
+        calls.append(llm._model.model_id)
+        assert llm._call_queue is model_call_queue(llm._model.model_id)
+        if llm._model.model_id in {first["id"], second["id"]}:
+            assert llm._model.proxy == "http://localhost:7890"
+        if kwargs.get("on_delta"):
+            kwargs["on_delta"]("visual fixture output")
+        return "visual fixture output"
+    def chat(agent, prompt, images=None):
+        text_models.append(agent.settings.text_model.model_id)
+        image = agent._output_root / "attachments" / "fixture.png"
+        image.write_bytes(base64.b64decode("iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAQAAAC1HAwCAAAAC0lEQVR42mP8/x8AAwMCAO+/lXcAAAAASUVORK5CYII="))
+        result = agent._skills["image_reasoning"].handler(prompt="inspect", image_paths=[str(image)])
+        sub_result = agent._subagent._skills["image_reasoning"].handler(prompt="inspect", image_paths=[str(image)])
+        assert result == sub_result == "visual fixture output"
+        return result
+    monkeypatch.setattr(LLMClient, "chat_with_images_stream", visual_chat)
+    monkeypatch.setattr(UmekoAgent, "chat", chat)
+    tasks.stop()
+    response = client.post("/agent/alpha/v1/tasks", json={"prompt": "queued vision check"})
+    assert response.status_code == 202, response.text
+    definition = service.agent_registry.save({**definition, "default_vision_model_id": second["id"]}, definition["id"])
+    tasks.start()
+    assert wait(client, "/agent/alpha/v1/tasks/" + response.json()["id"])["status"] == "completed"
+    assert calls == [first["id"], first["id"]]
+    response = client.post("/agent/alpha/v1/tasks", json={"prompt": "text override keeps vision", "model_id": override["id"]})
+    assert wait(client, "/agent/alpha/v1/tasks/" + response.json()["id"])["status"] == "completed"
+    assert text_models[-1] == override["id"] and calls[-2:] == [second["id"], second["id"]]
+    service.agent_registry.save({**definition, "default_vision_model_id": None}, definition["id"])
+    response = client.post("/agent/alpha/v1/tasks", json={"prompt": "automatic visual model"})
+    task = wait(client, "/agent/alpha/v1/tasks/" + response.json()["id"])
+    assert task["status"] == "completed", task["error"]
+    expected = main["id"] if main_vision else store.first_vision_model(provider["id"])["model_id"]
+    assert calls[-2:] == [expected, expected]
+
+
+@pytest.mark.parametrize("change", ["delete", "remove_vision"])
+def test_queued_agent_rejects_unavailable_selected_vision_model(machine_client, change):
+    client, app, _, _ = machine_client
+    service, store, tasks = app.state.agent_service, app.state.store, app.state.task_service
+    definition, _ = seed(app)
+    provider = store.create_provider("visual", "http://unused.invalid", "fixture-key")
+    vision = store.add_model(provider["id"], "vision", vision=True)
+    service.agent_registry.save({**definition, "default_vision_model_id": vision["id"]}, definition["id"])
+    app.state.identity_store.set_auth_mode("anonymous")
+    tasks.stop()
+    response = client.post("/agent/alpha/v1/tasks", json={"prompt": "unavailable vision"})
+    assert response.status_code == 202
+    if change == "delete":
+        store.delete_model(vision["id"])
+    else:
+        store.update_model(vision["id"], vision=False)
+    tasks.start()
+    task = wait(client, "/agent/alpha/v1/tasks/" + response.json()["id"])
+    assert task["status"] == "failed" and "任务初始化失败" in task["error"]
 
 
 @pytest.mark.parametrize("machine_app", ["", "/doc-master/consistency/image-text"], indirect=True)

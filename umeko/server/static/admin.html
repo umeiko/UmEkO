@@ -201,6 +201,9 @@
   .monitor-section { margin-top:24px; }
   .monitor-section h3 { margin:0 0 8px; font-size:15px; }
   .table-scroll { overflow:auto; }
+  #agent-management table { min-width:900px; }
+  #agent-management th { white-space:nowrap; }
+  #agent-management td:first-child { min-width:160px; }
   .metric.warn strong { color:#a13e34; }
   .secret-dialog { position:fixed; inset:0; margin:auto; width:min(600px,calc(100vw - 32px)); height:fit-content;
     max-height:calc(100dvh - 32px); overflow:auto; border:1px solid var(--line); border-radius:12px;
@@ -301,7 +304,7 @@
     <section id="agent-management" class="monitor-section">
     <div class="row" style="margin-top:0;justify-content:space-between"><strong>智能体管理</strong><button class="primary" id="agent-new" onclick="editAgentDefinition()">新建智能体</button></div>
     <p class="muted" style="margin-top:10px">每个智能体拥有独立访问路径、Agent Card、技能选择、工作指引和默认模型。共用执行引擎、服务接入方式与模型并发队列；任务、事件和文件按智能体与调用者归属查询。</p>
-    <div class="table-scroll"><table><thead><tr><th>智能体</th><th>路径</th><th>所选技能</th><th>默认模型</th><th>状态</th><th>操作</th></tr></thead><tbody id="agent-definitions"></tbody></table></div>
+    <div class="table-scroll"><table><thead><tr><th>智能体</th><th>路径</th><th>所选技能</th><th>默认模型</th><th>默认视觉模型</th><th>状态</th><th>操作</th></tr></thead><tbody id="agent-definitions"></tbody></table></div>
     </section>
   </div>
 
@@ -315,6 +318,7 @@
         <label class="wide">介绍 *<textarea id="agent-definition-description" required placeholder="向调用方说明适用任务"></textarea></label>
         <label>版本 *<input id="agent-definition-version" required></label>
         <label>默认模型<select id="agent-definition-model"><option value="">跟随平台默认模型</option></select></label>
+        <label>默认视觉模型<select id="agent-definition-vision-model"><option value="">自动选择视觉模型</option></select><small>用于图像推理与文字提取，仅可选择已标记视觉能力的模型。</small></label>
         <label>文档地址（选填）<input id="agent-definition-documentation" type="url" placeholder="https://…"></label>
         <label>图标地址（选填）<input id="agent-definition-icon" type="url" placeholder="https://…"></label>
         <label>提供方名称（选填）<input id="agent-definition-provider-name"></label>
@@ -1091,7 +1095,7 @@ async function loadAgentDefinitions() {
   try {
     agentDefinitionsData=await api('GET','/admin/v1/agents');
     const models=new Map(agentDefinitionsData.models.map(m=>[m.id,`${m.provider} / ${m.name}`]));
-    $('agent-definitions').innerHTML=agentDefinitionsData.agents.length?agentDefinitionsData.agents.map(a=>`<tr><td><strong style="font-size:13px">${safeHtml(a.name)}</strong><p class="muted">${safeHtml(a.description)}</p></td><td><code>/agent/${safeHtml(a.slug)}/</code></td><td>${a.skill_names.length}</td><td>${safeHtml(a.default_model_id?(models.get(a.default_model_id)||'模型已删除'):'跟随平台')}</td><td>${a.enabled?'已启用':'已停用'}</td><td><div class="row"><button onclick="editAgentDefinition('${safeHtml(a.id)}')">配置与入口</button><button class="danger" onclick="deleteAgentDefinition('${safeHtml(a.id)}')">删除</button></div></td></tr>`).join(''):'<tr><td colspan="6" class="muted">尚未创建智能体。创建并启用后，即可使用对应的 MCP、A2A 和任务 API。</td></tr>';
+    $('agent-definitions').innerHTML=agentDefinitionsData.agents.length?agentDefinitionsData.agents.map(a=>`<tr><td><strong style="font-size:13px">${safeHtml(a.name)}</strong><p class="muted">${safeHtml(a.description)}</p></td><td><code>/agent/${safeHtml(a.slug)}/</code></td><td>${a.skill_names.length}</td><td>${safeHtml(a.default_model_id?(models.get(a.default_model_id)||'模型已删除'):'跟随平台')}</td><td>${safeHtml(a.default_vision_model_id?(models.get(a.default_vision_model_id)||'模型已删除'):'自动选择')}</td><td>${a.enabled?'已启用':'已停用'}</td><td><div class="row"><button onclick="editAgentDefinition('${safeHtml(a.id)}')">配置与入口</button><button class="danger" onclick="deleteAgentDefinition('${safeHtml(a.id)}')">删除</button></div></td></tr>`).join(''):'<tr><td colspan="7" class="muted">尚未创建智能体。创建并启用后，即可使用对应的 MCP、A2A 和任务 API。</td></tr>';
   } catch(e) {toast(e.message,true);}
 }
 async function editAgentDefinition(id=null) {
@@ -1110,6 +1114,10 @@ async function editAgentDefinition(id=null) {
   $('agent-definition-model').innerHTML='<option value="">跟随平台默认模型</option>'+agentDefinitionsData.models.map(m=>`<option value="${safeHtml(m.id)}">${safeHtml(m.provider+' / '+m.name)}</option>`).join('');
   if(a.default_model_id&&!agentDefinitionsData.models.some(m=>m.id===a.default_model_id)) $('agent-definition-model').insertAdjacentHTML('beforeend',`<option value="${safeHtml(a.default_model_id)}">原模型已删除，请重新选择</option>`);
   $('agent-definition-model').value=a.default_model_id||'';
+  const visionModels=agentDefinitionsData.models.filter(m=>m.vision);
+  $('agent-definition-vision-model').innerHTML='<option value="">自动选择视觉模型</option>'+visionModels.map(m=>`<option value="${safeHtml(m.id)}">${safeHtml(m.provider+' / '+m.name)}</option>`).join('');
+  if(a.default_vision_model_id&&!visionModels.some(m=>m.id===a.default_vision_model_id)) $('agent-definition-vision-model').insertAdjacentHTML('beforeend',`<option value="${safeHtml(a.default_vision_model_id)}">原视觉模型不可用，请重新选择</option>`);
+  $('agent-definition-vision-model').value=a.default_vision_model_id||'';
   $('agent-definition-skills').innerHTML=agentDefinitionsData.skills.length?agentDefinitionsData.skills.map(s=>`<label class="agent-skill-choice"><input type="checkbox" value="${safeHtml(s.filename)}" ${a.skill_names.includes(s.filename)?'checked':''}><span><b>${safeHtml(s.name)}</b> <small>${safeHtml(s.filename)} · ${s.enabled?'已启用':'已停用，当前不下发'}</small><small>${safeHtml(s.description)}</small></span></label>`).join(''):'<p class="muted">没有可选的默认 Skill。请先在默认 Skill 页面导入或创建技能。</p>';
   $('agent-definition-endpoints').innerHTML=id?definitionEndpoints(a.endpoints):'<p class="muted">保存后显示完整调用入口。</p>';
   $('agent-definition-card').textContent='';$('agent-definition-card-preview').open=false;
@@ -1138,6 +1146,7 @@ async function saveAgentDefinition(event) {
     value.provider={organization,url};
   }
   value.default_model_id=$('agent-definition-model').value||null;
+  value.default_vision_model_id=$('agent-definition-vision-model').value||null;
   value.enabled=$('agent-definition-enabled').checked;
   value.skill_names=Array.from($('agent-definition-skills').querySelectorAll('input:checked'),el=>el.value);
   const disabled=Array.from($('agent-definition-form').querySelectorAll('input,textarea,select,button'));
