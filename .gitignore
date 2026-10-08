@@ -30,3 +30,7 @@ smoke/
 
 # 静态文档构建产物
 /site/
+
+# Frontend dependencies and local Vite cache
+node_modules/
+.vite/

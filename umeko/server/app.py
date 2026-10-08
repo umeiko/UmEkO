@@ -1,7 +1,6 @@
 from __future__ import annotations
 
 import asyncio
-import html
 import json
 import re
 from pathlib import Path
@@ -209,8 +208,8 @@ def create_app(
             return JSONResponse({"name": definition["name"], "description": definition["description"],
                                  "agent_card": base + "/.well-known/agent-card.json", "a2a": base + "/a2a",
                                  "mcp": base + "/mcp", "tasks": base + "/v1/tasks"})
-        template = (STATIC_DIR / "index.html").read_text(encoding="utf-8")
-        return HTMLResponse(template.replace("__UMEKO_BASE_PATH__", html.escape(base_path, quote=True)))
+        from .ui import render_ui
+        return HTMLResponse(render_ui("index.html", base_path))
 
     @app.get("/agent", tags=["agent discovery"])
     def agent_catalogue(request: Request) -> dict:

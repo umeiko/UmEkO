@@ -1,0 +1,5 @@
+frontend/** text eol=lf
+umeko/server/static/ui/** text eol=lf
+# Generated JavaScript contains significant whitespace in third-party grammar strings.
+umeko/server/static/ui/assets/*.js -whitespace
+docs/assets/brand/*.svg text eol=lf

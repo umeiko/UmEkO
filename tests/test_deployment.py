@@ -5,6 +5,7 @@ from fastapi.testclient import TestClient
 
 from umeko.config import ModelConfig, Settings
 from umeko.server.app import create_app
+from umeko.server.admin import create_admin_app
 
 
 @pytest.mark.parametrize("prefix", ["", "/doc-master/consistency/image-text", "/v1"])
@@ -16,10 +17,20 @@ def test_root_and_prefixed_ui_auth_and_session_isolation(tmp_path, prefix):
         with TestClient(app) as owner:
             other = TestClient(app)
             html = owner.get(prefix + "/").text
-            assert f'<meta name="umeko-base-path" content="{prefix}">' in html
+            assert f'name="umeko-base-path" content="{prefix}"' in html
             resources = re.findall(r'(?:src|href)="([^"?]*/static/[^"?]+)', html)
-            assert len(resources) == 5
+            assert len(resources) >= 2  # Bundled scripts, styles and shared module preload.
             assert all(url.startswith(prefix + "/static/") and owner.get(url).status_code == 200 for url in resources)
+            # Admin is a separate entry and serves its own bundled modules publicly,
+            # while management API requests still require an admin cookie.
+            admin_app = create_admin_app(app.state.agent_service.settings, app.state.agent_service, app.state.store)
+            with TestClient(admin_app) as admin:
+                admin_html = admin.get("/").text
+                assert 'name="umeko-base-path" content=""' in admin_html
+                admin_resources = re.findall(r'(?:src|href)="([^"?]*/static/[^"?]+)', admin_html)
+                assert len(admin_resources) >= 2
+                assert all(url.startswith("/static/ui/") and admin.get(url).status_code == 200 for url in admin_resources)
+                assert admin.get("/admin/v1/me").status_code == 401
             assert other.get(prefix + "/v1/sessions").status_code == 401
             register = owner.post(prefix + "/v1/auth/register", json={"username": "owner", "password": "password"})
             assert register.status_code == 201

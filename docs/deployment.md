@@ -15,6 +15,8 @@ uv sync --extra server
 没有 `uv` 时，用 `python -m pip install -e ".[server]"`，之后直接使用 `python -m ...` 启动。
 普通 `uv sync` 只安装基础模型客户端依赖，Web 服务还需要 `server` 中的 FastAPI、Uvicorn、文件上传、MCP、A2A SDK 与资源监控依赖。
 
+仓库已包含构建后的 Vue 前端，直接启动 Python 服务即可，生产环境不需要 Node 或 Vite 服务。修改 `frontend/` 源码后，在打包或部署前执行 `cd frontend`、`npm ci`、`npm run build`；将更新后的 `umeko/server/static/ui/` 与后端一起发布，勿只拷贝首页。开发与验证步骤见[前端开发](frontend.md)。
+
 首次部署从 [.env.example](https://github.com/umeiko/UmEkO/blob/main/.env.example) 复制 `.env`；已经有 `.env` 时保留现有文件。
 Windows PowerShell 可以使用：
 

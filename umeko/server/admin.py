@@ -15,6 +15,7 @@ from typing import Literal
 
 from fastapi import FastAPI, HTTPException, Request, Response
 from fastapi.responses import HTMLResponse, JSONResponse
+from fastapi.staticfiles import StaticFiles
 from pydantic import BaseModel, ConfigDict, Field
 from .. import __version__
 from ..host.identities import SCOPES
@@ -176,7 +177,8 @@ def create_admin_app(settings: Settings, service: AgentService, store: Store, pu
 
     @app.get("/", response_class=HTMLResponse, include_in_schema=False)
     def admin_page() -> HTMLResponse:
-        return HTMLResponse((STATIC_DIR / "admin.html").read_text(encoding="utf-8"))
+        from .ui import render_ui
+        return HTMLResponse(render_ui("admin.html"))
 
     @app.get("/health")
     def health() -> dict:
@@ -808,4 +810,5 @@ def create_admin_app(settings: Settings, service: AgentService, store: Store, pu
             )
         return {"output": result}
 
+    app.mount("/static", StaticFiles(directory=STATIC_DIR), name="static")
     return app

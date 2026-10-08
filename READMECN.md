@@ -27,9 +27,11 @@ UMEKO 是一个用于处理文件的 Python Agent 服务，提供网页工作台
 |:---:|:---:|
 | 工作台与工具调用 | 管理控制台 |
 
+截图使用独立的离线验收数据。
+
 ## 功能
 
-- **网页工作台**：流式对话、工具详情与调用历史、文件过滤和预览，支持 7 种界面语言。
+- **网页工作台**：深色 Vue 界面，提供流式对话、工具详情与折叠调用历史、文件过滤和预览，支持 7 种界面语言。
 - **任务委派**：主 Agent 通过 `delegate_task` 派发文件任务，子 Agent 返回结果后释放上下文。
 - **图像分析**：`image_reasoning` 支持图像分析和文字提取，执行进度显示在工具详情中。
 - **模型配置**：支持多个 Provider 和模型、视觉能力标记、JSON 导入及每模型并发上限。
@@ -118,6 +120,19 @@ python -m umeko.cli
 具体 NGINX 配置、证书和迁移步骤见 [部署说明](docs/deployment.md)，实际验证见 [红帽 Docker 实验](scripts/proxy_lab/README.md)。
 
 ## 开发
+
+仓库包含已构建的 Vue 前端，普通 Python 部署无需 Node。修改前端后使用 Node 24 构建并提交资源：
+
+```sh
+cd frontend
+npm ci
+npm run dev                     # 工作台 /，管理端 /admin.html
+npm run build                   # 输出到 umeko/server/static/ui
+npx playwright install chromium
+npm run test:smoke              # 独立的根路径与前缀浏览器验收
+```
+
+使用 Vite 开发前先启动 Python 用户与管理服务。组件结构、格式检查和发布方式见[前端开发](docs/frontend.md)。
 
 ```bash
 uv sync --extra dev              # 安装测试与打包依赖

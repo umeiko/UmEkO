@@ -93,4 +93,5 @@ nav:
       - 管理接口完整参考: api/reference-admin.md
       - 数据结构: api/schemas.md
   - 部署指南: deployment.md
+  - 前端开发: frontend.md
   - 文档维护: contributing.md

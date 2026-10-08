@@ -31,7 +31,7 @@ def main():
             else:
                 raise AssertionError("Formal server entry did not become ready")
             html = client.get("/").text
-            assert f'content="{PREFIX}"' in html and PREFIX + "/static/app.js" in html
+            assert f'content="{PREFIX}"' in html and PREFIX + "/static/ui/assets/" in html
             assert client.get("/v1/models").status_code == 401
             response = client.post("/v1/auth/register", json={"username":"entry_" + str(time.time_ns()), "password":"local-test-only"})
             response.raise_for_status()

@@ -42,12 +42,12 @@ async function check(browser, base, mount, scenario) {
     }
     await page.goto(endpoint + '/', {waitUntil:'networkidle'});
     await page.locator('#prompt').waitFor();
-    if (assets.length !== 5 || assets.some(a => a.status !== 200)) throw new Error(JSON.stringify(assets));
+    if (assets.length < 3 || assets.some(a => a.status !== 200)) throw new Error(JSON.stringify(assets));
     await page.waitForFunction(() => !document.querySelector('#user-avatar-image').classList.contains('hidden'));
     const uploaded = await context.request.post(endpoint + `/v1/sessions/${session.id}/workspace/files?filename=preview.txt`, {data:'LOCAL_PREVIEW_OK'});
     const file = await uploaded.json();
     if (!uploaded.ok()) throw new Error(JSON.stringify(file));
-    await page.evaluate(() => refreshTree());
+    await page.locator('#refresh-tree').click();
     await page.locator('.tree-file').filter({hasText:'preview.txt'}).click();
     await page.waitForFunction(() => document.querySelector('#code-view').textContent.includes('LOCAL_PREVIEW_OK'));
     const previewUrl = await page.locator('#open-file').getAttribute('href');

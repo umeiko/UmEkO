@@ -28,9 +28,11 @@ a CLI and an HTTP API, with model configuration, user management and skill packs
 |:---:|:---:|
 | Workspace and tool calls | Admin console |
 
+Screenshots use isolated offline test data.
+
 ## Features
 
-- **Web interface**: streaming chat, tool details and call history, file filtering and previews, with seven interface languages.
+- **Web interface**: a dark Vue workbench with streaming chat, tool details and folded call history, file filtering and previews, with seven interface languages.
 - **Agent delegation**: the main agent delegates file tasks through `delegate_task`. Sub-agent context is released after it returns a result.
 - **Image analysis**: `image_reasoning` supports image analysis and text extraction, with progress displayed in the tool details.
 - **Model configuration**: multiple providers and models, vision flags, JSON import and per-model concurrency limits.
@@ -142,6 +144,21 @@ See [deployment and migration](docs/deployment.md) for NGINX prefix stripping,
 private model CAs and the [Red Hat Docker verification lab](scripts/proxy_lab/README.md).
 
 ## Development
+
+The repository includes the bundled UI, so Python deployments do not need Node.
+After changing frontend source, use Node 24 to rebuild and commit the bundle:
+
+```sh
+cd frontend
+npm ci
+npm run dev                     # workspace / and admin /admin.html
+npm run build                   # output: umeko/server/static/ui
+npx playwright install chromium
+npm run test:smoke              # isolated root and prefix browser checks
+```
+
+Run the Python user/admin services first for Vite development. See the
+[frontend guide](docs/frontend.md) for architecture, formatting and deployment.
 
 ```bash
 uv sync --extra dev              # test and packaging dependencies
