@@ -10,7 +10,7 @@
 flowchart TB
     Admin[智能体管理表单] --> Registry[AgentRegistry · SQLite 配置]
     Defaults[默认 Skill 数据库副本] --> Registry
-    Caller[调用者] --> Path[/agent/slug 路径解析]
+    Caller[调用者] --> Path["/agent/slug 路径解析"]
     Registry --> Path
     Path --> Card[公开 Card · 介绍与所选技能的元数据]
     Path --> Protocols[MCP / A2A / REST]
