@@ -16,6 +16,7 @@ import tempfile
 import threading
 import uuid
 import zipfile
+from contextlib import nullcontext
 from dataclasses import dataclass, field, replace
 from datetime import datetime, timezone
 from pathlib import Path
@@ -918,22 +919,35 @@ class AgentService:
 
     def delete_user_admin(self, user_id: str) -> None:
         """删除用户：驱逐其全部内存态 Session + DB 级联 + 磁盘目录。"""
-        tasks = []
-        with self.store.connect() as db:
-            if hasattr(self, "task_service"):
-                tasks = db.execute("SELECT id,status FROM service_tasks WHERE user_id=?", (user_id,)).fetchall()
-                if any(t["status"] not in {"completed", "failed", "cancelled"} for t in tasks):
-                    raise ValueError("该用户仍有机器任务，请先停止任务并等待结束")
-            sessions = db.execute("SELECT id FROM agent_sessions WHERE user_id=?", (user_id,)).fetchall()
-        for row in sessions:
-            self.evict_session(row["id"])
-        self.store.delete_user(user_id)
         target = (self.data_root / "users" / user_id).resolve()
         if not target.is_relative_to(self.data_root / "users") or target == self.data_root / "users":
             raise ValueError("用户目录超出数据边界")
+        tasks = []
+        task_service = getattr(self, "task_service", None)
+        task_lock = task_service._lock if task_service else nullcontext()
+        with task_lock, self.store.connect() as db:
+            db.execute("BEGIN IMMEDIATE")
+            if hasattr(self, "task_service"):
+                tasks = db.execute("SELECT id,status FROM service_tasks WHERE user_id=?", (user_id,)).fetchall()
+                if any(t["status"] not in {"completed", "failed", "cancelled"}
+                       or t["id"] in task_service._active for t in tasks):
+                    raise ValueError("该账号仍有排队或执行中的任务，请先在资源监控中停止，并等待任务结束后再删除")
+                for task in tasks:
+                    task_service._directory(task["id"])
+            sessions = db.execute("SELECT id FROM agent_sessions WHERE user_id=?", (user_id,)).fetchall()
+            self.store.delete_user(user_id, connection=db)
+        for row in sessions:
+            self.evict_session(row["id"])
         shutil.rmtree(target, ignore_errors=True)
         for task in tasks:
             self.task_service._remove_staging(task["id"])
+
+    def delete_service_account_admin(self, account_id: str) -> None:
+        with self.store.connect() as db:
+            row = db.execute("SELECT user_id FROM service_accounts WHERE id=?", (account_id,)).fetchone()
+        if row is None:
+            raise KeyError("服务账号不存在")
+        self.delete_user_admin(row["user_id"])
 
     # ---------- 客户端 Skill 资源 ----------
 

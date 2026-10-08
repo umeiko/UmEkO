@@ -299,6 +299,15 @@ def create_admin_app(settings: Settings, service: AgentService, store: Store, pu
         except ValueError as exc:
             raise HTTPException(400, str(exc)) from exc
 
+    @app.delete("/admin/v1/service-accounts/{account_id}", status_code=204, tags=["service access"])
+    def delete_service_account(account_id: str) -> None:
+        try:
+            service.delete_service_account_admin(account_id)
+        except KeyError as exc:
+            raise HTTPException(404, "服务账号不存在") from exc
+        except ValueError as exc:
+            raise HTTPException(409, str(exc)) from exc
+
     @app.get("/admin/v1/tasks", tags=["monitoring"])
     def monitored_tasks() -> list[dict]:
         with store.connect() as db:

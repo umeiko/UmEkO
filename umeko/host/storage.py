@@ -255,18 +255,22 @@ class Store:
         if not result.rowcount:
             raise KeyError(user_id)
 
-    def delete_user(self, user_id: str) -> None:
-        with self.connect() as db:
-            row = db.execute("SELECT role FROM users WHERE id=?", (user_id,)).fetchone()
-            if row is None:
-                raise KeyError(user_id)
-            if row["role"] == "admin":
-                admin_count = db.execute(
-                    "SELECT COUNT(*) AS c FROM users WHERE role='admin'"
-                ).fetchone()["c"]
-                if admin_count <= 1:
-                    raise ValueError("至少需要保留一个管理员")
-            db.execute("DELETE FROM users WHERE id=?", (user_id,))  # FK 级联清 Session/消息/令牌
+    def delete_user(self, user_id: str, *, connection=None) -> None:
+        if connection is None:
+            with self.connect() as db:
+                db.execute("BEGIN IMMEDIATE")
+                self.delete_user(user_id, connection=db)
+            return
+        row = connection.execute("SELECT role FROM users WHERE id=?", (user_id,)).fetchone()
+        if row is None:
+            raise KeyError(user_id)
+        if row["role"] == "admin":
+            admin_count = connection.execute(
+                "SELECT COUNT(*) AS c FROM users WHERE role='admin'"
+            ).fetchone()["c"]
+            if admin_count <= 1:
+                raise ValueError("至少需要保留一个管理员")
+        connection.execute("DELETE FROM users WHERE id=?", (user_id,))  # FK 级联清 Session/消息/令牌
 
     def has_admin(self) -> bool:
         with self.connect() as db:

@@ -1774,6 +1774,44 @@
       }
     },
     "/admin/v1/service-accounts/{account_id}": {
+      "delete": {
+        "operationId": "delete_service_account_admin_v1_service_accounts__account_id__delete",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "account_id",
+            "required": true,
+            "schema": {
+              "title": "Account Id",
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "204": {
+            "description": "Successful Response"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            },
+            "description": "Validation Error"
+          }
+        },
+        "security": [
+          {
+            "umeko_admin": []
+          }
+        ],
+        "summary": "Delete Service Account",
+        "tags": [
+          "service access"
+        ]
+      },
       "patch": {
         "operationId": "update_service_account_admin_v1_service_accounts__account_id__patch",
         "parameters": [

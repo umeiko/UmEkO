@@ -143,6 +143,10 @@ class IdentityStore:
             raise ValueError("invalid_scope")
         token = "umeko_access_" + secrets.token_urlsafe(36)
         with self.store.connect() as db:
+            db.execute("BEGIN IMMEDIATE")
+            if db.execute("SELECT 1 FROM service_accounts WHERE id=? AND token_hash=? AND enabled=1 AND expires_at>?",
+                          (client_id, digest(secret), now())).fetchone() is None:
+                raise PermissionError("invalid_client")
             db.execute("DELETE FROM service_access_tokens WHERE expires_at<=?", (now(),))
             db.execute("INSERT INTO service_access_tokens VALUES(?,?,?,?,?)",
                        (digest(token), client_id, resource, json.dumps(scopes),

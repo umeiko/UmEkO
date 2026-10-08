@@ -174,6 +174,8 @@ class TaskService:
         expires = (datetime.now(timezone.utc) + timedelta(seconds=self.settings.task_retention_seconds)).isoformat()
         with self.store.connect() as db:
             db.execute("BEGIN IMMEDIATE")
+            if db.execute("SELECT 1 FROM users WHERE id=?", (owner,)).fetchone() is None:
+                raise PermissionError("服务账号已删除")
             if agent_id and db.execute("SELECT 1 FROM agent_definitions WHERE id=? AND enabled=1", (agent_id,)).fetchone() is None:
                 raise KeyError("智能体不存在或已停用")
             if idempotency_key:

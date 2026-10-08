@@ -1,5 +1,6 @@
 import asyncio
 import time
+import base64
 
 import httpx
 import httpx2
@@ -12,6 +13,98 @@ from mcp.client.streamable_http import streamable_http_client
 
 from umeko.host.identities import IdentityStore
 from umeko.server.admin import create_admin_app
+from conftest import wait_task
+
+
+def wait_worker_release(tasks, task_id):
+    for _ in range(200):
+        with tasks._lock:
+            if task_id not in tasks._active:
+                return
+        time.sleep(.01)
+    raise AssertionError("Task worker did not release")
+
+
+def test_delete_service_account_revokes_credentials_and_cleans_own_history(machine_client, monkeypatch):
+    client, app, account, other = machine_client
+    service, store, identities, tasks = app.state.agent_service, app.state.store, app.state.identity_store, app.state.task_service
+    admin_user = store.create_user("deletion-admin", "fixture-pass", "admin")
+    ordinary = store.create_user("deletion-ordinary", "fixture-pass")
+    admin_app = create_admin_app(service.settings, service, store)
+    path = "/admin/v1/service-accounts/" + account["id"]
+    resource = "http://127.0.0.1/agent/fixture/v1/tasks"
+    access = identities.issue_access_token(account["id"], account["token"], resource, ["tasks:read"])["access_token"]
+    stale = identities.authenticate(account["token"])
+    submitted = client.post("/agent/fixture/v1/tasks", json={"prompt": "delete own history", "files": [
+        {"name": "input.txt", "content_base64": base64.b64encode(b"own attachment").decode()}]},
+        headers={"Authorization": "Bearer " + account["token"]}).json()
+    completed = wait_task(client, submitted["id"], account["token"])
+    assert completed["status"] == "completed" and completed["artifacts"]
+    wait_worker_release(tasks, completed["id"])
+    with store.connect() as db:
+        session_id = db.execute("SELECT session_id FROM service_tasks WHERE id=?", (completed["id"],)).fetchone()[0]
+    # Reopen the completed session to exercise eviction as well as disk/DB cleanup.
+    service.get_session(session_id)
+    own_root = service.data_root / "users" / account["user_id"]
+    other_session = service.create_session(user_id=other["user_id"])
+    staging = tasks._directory(completed["id"])
+    staging.mkdir()
+    (staging / "leftover.txt").write_text("stale upload", encoding="utf-8")
+    with TestClient(admin_app) as admin:
+        assert admin.delete(path).status_code == 401
+        admin.cookies.set("umeko_admin", store.issue_token(ordinary["id"]))
+        assert admin.delete(path).status_code == 401
+        admin.cookies.set("umeko_admin", store.issue_token(admin_user["id"]))
+        assert admin.delete(path).status_code == 204
+        assert admin.delete(path).status_code == 404
+        assert all(a["id"] != account["id"] for a in admin.get("/admin/v1/service-accounts").json()["accounts"])
+        assert admin.get("/admin/v1/tasks").json() == []
+        replacement = admin.post("/admin/v1/service-accounts", json={"name": account["name"]})
+        assert replacement.status_code == 201 and replacement.json()["id"] != account["id"]
+    assert identities.authenticate(account["token"]) is None
+    assert identities.authenticate(access, resource) is None
+    assert not own_root.exists() and not staging.exists() and session_id not in service.sessions
+    assert other_session.root.exists() and store.session_by_id(other_session.id)
+    assert identities.authenticate(other["token"])
+    with store.connect() as db:
+        for table, column, value in [("users", "id", account["user_id"]), ("agent_sessions", "user_id", account["user_id"]),
+                                     ("messages", "session_id", session_id), ("session_files", "session_id", session_id),
+                                     ("service_tasks", "user_id", account["user_id"]), ("service_task_events", "task_id", completed["id"]),
+                                     ("service_task_artifacts", "task_id", completed["id"]), ("service_access_tokens", "account_id", account["id"])]:
+            assert db.execute(f"SELECT COUNT(*) FROM {table} WHERE {column}=?", (value,)).fetchone()[0] == 0
+    # An already authenticated request must not recreate deleted task data.
+    with pytest.raises(PermissionError, match="已删除"):
+        tasks.submit(stale, {"prompt": "in flight after deletion"})
+    with monkeypatch.context() as in_flight:
+        in_flight.setattr(identities, "authenticate", lambda *_: stale)
+        with pytest.raises(PermissionError, match="invalid_client"):
+            identities.issue_access_token(account["id"], account["token"], resource, ["tasks:read"])
+    # Even in open access mode, a supplied deleted credential cannot fall back to anonymous.
+    identities.set_auth_mode("anonymous")
+    assert client.get("/agent/fixture/v1/tasks", headers={"Authorization": "Bearer " + account["token"]}).status_code == 401
+
+
+@pytest.mark.parametrize("status", ["queued", "running"])
+def test_delete_service_account_waits_for_unfinished_tasks(machine_client, status):
+    client, app, account, _ = machine_client
+    service, store, tasks = app.state.agent_service, app.state.store, app.state.task_service
+    if status == "queued":
+        tasks.stop()
+    admin_user = store.create_user("busy-admin", "fixture-pass", "admin")
+    submitted = client.post("/agent/fixture/v1/tasks", json={"prompt": "hold until stopped"},
+                            headers={"Authorization": "Bearer " + account["token"]}).json()
+    if status == "running":
+        wait_task(client, submitted["id"], account["token"], terminal=False)
+    with TestClient(create_admin_app(service.settings, service, store)) as admin:
+        admin.cookies.set("umeko_admin", store.issue_token(admin_user["id"]))
+        path = "/admin/v1/service-accounts/" + account["id"]
+        rejected = admin.delete(path)
+        assert rejected.status_code == 409 and "资源监控" in rejected.json()["detail"]
+        assert app.state.identity_store.authenticate(account["token"])
+        assert admin.post("/admin/v1/tasks/" + submitted["id"] + "/cancel").status_code == 200
+        assert wait_task(client, submitted["id"], account["token"])["status"] == "cancelled"
+        wait_worker_release(tasks, submitted["id"])
+        assert admin.delete(path).status_code == 204
 
 
 def test_access_mode_admin_controls_shared_identity_and_ip_log(machine_client):
