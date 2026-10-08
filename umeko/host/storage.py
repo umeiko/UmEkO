@@ -772,7 +772,7 @@ class Store:
     def tool_events(self, session_id: str) -> list[dict]:
         with self.connect() as db:
             rows = db.execute(
-                "SELECT id,agent,name,arguments,result,created_at FROM tool_events "
+                "SELECT id,run_id,agent,name,arguments,result,created_at FROM tool_events "
                 "WHERE session_id=? ORDER BY id",
                 (session_id,),
             ).fetchall()

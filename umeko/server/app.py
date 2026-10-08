@@ -577,6 +577,7 @@ def create_app(
         get_session(session_id)
         return [
             ToolEventView(
+                run_id=row["run_id"],
                 agent=row["agent"], name=row["name"],
                 arguments=row["arguments"], result=row["result"],
                 created_at=row["created_at"],

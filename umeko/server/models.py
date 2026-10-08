@@ -68,6 +68,7 @@ class MessageView(BaseModel):
 
 
 class ToolEventView(BaseModel):
+    run_id: str | None = None
     agent: str = "main"
     name: str
     arguments: str | None = None

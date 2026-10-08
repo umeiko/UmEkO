@@ -26,6 +26,14 @@ def test_root_and_prefixed_ui_auth_and_session_isolation(tmp_path, prefix):
             other.post(prefix + "/v1/auth/register", json={"username": "other", "password": "password"}).raise_for_status()
             assert other.get(prefix + f"/v1/sessions/{sid}/workspace/tree").status_code == 404
             assert owner.get(prefix + f"/v1/sessions/{sid}/workspace/tree").status_code == 200
+            # Tool history retains its task identity for grouping and active-run replay.
+            event_id = app.state.store.add_tool_event(
+                sid, "main", "read_document", arguments='{"path":"sample.txt"}', run_id="run_history")
+            app.state.store.complete_tool_event(event_id, '{"text":"sample"}')
+            history = owner.get(prefix + f"/v1/sessions/{sid}/tool-events").json()
+            assert history[0]["run_id"] == "run_history"
+            assert history[0]["result"] == '{"text":"sample"}'
+            assert other.get(prefix + f"/v1/sessions/{sid}/tool-events").status_code == 404
             assert owner.post(prefix + "/v1/auth/logout").status_code == 204
             assert owner.get(prefix + "/v1/auth/me").status_code == 401
             owner.post(prefix + "/v1/auth/login", json={"username": "owner", "password": "password"}).raise_for_status()

@@ -5,8 +5,8 @@
   <meta name="viewport" content="width=device-width, initial-scale=1">
   <title>UMEKO</title>
   <meta name="umeko-base-path" content="__UMEKO_BASE_PATH__">
-  <link rel="stylesheet" href="__UMEKO_BASE_PATH__/static/app.css?v=umeko14">
-  <link rel="stylesheet" href="__UMEKO_BASE_PATH__/static/hljs-github.min.css?v=umeko14">
+  <link rel="stylesheet" href="__UMEKO_BASE_PATH__/static/app.css?v=umeko15">
+  <link rel="stylesheet" href="__UMEKO_BASE_PATH__/static/hljs-github.min.css?v=umeko15">
 </head>
 <body>
   <main class="shell">
@@ -44,6 +44,10 @@
       <div id="left-resizer" class="layout-resizer vertical" role="separator" data-i18n-aria="resizer.filebar" aria-label="调整文件栏宽度" aria-orientation="vertical" tabindex="0"></div>
 
       <article class="conversation">
+        <section id="tool-activity" class="tool-activity hidden" aria-live="polite">
+          <div id="tool-activity-title" class="tool-activity-title"></div>
+          <div id="tool-activity-list" class="tool-activity-list"></div>
+        </section>
         <div id="messages" class="messages" aria-live="polite">
           <div class="message assistant" data-i18n="message.welcome">描述你的任务，可以附带文档或图片。</div>
         </div>
@@ -208,8 +212,8 @@
     <div class="model-search"><input id="model-search" data-i18n-placeholder="model.search" placeholder="搜索模型" autocomplete="off"></div>
     <div id="model-list" class="model-list"></div>
   </div>
-  <script src="__UMEKO_BASE_PATH__/static/i18n.js?v=umeko14" defer></script>
-  <script src="__UMEKO_BASE_PATH__/static/hljs.min.js?v=umeko14" defer></script>
-  <script src="__UMEKO_BASE_PATH__/static/app.js?v=umeko14" defer></script>
+  <script src="__UMEKO_BASE_PATH__/static/i18n.js?v=umeko15" defer></script>
+  <script src="__UMEKO_BASE_PATH__/static/hljs.min.js?v=umeko15" defer></script>
+  <script src="__UMEKO_BASE_PATH__/static/app.js?v=umeko15" defer></script>
 </body>
 </html>

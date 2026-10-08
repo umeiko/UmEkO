@@ -7,6 +7,9 @@ function appUrl(path) {
 
 const ui = {
   messages: document.querySelector("#messages"),
+  toolActivity: document.querySelector("#tool-activity"),
+  toolActivityTitle: document.querySelector("#tool-activity-title"),
+  toolActivityList: document.querySelector("#tool-activity-list"),
   composer: document.querySelector("#composer"),
   prompt: document.querySelector("#prompt"),
   send: document.querySelector("#send"),
@@ -111,6 +114,7 @@ let treeFilterTimer = null;
 let renderedTreeSessionId = null;
 let renderedTreeSignature = null;
 let activeToolDetail = null;
+const toolHistories = new Map();
 
 const layoutDefaults = { filebar: 260, preview: 610, composer: 160 };
 const layoutState = {...layoutDefaults};
@@ -259,15 +263,79 @@ function toolLabel(name) {
   return label === key ? name : label;
 }
 
-// 历史回放：把一条持久化的 tool_events 记录渲染成已完成的工具 chip
-function replayToolEvent(event) {
-  const action = addAgentAction(event.name, event.agent || "main", event.arguments, null);
+function updateToolHistory(history) {
+  const {running, unsettled} = history;
+  history.label.textContent = t("tool.historyCount", {count: history.actions.length});
+  history.state.textContent = running ? t("tool.historyRunning", {count: running})
+    : unsettled ? t("tool.historyUnsettled", {count: unsettled}) : t("tool.statusDone");
+  history.node.classList.toggle("has-unsettled", unsettled > 0);
+  history.empty.textContent = t("tool.historyEmpty");
+  history.empty.classList.toggle("hidden", history.actions.length > running);
+}
+
+function getToolHistory(key, beforeNode = null) {
+  if (toolHistories.has(key)) return toolHistories.get(key);
+  const node = document.createElement("details");
+  node.className = "tool-history";
+  const summary = document.createElement("summary");
+  const label = document.createElement("span"); label.className = "tool-history-label";
+  const state = document.createElement("span"); state.className = "tool-history-state";
+  summary.append(label, state);
+  const list = document.createElement("div"); list.className = "tool-history-list";
+  const empty = document.createElement("p"); empty.className = "tool-history-empty";
+  list.append(empty); node.append(summary, list);
+  if (beforeNode?.parentNode === ui.messages) ui.messages.insertBefore(node, beforeNode);
+  else ui.messages.append(node);
+  const history = {node, label, state, list, empty, actions: [], running: 0, unsettled: 0};
+  toolHistories.set(key, history);
+  return history;
+}
+
+function updateToolActivity() {
+  const count = ui.toolActivityList.querySelectorAll(".agent-action.running").length;
+  ui.toolActivity.classList.toggle("hidden", !count);
+  ui.toolActivityTitle.textContent = t("tool.activeCount", {count});
+}
+
+function resetToolPresentation() {
+  toolHistories.clear();
+  ui.toolActivityList.replaceChildren();
+  updateToolActivity();
+  ui.toolDetailDialog.close();
+}
+
+function completeToolAction(action, result, status = "completed", label = null) {
+  if (!action || action.status !== "running") return;
+  const follow = messagesNearBottom();
+  action.status = status;
+  action.result = result ?? "";
   action.node.classList.remove("running");
-  action.node.classList.add("completed");
-  action.icon.textContent = "✓";
-  action.text.textContent = t("action.completed", {tool: toolLabel(event.name)});
-  action.result = event.result ?? "";
+  action.node.classList.add(status);
+  action.icon.textContent = status === "completed" ? "✓" : status === "cancelled" ? "■" : "!";
+  action.text.textContent = label || (status === "completed"
+    ? t(action.agent === "subagent" ? "subagent.completed" : "action.completed", {tool: toolLabel(action.name)})
+    : t(`tool.action.${status}`, {tool: toolLabel(action.name)}));
+  // 保持开始调用的顺序，即使多个工具按不同顺序返回。
+  const history = action.history;
+  history.running--;
+  if (status !== "completed") history.unsettled++;
+  let next = null;
+  for (let i = action.index + 1; i < history.actions.length; i++) {
+    if (history.actions[i].node.parentNode === history.list) {
+      next = history.actions[i]; break;
+    }
+  }
+  history.list.insertBefore(action.node, next?.node || null);
   makeToolActionInspectable(action);
+  updateToolHistory(history); updateToolActivity();
+  if (activeToolDetail === action) renderToolDetail(action);
+  if (follow) ui.messages.scrollTop = ui.messages.scrollHeight;
+}
+
+// 刷新后的历史保持折叠；无返回记录不能标成成功。
+function replayToolEvent(event, history) {
+  const action = addAgentAction(event.name, event.agent || "main", event.arguments, history, false);
+  completeToolAction(action, event.result, event.result == null ? "unknown" : "completed");
 }
 
 function prettyToolData(value, emptyText) {
@@ -312,7 +380,8 @@ function renderToolImages(action) {
 function renderToolDetail(action) {
   if (!action) return;
   const owner = action.agent === "subagent" ? t("agent.sub") : t("agent.main");
-  const status = action.result === null ? t("tool.statusRunning") : t("tool.statusDone");
+  const status = action.status === "running" ? t("tool.statusRunning")
+    : action.status === "completed" ? t("tool.statusDone") : t(`tool.status.${action.status}`);
   ui.toolDetailTitle.textContent = toolLabel(action.name);
   ui.toolDetailMeta.textContent = `${owner} · ${action.name} · ${status}`;
   renderToolImages(action);
@@ -348,20 +417,23 @@ function makeToolActionInspectable(action) {
   action.node.title = t("tool.inspectTitle");
 }
 
-function addAgentAction(name, agent = "main", request = null, beforeNode = null) {
+function addAgentAction(name, agent, request, history, live = true) {
   const node = document.createElement("div");
   node.className = `agent-action running${agent === "subagent" ? " subagent" : ""}`;
   const icon = document.createElement("span"); icon.className = "agent-action-icon"; icon.textContent = "·";
   const prefixKey = agent === "subagent" ? "action.runningSub" : "action.runningMain";
-  const text = document.createElement("span"); text.textContent = t(prefixKey, {tool: toolLabel(name)});
+  const text = document.createElement("span"); text.className = "agent-action-text";
+  text.textContent = t(prefixKey, {tool: toolLabel(name)});
   node.append(icon, text);
-  if (beforeNode?.parentNode === ui.messages) ui.messages.insertBefore(node, beforeNode);
-  else ui.messages.append(node);
-  followMessages();
   const action = {
-    node, icon, text, name, agent, request, result: null,
+    node, icon, text, name, agent, request, history, index: history.actions.length,
+    result: null, status: "running",
     liveReasoning: "", liveOutput: "",
   };
+  history.actions.push(action);
+  history.running++;
+  if (live) ui.toolActivityList.append(node);
+  updateToolHistory(history); updateToolActivity();
   if (request !== null) makeToolActionInspectable(action);
   node.addEventListener("click", () => {
     if (node.classList.contains("inspectable")) openToolDetail(action);
@@ -688,6 +760,9 @@ ui.prefLanguage.addEventListener("change", () => setLocale(ui.prefLanguage.value
 
 // 语言切换后重渲染动态文案（模型胶囊、上下文统计等由 JS 设置的文本）
 document.addEventListener("localechange", () => {
+  for (const history of toolHistories.values()) updateToolHistory(history);
+  updateToolActivity();
+  if (activeToolDetail) renderToolDetail(activeToolDetail);
   renderModelPicker();
   refreshContext().catch(() => {});
   if (!selectedFile && !selectedResource) clearPreview();
@@ -774,6 +849,7 @@ async function loadSession(id) {
   activeRunId = null;
   activeRunSessionId = null;
   setRunControls(false);
+  resetToolPresentation();
   sessionId = id;
   localStorage.setItem("umeko:last-session", id);
   clearPreview();
@@ -797,23 +873,28 @@ async function loadSession(id) {
   let toolEvents = [];
   try { toolEvents = await api(`/v1/sessions/${id}/tool-events`); } catch (_) { toolEvents = []; }
   if (loadToken !== sessionLoadToken || sessionId !== id) return;
+  const activeRun = await api(`/v1/sessions/${id}/active-run`);
+  if (loadToken !== sessionLoadToken || sessionId !== id) return;
   const timeline = [
     ...messages.map(m => ({kind: "message", at: m.created_at, m})),
-    ...toolEvents.map(e => ({kind: "tool", at: e.created_at, e})),
+    // 当前任务的 SSE 从头回放；跳过同一任务的数据库快照，避免重复计数。
+    ...toolEvents.filter(e => !activeRun || e.run_id !== activeRun.id)
+      .map(e => ({kind: "tool", at: e.created_at, e})),
   ].sort((a, b) => (a.at < b.at ? -1 : a.at > b.at ? 1 : 0));
+  let legacyTurn = 0;
   for (const item of timeline) {
     if (item.kind === "message") {
       const m = item.m;
+      if (m.role === "user") legacyTurn++;
       addMessage(m.content, m.role, m.attachments.map(filename => ({filename})));
     } else {
-      replayToolEvent(item.e);
+      const key = item.e.run_id || `legacy-${legacyTurn}`;
+      replayToolEvent(item.e, getToolHistory(key));
     }
   }
   await Promise.all([
     refreshTree(), refreshResources("skills"), refreshContext(id),
   ]);
-  if (loadToken !== sessionLoadToken || sessionId !== id) return;
-  const activeRun = await api(`/v1/sessions/${id}/active-run`);
   if (loadToken !== sessionLoadToken || sessionId !== id) return;
   if (activeRun) followRun(activeRun.id, id);
   await refreshSessionTabs();
@@ -2160,6 +2241,17 @@ function followRun(runId, runSessionId = sessionId) {
   let generation = null;
   const pendingTools = new Map();
   const pendingSubagentTools = new Map();
+  let toolHistory = null;
+  const addRunAction = (name, agent = "main", request = null) => {
+    toolHistory ||= getToolHistory(runId, assistant);
+    return addAgentAction(name, agent, request, toolHistory);
+  };
+  const settlePendingActions = (status = "unknown") => {
+    if (!toolHistory) return;
+    for (const action of toolHistory.actions) {
+      if (action.status === "running") completeToolAction(action, t(`tool.status.${status}`), status);
+    }
+  };
   let reasoningAction = null;
   let reasoningBuffer = "";
   let usageChars = 0;
@@ -2193,6 +2285,7 @@ function followRun(runId, runSessionId = sessionId) {
     clearInterval(workspaceFallback);
     clearTimeout(reconnectTimer);
     clearTimeout(pollTimer);
+    settlePendingActions();
     if (activeStream === stream) activeStream = null;
     if (activeRunCleanup === cleanup) activeRunCleanup = null;
   };
@@ -2202,20 +2295,21 @@ function followRun(runId, runSessionId = sessionId) {
     if (!reasoningAction || reasoningAction.classList.contains("completed")) return;
     reasoningAction.classList.add("completed");
     reasoningAction.textContent = reasoningAction.textContent.replace(t("run.reasoningPrefix"), t("run.reasoningDone"));
+    reasoningBuffer = "";
   };
   const ensureReasoningLine = () => {
-    if (!reasoningAction || reasoningAction.classList.contains("completed")) {
-      reasoningBuffer = "";
+    if (!reasoningAction) {
       reasoningAction = document.createElement("div");
       reasoningAction.className = "reasoning-line";
       reasoningAction.textContent = t("run.reasoning");
       ui.messages.append(reasoningAction);
     }
+    reasoningAction.classList.remove("completed");
     return reasoningAction;
   };
 
   stream.addEventListener("assistant.delta", event => {
-    if (sessionId !== runSessionId) return;
+    if (disposed || sessionId !== runSessionId) return;
     const payload = JSON.parse(event.data);
     if (!assistant) assistant = addMessage("", "assistant");
     streamedText += payload.data.text;
@@ -2224,15 +2318,15 @@ function followRun(runId, runSessionId = sessionId) {
     assistant.querySelector(".message-body").textContent = streamedText;
   });
   stream.addEventListener("workspace.changed", event => {
-    if (sessionId !== runSessionId) return;
+    if (disposed || sessionId !== runSessionId) return;
     scheduleWorkspaceRefresh(runSessionId);
   });
   stream.addEventListener("reasoning.status", () => {
-    if (sessionId !== runSessionId) return;
+    if (disposed || sessionId !== runSessionId) return;
     ensureReasoningLine();
   });
   stream.addEventListener("reasoning.delta", event => {
-    if (sessionId !== runSessionId) return;
+    if (disposed || sessionId !== runSessionId) return;
     const payload = JSON.parse(event.data);
     reasoningBuffer = (reasoningBuffer + (payload.data.text || "")).slice(-1200);
     const lines = reasoningBuffer.split(/\r?\n/).map(line => line.trim()).filter(Boolean);
@@ -2242,27 +2336,27 @@ function followRun(runId, runSessionId = sessionId) {
     followMessages();
   });
   stream.addEventListener("usage.delta", event => {
-    if (sessionId !== runSessionId) return;
+    if (disposed || sessionId !== runSessionId) return;
     const payload = JSON.parse(event.data);
     usageChars += payload.data.chars || 0; updateMetrics();
   });
   stream.addEventListener("progress.updated", event => {
-    if (sessionId !== runSessionId) return;
+    if (disposed || sessionId !== runSessionId) return;
     const payload = JSON.parse(event.data);
     if (!generation) generation = addMessage("", "progress");
     generation.textContent = payload.data.message;
   });
   stream.addEventListener("tool.started", event => {
-    if (sessionId !== runSessionId) return;
+    if (disposed || sessionId !== runSessionId) return;
     const payload = JSON.parse(event.data);
     const name = payload.data.name;
     finishReasoning();
-    const action = addAgentAction(name, "main", payload.data.arguments ?? "", assistant);
+    const action = addRunAction(name, "main", payload.data.arguments ?? "");
     const queue = pendingTools.get(name) || [];
     queue.push(action); pendingTools.set(name, queue);
   });
   stream.addEventListener("tool.progress", event => {
-    if (sessionId !== runSessionId) return;
+    if (disposed || sessionId !== runSessionId) return;
     const payload = JSON.parse(event.data);
     const name = payload.data.name;
     const queue = pendingTools.get(name) || [];
@@ -2273,43 +2367,39 @@ function followRun(runId, runSessionId = sessionId) {
     if (activeToolDetail === action) renderToolDetail(action);
   });
   stream.addEventListener("resource.activated", event => {
-    if (sessionId !== runSessionId) return;
+    if (disposed || sessionId !== runSessionId) return;
     const payload = JSON.parse(event.data);
-    const action = addAgentAction("use_skill", "main", null, assistant);
-    action.node.classList.remove("running"); action.node.classList.add("completed");
-    action.icon.textContent = "✓";
-    action.text.textContent = t("run.skillLoaded", {name: payload.data.name});
+    const action = addRunAction("use_skill", "main", {name: payload.data.name});
+    completeToolAction(action, "", "completed", t("run.skillLoaded", {name: payload.data.name}));
   });
   stream.addEventListener("tool.completed", event => {
-    if (sessionId !== runSessionId) return;
+    if (disposed || sessionId !== runSessionId) return;
     const payload = JSON.parse(event.data);
     const name = payload.data.name;
     const queue = pendingTools.get(name) || [];
     const action = queue.shift();
     if (!action) return;
-    action.node.classList.remove("running"); action.node.classList.add("completed");
-    action.icon.textContent = "✓"; action.text.textContent = t("action.completed", {tool: toolLabel(name)});
-    action.result = payload.data.result ?? "";
-    makeToolActionInspectable(action);
-    if (activeToolDetail === action) renderToolDetail(action);
+    completeToolAction(action, payload.data.result);
     scheduleWorkspaceRefresh(runSessionId);
   });
   stream.addEventListener("subagent.started", event => {
-    if (sessionId !== runSessionId) return;
+    if (disposed || sessionId !== runSessionId) return;
     const payload = JSON.parse(event.data);
     const task = payload.data.task || t("subagent.defaultTask");
-    subagentTaskAction = addAgentAction("subagent_task", "subagent", task, assistant);
+    subagentReasoning = null; subagentReasoningBuffer = "";
+    subagentOutput = null; subagentOutputBuffer = "";
+    subagentTaskAction = addRunAction("subagent_task", "subagent", task);
     subagentTaskAction.text.textContent = t("subagent.tookOver", {task: task.length > 90 ? `${task.slice(0, 90)}…` : task});
     subagentTaskAction.node.title = task;
   });
   stream.addEventListener("subagent.reasoning.delta", event => {
-    if (sessionId !== runSessionId) return;
+    if (disposed || sessionId !== runSessionId) return;
     const payload = JSON.parse(event.data);
     subagentReasoningBuffer = (subagentReasoningBuffer + (payload.data.text || "")).slice(-1200);
     if (!subagentReasoning) {
       subagentReasoning = document.createElement("div");
       subagentReasoning.className = "subagent-line";
-      ui.messages.append(subagentReasoning);
+      if (subagentTaskAction) subagentTaskAction.node.append(subagentReasoning);
     }
     const lines = subagentReasoningBuffer.split(/\r?\n/).map(line => line.trim()).filter(Boolean);
     const latest = lines.at(-1) || t("subagent.reasoningFallback");
@@ -2330,13 +2420,13 @@ function followRun(runId, runSessionId = sessionId) {
     followMessages();
   });
   stream.addEventListener("subagent.delta", event => {
-    if (sessionId !== runSessionId) return;
+    if (disposed || sessionId !== runSessionId) return;
     const payload = JSON.parse(event.data);
     subagentOutputBuffer = (subagentOutputBuffer + (payload.data.text || "")).slice(-1600);
     if (!subagentOutput) {
       subagentOutput = document.createElement("div");
       subagentOutput.className = "subagent-line";
-      ui.messages.append(subagentOutput);
+      if (subagentTaskAction) subagentTaskAction.node.append(subagentOutput);
     }
     const lines = subagentOutputBuffer.split(/\r?\n/).map(line => line.trim()).filter(Boolean);
     const tail = lines.at(-1) || t("subagent.outputFallback");
@@ -2350,15 +2440,15 @@ function followRun(runId, runSessionId = sessionId) {
     followMessages();
   });
   stream.addEventListener("subagent.tool.started", event => {
-    if (sessionId !== runSessionId) return;
+    if (disposed || sessionId !== runSessionId) return;
     const payload = JSON.parse(event.data);
     const name = payload.data.name;
-    const action = addAgentAction(name, "subagent", payload.data.arguments ?? "", assistant);
+    const action = addRunAction(name, "subagent", payload.data.arguments ?? "");
     const queue = pendingSubagentTools.get(name) || [];
     queue.push(action); pendingSubagentTools.set(name, queue);
   });
   stream.addEventListener("subagent.tool.progress", event => {
-    if (sessionId !== runSessionId) return;
+    if (disposed || sessionId !== runSessionId) return;
     const payload = JSON.parse(event.data);
     const name = payload.data.name;
     const queue = pendingSubagentTools.get(name) || [];
@@ -2376,39 +2466,35 @@ function followRun(runId, runSessionId = sessionId) {
     if (activeToolDetail === action) renderToolDetail(action);
   });
   stream.addEventListener("subagent.tool.completed", event => {
-    if (sessionId !== runSessionId) return;
+    if (disposed || sessionId !== runSessionId) return;
     const payload = JSON.parse(event.data);
     const name = payload.data.name;
     const queue = pendingSubagentTools.get(name) || [];
     const action = queue.shift();
     if (!action) return;
-    action.node.classList.remove("running"); action.node.classList.add("completed");
-    action.icon.textContent = "✓"; action.text.textContent = t("subagent.completed", {tool: toolLabel(name)});
-    action.result = payload.data.result ?? "";
-    makeToolActionInspectable(action);
-    if (activeToolDetail === action) renderToolDetail(action);
+    completeToolAction(action, payload.data.result);
     scheduleWorkspaceRefresh(runSessionId);
   });
   const finishSubagent = (status, data = {}) => {
     if (subagentReasoning) subagentReasoning.classList.add("completed");
     if (subagentOutput) subagentOutput.classList.add("completed");
     if (!subagentTaskAction) return;
-    subagentTaskAction.node.classList.remove("running");
-    subagentTaskAction.node.classList.add("completed");
-    subagentTaskAction.icon.textContent = status === "completed" ? "✓" : "!";
-    subagentTaskAction.text.textContent = status === "completed" ? t("subagent.workDone") : t("subagent.status", {status});
-    subagentTaskAction.result = data.result ?? data.error ?? subagentTaskAction.liveOutput ?? "";
-    makeToolActionInspectable(subagentTaskAction);
-    if (activeToolDetail === subagentTaskAction) renderToolDetail(subagentTaskAction);
+    completeToolAction(subagentTaskAction, data.result ?? data.error ?? subagentTaskAction.liveOutput,
+      status, status === "completed" ? t("subagent.workDone") : null);
+    for (const queue of pendingSubagentTools.values()) {
+      for (const action of queue) completeToolAction(action, t(`tool.status.${status === "completed" ? "unknown" : status}`),
+        status === "completed" ? "unknown" : status);
+      queue.length = 0;
+    }
   };
   const finishSubagentEvent = (event, status) => {
-    if (sessionId !== runSessionId) return;
+    if (disposed || sessionId !== runSessionId) return;
     const payload = JSON.parse(event.data);
     finishSubagent(status, payload.data || {});
   };
   stream.addEventListener("subagent.completed", event => finishSubagentEvent(event, "completed"));
-  stream.addEventListener("subagent.failed", event => finishSubagentEvent(event, t("subagent.failed")));
-  stream.addEventListener("subagent.cancelled", event => finishSubagentEvent(event, t("subagent.cancelled")));
+  stream.addEventListener("subagent.failed", event => finishSubagentEvent(event, "failed"));
+  stream.addEventListener("subagent.cancelled", event => finishSubagentEvent(event, "cancelled"));
   const finishRun = async (status, data) => {
     if (disposed || sessionId !== runSessionId) return;
     if (status === "completed") {
@@ -2420,6 +2506,7 @@ function followRun(runId, runSessionId = sessionId) {
         ? t("run.failedMessage", {error: data.error || t("run.failed")})
         : (data.reply || t("run.stoppedReply")), "assistant");
     }
+    settlePendingActions(status === "completed" ? "unknown" : status);
     cleanup(); finishReasoning(); updateMetrics();
     activeStream = null; activeRunId = null; activeRunSessionId = null;
     setRunControls(false);
@@ -2434,7 +2521,7 @@ function followRun(runId, runSessionId = sessionId) {
     });
   }
   stream.addEventListener("run.cancelling", () => {
-    if (sessionId !== runSessionId) return;
+    if (disposed || sessionId !== runSessionId) return;
     setRunControls(true, true);
     setStatus(t("run.stopping"));
   });
@@ -2462,6 +2549,8 @@ function followRun(runId, runSessionId = sessionId) {
     if (disposed || polling) return;
     polling = true;
     stream.close();
+    // 断流后无法判断哪一个工具仍在执行，避免置顶过时的“执行中”。
+    settlePendingActions();
     clearTimeout(reconnectTimer);
     setStatus(t("run.waitingResult"));
     void pollRun();
@@ -2642,6 +2731,7 @@ ui.contextMenuClearChat.addEventListener("click", async () => {
     await api(`/v1/sessions/${targetSessionId}/chat/clear`, {method: "POST"});
     if (targetSessionId !== sessionId) return;
     ui.messages.replaceChildren();
+    resetToolPresentation();
     renderContextStats({used: 0, limit: contextLimit, exact: false, ratio: 0});
     addMessage(t("context.clearChatDone"), "progress");
     setStatus(t("context.clearChatDoneStatus"), true);
