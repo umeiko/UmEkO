@@ -72,6 +72,7 @@
   button:hover { background: #f2efe6; }
   button.primary { border: 0; color: #fff; background: var(--accent); font-weight: 700; }
   button.primary:hover { background: var(--accent-dark); }
+  button.primary:disabled { opacity: .65; cursor: wait; }
   button.danger { border-color: #b95448; color: #9d382e; background: transparent; }
   button.danger:hover { background: #fff0ee; }
   table { width: 100%; border-collapse: collapse; margin-top: 12px; }
@@ -203,7 +204,11 @@
   .metric.warn strong { color:#a13e34; }
   .access-endpoints { display:grid; grid-template-columns:120px minmax(0,1fr); gap:8px; margin:16px 0; }
   .access-endpoints code { overflow-wrap:anywhere; }
-  .secret-dialog { width:min(600px,calc(100vw - 32px)); border:1px solid var(--line); border-radius:12px; padding:24px; color:var(--ink); }
+  .secret-dialog { position:fixed; inset:0; margin:auto; width:min(600px,calc(100vw - 32px)); height:fit-content;
+    max-height:calc(100dvh - 32px); overflow:auto; border:1px solid var(--line); border-radius:12px;
+    padding:24px; color:var(--ink); background:var(--panel); box-shadow:0 20px 70px #17211e40; }
+  .secret-dialog strong { display:block; font-size:18px; }
+  .secret-dialog > p { margin:10px 0 18px; line-height:1.6; }
   .secret-dialog::backdrop { background:#17211e66; }
   .secret-dialog input { width:100%; font-family:ui-monospace,monospace; margin:8px 0; }
   @media(max-width:900px) { .monitor-grid { grid-template-columns:repeat(2,minmax(0,1fr)); } .topbar { flex-wrap:wrap; height:auto; min-height:40px; align-items:center; } .tabs { flex-wrap:wrap; order:3; flex-basis:100%; } .topbar .who { margin-left:auto; } }
@@ -211,7 +216,7 @@
   </style>
 </head>
 <body class="auth">
-<div id="toast"></div>
+<div id="toast" role="status" aria-live="polite"></div>
 
 <div id="login" class="auth-card hidden">
   <p class="eyebrow">UMEKO ADMIN</p>
@@ -263,18 +268,19 @@
     <p class="muted">也可为程序或其他 Agent 创建独立凭据。带凭据调用的任务和文件按服务账号隔离；停用或更换后，旧凭据立即失效。</p>
     <div id="access-endpoints" class="access-endpoints"></div>
     <p class="muted">以上入口使用用户服务的访问地址和前缀。生产部署请在 .env 设置 UMEKO_PUBLIC_URL，使 Agent Card 能返回完整外部地址。使用凭据时发送 Authorization: Bearer &lt;服务凭据&gt;；免鉴权调用可省略此项。</p>
-    <div class="row"><input id="sa-name" placeholder="服务账号名称，如 document-worker" maxlength="80"><label class="muted">有效天数</label><input id="sa-days" type="number" value="90" min="1" max="3650" style="width:90px"><button class="primary" onclick="createServiceAccount()">创建服务账号</button></div>
+    <div class="row"><input id="sa-name" placeholder="服务账号名称，如 document-worker" aria-label="服务账号名称" maxlength="80"><label for="sa-days" class="muted">有效天数</label><input id="sa-days" type="number" value="90" min="1" max="3650" style="width:90px"><button id="sa-create" class="primary" onclick="createServiceAccount()">创建服务账号</button></div>
     <div class="row" id="sa-scopes">
       <label class="checkline"><input type="checkbox" value="tasks:create" checked>提交任务</label>
       <label class="checkline"><input type="checkbox" value="tasks:read" checked>查看任务</label>
       <label class="checkline"><input type="checkbox" value="tasks:cancel" checked>取消任务</label>
       <label class="checkline"><input type="checkbox" value="artifacts:read" checked>读取产物</label>
     </div>
+    <p id="sa-feedback" class="muted hidden" role="status" aria-live="polite" style="margin-top:12px"></p>
     <div class="table-scroll"><table><thead><tr><th>名称</th><th>权限</th><th>状态</th><th>到期时间</th><th>最近调用</th><th>操作</th></tr></thead><tbody id="service-accounts"></tbody></table></div>
   </div>
 
-  <dialog id="service-secret" class="secret-dialog" onclose="clearServiceSecret()">
-    <strong>保存服务凭据</strong><p class="muted">凭据仅在创建或更换时显示一次。复制到调用方的安全配置中，关闭后无法再次查看。</p>
+  <dialog id="service-secret" class="secret-dialog" aria-labelledby="service-secret-title" onclose="clearServiceSecret()">
+    <strong id="service-secret-title">服务账号已创建</strong><p class="muted">请保存以下凭据。凭据仅在创建或更换时显示一次，关闭后无法再次查看。</p>
     <label class="muted">服务账号 ID（OAuth client_id）</label><input id="service-client-id" readonly>
     <label class="muted">服务凭据（Bearer Token / OAuth client_secret）</label><input id="service-token" readonly>
     <div class="row"><button class="primary" onclick="copyServiceToken()">复制凭据</button><button onclick="clearServiceSecret();document.getElementById('service-secret').close()">已保存，关闭</button></div>
@@ -426,18 +432,42 @@ let currentUser = null;
 let activeTab = 'users';
 let monitorTimer = null;
 let monitorLoading = false;
+let toastTimer = null;
 
 function toast(msg, bad) {
+  clearTimeout(toastTimer);
   const t = $("toast"); t.textContent = msg;
   t.style.borderColor = bad ? "#b95448" : "var(--line)"; t.style.display = "block";
-  setTimeout(() => t.style.display = "none", 3000);
+  toastTimer = setTimeout(() => t.style.display = "none", 3000);
 }
+function clearToast() {clearTimeout(toastTimer);$('toast').style.display='none';}
 async function api(method, url, body) {
   const res = await fetch(url, { method, headers: {"Content-Type": "application/json"},
     body: body ? JSON.stringify(body) : undefined });
   if (res.status === 401) { showLogin(); throw Error("未登录"); }
-  if (!res.ok) { const d = await res.json().catch(() => ({})); throw Error(d.detail || res.status); }
+  if (!res.ok) { const d = await res.json().catch(() => ({})); throw Error(apiErrorMessage(d.detail, res.status)); }
   return res.status === 204 ? null : res.json();
+}
+function apiErrorMessage(detail, status) {
+  if (typeof detail === 'string' && detail.trim()) return detail;
+  if (Array.isArray(detail) && detail.length) return detail.map(item=>apiErrorMessage(item,status)).join('；');
+  if (detail && typeof detail === 'object') {
+    const names={name:'服务账号名称',expires_days:'有效天数',scopes:'权限',username:'用户名',password:'密码',auth_mode:'接入方式'};
+    const path=Array.isArray(detail.loc)?detail.loc.filter(part=>!['body','query','path','header'].includes(part)):[];
+    const field=names[path[0]]||path.join('.')||'输入';
+    const ctx=detail.ctx||{};
+    switch(detail.type) {
+      case 'missing': return `${field}不能为空`;
+      case 'string_too_short': return `${field}至少需要 ${ctx.min_length} 个字符`;
+      case 'string_too_long': return `${field}不能超过 ${ctx.max_length} 个字符`;
+      case 'greater_than_equal': return `${field}不能小于 ${ctx.ge}`;
+      case 'less_than_equal': return `${field}不能大于 ${ctx.le}`;
+      case 'int_parsing': case 'int_type': case 'int_from_float': return `${field}必须是整数`;
+    }
+    const message=detail.msg||detail.message;
+    if (typeof message === 'string' && message.trim()) return path.length?`${field}：${message}`:message;
+  }
+  return `请求失败（HTTP ${status}），请重试`;
 }
 function showLogin() {
   clearTimeout(monitorTimer);
@@ -1000,14 +1030,32 @@ async function saveServiceAccess() {
   try {const result=await api('PUT','/admin/v1/service-access',{auth_mode:$('service-auth-mode').value});showServiceAuthNote(result.auth_mode);toast('接入方式已保存，立即生效');}
   catch(e){toast(e.message,true);loadServiceAccounts();}
 }
-function showServiceSecret(account) { $('service-client-id').value=account.id;$('service-token').value=account.token;$('service-secret').showModal(); }
+function showServiceSecret(account, title='服务账号已创建') { clearToast();$('service-secret-title').textContent=title;$('service-client-id').value=account.id;$('service-token').value=account.token;$('service-secret').showModal(); }
 function clearServiceSecret() { $('service-client-id').value='';$('service-token').value=''; }
 async function copyServiceToken() {try{await navigator.clipboard.writeText($('service-token').value);toast('已复制');}catch(_){$('service-token').select();toast('请复制选中的凭据');}}
 async function createServiceAccount() {
+  const button=$('sa-create');
+  if(button.disabled) return;
+  const name=$('sa-name').value.trim(), days=Number($('sa-days').value);
   const scopes=[...document.querySelectorAll('#sa-scopes input:checked')].map(i=>i.value);
-  try{const result=await api('POST','/admin/v1/service-accounts',{name:$('sa-name').value,scopes,expires_days:Number($('sa-days').value)});$('sa-name').value='';showServiceSecret(result);loadServiceAccounts();}catch(e){toast(e.message,true);}
+  const invalid=(message,input)=>{serviceAccountFeedback(message,true);toast(message,true);input.focus();};
+  if(!name) return invalid('请输入服务账号名称',$('sa-name'));
+  if(name.length>80) return invalid('服务账号名称不能超过 80 个字符',$('sa-name'));
+  if(!Number.isInteger(days)||days<1||days>3650) return invalid('有效天数请输入 1–3650 之间的整数',$('sa-days'));
+  if(!scopes.length) return invalid('请至少选择一项权限',document.querySelector('#sa-scopes input'));
+  clearToast();
+  button.disabled=true;button.textContent='正在创建…';button.setAttribute('aria-busy','true');
+  serviceAccountFeedback('正在创建服务账号…');
+  try {
+    const result=await api('POST','/admin/v1/service-accounts',{name,scopes,expires_days:days});
+    $('sa-name').value='';
+    serviceAccountFeedback(`服务账号“${name}”已创建，请保存凭据。`);
+    showServiceSecret(result);loadServiceAccounts();
+  } catch(e) {serviceAccountFeedback(e.message,true);toast(e.message,true);}
+  finally {button.disabled=false;button.textContent='创建服务账号';button.removeAttribute('aria-busy');}
 }
-async function rotateServiceAccount(id) { if(!confirm('更换后，当前凭据和由它签发的访问令牌将立即失效。继续？')) return; try{showServiceSecret(await api('PATCH',`/admin/v1/service-accounts/${id}`,{rotate:true,expires_days:Number($('sa-days').value)}));loadServiceAccounts();}catch(e){toast(e.message,true);} }
+function serviceAccountFeedback(message, bad=false) {const el=$('sa-feedback');el.textContent=message;el.style.color=bad?'#9d382e':'var(--muted)';el.classList.toggle('hidden',!message);}
+async function rotateServiceAccount(id) { if(!confirm('更换后，当前凭据和由它签发的访问令牌将立即失效。继续？')) return; try{showServiceSecret(await api('PATCH',`/admin/v1/service-accounts/${id}`,{rotate:true,expires_days:Number($('sa-days').value)}),'服务凭据已更换');loadServiceAccounts();}catch(e){toast(e.message,true);} }
 async function toggleServiceAccount(id,enabled) {try{await api('PATCH',`/admin/v1/service-accounts/${id}`,{enabled});loadServiceAccounts();}catch(e){toast(e.message,true);} }
 async function loadUsers() {
   const users = await api("GET", "/admin/v1/users");
