@@ -32,7 +32,9 @@ def test_task_roundtrip_artifact_isolation_and_memory_release(machine_client):
     assert client.get("/v1/tasks/" + task_id, headers=bearer(b)).status_code == 404
     assert client.post("/v1/tasks/" + task_id + "/cancel", headers=bearer(b)).status_code == 404
     assert client.get("/v1/tasks", headers=bearer(b)).json()["tasks"] == []
-    assert client.get("/v1/tasks/" + task_id + "/events", headers=bearer(a)).headers["x-accel-buffering"] == "no"
+    stream = client.get("/v1/tasks/" + task_id + "/events", headers=bearer(a))
+    assert stream.headers["x-accel-buffering"] == "no"
+    assert "event: task.completed" in stream.text
     deadline = time.monotonic() + 5
     while app.state.task_service._active and time.monotonic() < deadline:
         time.sleep(.03)

@@ -90,10 +90,13 @@ def add_task_routes(app, settings, tasks, identities):
             nonlocal cursor
             while not await request.is_disconnected():
                 try:
+                    # Read status before events so a concurrent completion cannot
+                    # make us close the stream before delivering its final event.
+                    record = tasks.get(request.state.principal, task_id)
                     for event in tasks.events(request.state.principal, task_id, cursor):
                         cursor = event["id"]
                         yield f"id: {cursor}\nevent: {event['type']}\ndata: {json.dumps(event, ensure_ascii=False)}\n\n"
-                    if tasks.get(request.state.principal, task_id)["status"] in TERMINAL:
+                    if record["status"] in TERMINAL:
                         break
                 except (KeyError, PermissionError):
                     break
