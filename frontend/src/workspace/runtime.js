@@ -2718,7 +2718,8 @@ export function mountWorkspaceRuntime() {
   function setRunControls(running, stopping = false) {
     ui.send.classList.toggle('hidden', running);
     ui.stop.classList.toggle('hidden', !running);
-    ui.stop.disabled = stopping;
+    // The server must return a Run ID before a cancellation request can target it.
+    ui.stop.disabled = stopping || (running && !activeRunId);
     ui.stop.textContent = stopping ? t('composer.stopping') : t('composer.stop');
     ui.prompt.disabled = running;
     ui.compactContext.disabled = running;

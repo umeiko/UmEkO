@@ -321,12 +321,32 @@ try {
       await work.locator('#status-dot.ready').waitFor();
       assert.ok((await work.locator('#messages').innerText()).includes('STREAM_UI_OK'));
       assert.equal(await work.locator('.tool-history-list .agent-action').count(), 20);
-      await work.locator('#prompt').fill('STOP_TEST');
-      await work.locator('#send').click();
-      await work.locator('#stop:not(.hidden)').waitFor();
-      await work.locator('#stop').click();
-      await work.locator('#stop').waitFor({ state: 'hidden' });
+      // Hold the creation response to reproduce a fast click before the Run ID arrives.
+      let releaseCreation;
+      const creationGate = new Promise((resolve) => {
+        releaseCreation = resolve;
+      });
+      const runsUrl = publicBase + '/v1/sessions/*/runs';
+      await work.route(runsUrl, async (route) => {
+        const response = await route.fetch();
+        await creationGate;
+        await route.fulfill({ response });
+      });
+      try {
+        await work.locator('#prompt').fill('STOP_TEST');
+        await work.locator('#send').click();
+        await work.locator('#stop:not(.hidden)').waitFor();
+        assert.ok(await work.locator('#stop').isDisabled());
+        releaseCreation();
+        // Playwright waits for the button to become enabled after task creation.
+        await work.locator('#stop').click();
+        await work.locator('#stop').waitFor({ state: 'hidden' });
+      } finally {
+        releaseCreation();
+        await work.unroute(runsUrl);
+      }
       assert.match(await work.locator('#messages').innerText(), /任务已停止/);
+      assert.ok(requests.some((p) => p.startsWith(prefix + '/v1/runs/') && p.endsWith('/cancel')));
       await work.setViewportSize({ width: 390, height: 844 });
       assert.ok(await work.evaluate(() => document.documentElement.scrollWidth <= innerWidth + 1));
       assert.ok(await work.locator('#prompt').isVisible());

@@ -47,11 +47,15 @@ jobs:
           npm run build
           git diff --exit-code -- ../umeko/server/static/ui
 
-      - name: Browser workflow checks
+      - name: Install browser dependencies
+        timeout-minutes: 10
         working-directory: frontend
-        run: |
-          npx playwright install --with-deps chromium
-          npm run test:smoke
+        run: npx playwright install --with-deps chromium
+
+      - name: Browser workflow checks
+        timeout-minutes: 5
+        working-directory: frontend
+        run: npm run test:smoke
 
   build-windows-exe:
     needs: test
