@@ -28,6 +28,9 @@ class ModelConfig:
     proxy: str | None = None
     # 在默认信任库之外追加的公司 CA（PEM）；不关闭证书校验。
     ca_file: str | None = None
+    # 注册表模型 ID：同一模型的所有客户端共用并发额度；0 表示不限制。
+    model_id: str | None = None
+    max_concurrent_requests: int = 0
 
 
 @dataclass(frozen=True)

@@ -15,7 +15,9 @@ LEGACY_MODEL_KEYS = frozenset({
 
 def model_from_row(row: dict, defaults: ModelConfig) -> ModelConfig:
     return ModelConfig(row["model"], row["api_key"], row["base_url"],
-                       proxy=row["proxy"] or None, ca_file=defaults.ca_file)
+                       proxy=row["proxy"] or None, ca_file=defaults.ca_file,
+                       model_id=row.get("model_id"),
+                       max_concurrent_requests=row.get("max_concurrent_requests", 0))
 
 
 def deployment_defaults(settings: Settings) -> Settings:
@@ -78,7 +80,8 @@ def migrate_legacy_models(store: Store, values: dict) -> int:
             model = db.execute("SELECT id FROM provider_models WHERE provider_id=? AND name=?", (pid, name)).fetchone()
             mid = model["id"] if model else f"mdl_{uuid.uuid4().hex}"
             if not model:
-                db.execute("INSERT INTO provider_models VALUES (?,?,?,?,?)", (mid, pid, name, int(vision), _now()))
+                db.execute("INSERT INTO provider_models (id,provider_id,name,vision,created_at) VALUES (?,?,?,?,?)",
+                           (mid, pid, name, int(vision), _now()))
             if role == "TEXT":
                 db.execute("INSERT OR IGNORE INTO app_config VALUES ('ACTIVE_MODEL_ID', ?, ?)", (mid, _now()))
         db.executemany("DELETE FROM app_config WHERE key=?", [(k,) for k in LEGACY_MODEL_KEYS])

@@ -307,7 +307,9 @@ class UmekoAgent:
             summary = self._llm.chat([
                 {"role": "system", "content": COMPACT_SYSTEM},
                 {"role": "user", "content": transcript},
-            ]).strip()
+            ], should_cancel=self._should_cancel).strip()
+        except OperationCancelled:
+            raise
         except Exception as exc:
             logger.warning("上下文压缩请求被供应商拒绝：%s", exc)
             return {

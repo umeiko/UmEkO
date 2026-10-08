@@ -23,6 +23,7 @@ from ..cancellation import (
 )
 from ..config import ModelConfig
 from ..images import image_data_url
+from .concurrency import ModelCallQueue, model_call_queue
 
 logger = logging.getLogger(__name__)
 
@@ -251,6 +252,11 @@ def _usage_dict(usage) -> dict | None:
 class LLMClient:
     def __init__(self, model: ModelConfig):
         self._model = model
+        model_id = getattr(model, "model_id", None)
+        limit = getattr(model, "max_concurrent_requests", 0)
+        self._call_queue = (
+            model_call_queue(model_id, limit) if model_id else ModelCallQueue(limit)
+        )
         self._client: OpenAI | None = None
         self._client_lock = threading.Lock()
         self._last_usage: dict | None = None
@@ -306,28 +312,41 @@ class LLMClient:
     def model_name(self) -> str:
         return self._model.name
 
+    def _request_slot(self, should_cancel: CancelCheck):
+        return self._call_queue.slot(
+            should_cancel,
+            on_wait=lambda: logger.info("[llm] 模型 %s 并发已满，调用排队等待", self.model_name),
+        )
+
     def _completion(self, should_cancel: CancelCheck = None, **kwargs):
         """统一请求入口：强制非流式。
 
         个别网关在服务端默认流式、且无视 stream=false 时，SDK 会返回一个
         chunk 迭代器而非 ChatCompletion；此处兜底收流拼接，调用方无感。
         """
-        _log_request(stream=False, **kwargs)
-        t0 = time.monotonic()
-        client = self._get_client()
-        try:
-            with watch_cancellation(
-                should_cancel, lambda: self._abort_client(client)
-            ):
-                resp = client.chat.completions.create(stream=False, **kwargs)
-        except Exception as exc:
-            if should_cancel is not None and should_cancel():
-                raise OperationCancelled("用户已停止模型请求") from exc
-            raise
-        raise_if_cancelled(should_cancel)
-        if not hasattr(resp, "choices"):  # 实际返回了流式迭代器
-            logger.warning("服务端无视 stream=false 返回了流式响应，已自动收流拼接")
-            resp = _collect_stream(resp, should_cancel=should_cancel)
+        with self._request_slot(should_cancel):
+            _log_request(stream=False, **kwargs)
+            t0 = time.monotonic()
+            client = self._get_client()
+            try:
+                with watch_cancellation(
+                    should_cancel, lambda: self._abort_client(client)
+                ):
+                    resp = client.chat.completions.create(stream=False, **kwargs)
+                    raise_if_cancelled(should_cancel)
+                    if not hasattr(resp, "choices"):  # 实际返回了流式迭代器
+                        logger.warning("服务端无视 stream=false 返回了流式响应，已自动收流拼接")
+                        stream = resp
+                        try:
+                            resp = _collect_stream(stream, should_cancel=should_cancel)
+                        finally:
+                            close = getattr(stream, "close", None)
+                            if close is not None:
+                                close()
+            except Exception as exc:
+                if should_cancel is not None and should_cancel():
+                    raise OperationCancelled("用户已停止模型请求") from exc
+                raise
         resp = _normalize_dsml(resp)
         _log_response(resp, t0)
         self._record_usage(resp)
@@ -356,31 +375,31 @@ class LLMClient:
             emitted = True
             on_delta(text)
 
-        _log_request(stream=True, **kwargs)
-        t0 = time.monotonic()
-        client = self._get_client()
         try:
-            with watch_cancellation(
-                should_cancel, lambda: self._abort_client(client)
-            ):
-                # include_usage：主流兼容网关（deepseek/火山/智谱等）都支持，
-                # 个别不认该参数的网关会走下方既有的"退非流式"容错路径
-                stream = client.chat.completions.create(
-                    stream=True, stream_options={"include_usage": True}, **kwargs
-                )
-                try:
-                    resp = _collect_stream(
-                        stream,
-                        on_delta=_track if on_delta else None,
-                        on_tick=on_tick,
-                        on_reasoning=on_reasoning,
-                        t0=t0,
-                        should_cancel=should_cancel,
+            with self._request_slot(should_cancel):
+                _log_request(stream=True, **kwargs)
+                t0 = time.monotonic()
+                client = self._get_client()
+                with watch_cancellation(
+                    should_cancel, lambda: self._abort_client(client)
+                ):
+                    # include_usage：不支持时走下方非流式容错路径。
+                    stream = client.chat.completions.create(
+                        stream=True, stream_options={"include_usage": True}, **kwargs
                     )
-                finally:
-                    close = getattr(stream, "close", None)
-                    if close is not None:
-                        close()
+                    try:
+                        resp = _collect_stream(
+                            stream,
+                            on_delta=_track if on_delta else None,
+                            on_tick=on_tick,
+                            on_reasoning=on_reasoning,
+                            t0=t0,
+                            should_cancel=should_cancel,
+                        )
+                    finally:
+                        close = getattr(stream, "close", None)
+                        if close is not None:
+                            close()
             _log_response(resp, t0)
             self._record_usage(resp)
             return resp
@@ -390,6 +409,7 @@ class LLMClient:
             if should_cancel is not None and should_cancel():
                 raise OperationCancelled("用户已停止模型请求") from e
             logger.warning("流式请求失败，退回非流式：%s", e)
+            # 流式名额已释放；回退调用重新入队，避免上限为 1 时自锁。
             resp = self._completion(should_cancel=should_cancel, **kwargs)
             msg = resp.choices[0].message
             if on_delta and not emitted:

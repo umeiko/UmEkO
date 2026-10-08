@@ -341,7 +341,8 @@
             <button class="primary" onclick="doPrvImport()">导入</button>
           </div>
         </div>
-        <table><thead><tr><th>模型</th><th>视觉能力</th><th></th><th>操作</th></tr></thead>
+        <p class="muted">模型调用并发上限：0 = 不限制。同一模型的所有用户、主 / 子 Agent 与视觉调用共用额度，超出后按顺序等待；保存立即生效。</p>
+        <table><thead><tr><th>模型</th><th>视觉能力</th><th>并发上限</th><th></th><th>操作</th></tr></thead>
         <tbody id="model-body"></tbody></table>
         <div class="row">
           <input id="nm-name" placeholder="新模型名，如 deepseek-v4-flash-0731" style="flex:1;min-width:260px">
@@ -949,15 +950,15 @@ const EXAMPLE = {
       api_key: "sk-你的key",
       proxy: null,
       models: [
-        {name: "deepseek-v4-flash-0731", vision: false},
-        {name: "qwen3.7-flash", vision: true}
+        {name: "deepseek-v4-flash-0731", vision: false, max_concurrent_requests: 0},
+        {name: "qwen3.7-flash", vision: true, max_concurrent_requests: 0}
       ]
     },
     {
       name: "openai",
       base_url: "https://api.openai.com/v1",
       api_key: "sk-另一个key",
-      models: [{name: "gpt-4o", vision: true}]
+      models: [{name: "gpt-4o", vision: true, max_concurrent_requests: 0}]
     }
   ],
   active: "dmxapi/deepseek-v4-flash-0731"
@@ -998,11 +999,16 @@ function renderPrvDetail() {
     <td style="font-family:ui-monospace,monospace">${m.name}</td>
     <td><label class="checkline"><input type="checkbox" ${m.vision ? "checked" : ""}
       onchange="toggleVision('${m.id}', this.checked)">视觉</label></td>
+    <td><div class="row" style="flex-wrap:nowrap">
+      <input id="ml-${m.id}" type="number" min="0" step="1" value="${m.max_concurrent_requests ?? 0}"
+        aria-label="${m.name} 并发上限" style="width:80px">
+      <button onclick="saveModelLimit('${m.id}')">保存</button>
+    </div></td>
     <td>${m.active ? '<span class="tag current">当前</span>' : ""}</td>
     <td><div class="row">
       ${m.active ? "" : `<button onclick="activateModel('${m.id}')">设为当前</button>`}
       <button class="danger" onclick="delModel('${m.id}','${m.name}')">删除</button>
-    </div></td></tr>`).join("") || `<tr><td colspan="4" class="muted">还没有模型，下方添加</td></tr>`;
+    </div></td></tr>`).join("") || `<tr><td colspan="5" class="muted">还没有模型，下方添加</td></tr>`;
 }
 async function newProvider() {
   const name = prompt("Provider 名称（如 dmxapi）"); if (!name) return;
@@ -1052,6 +1058,18 @@ async function toggleVision(id, vision) {
   try { await api("PUT", `/admin/v1/models/${id}`, {vision}); }
   catch (e) { toast(e.message, true); loadProviders(true); }
 }
+async function saveModelLimit(id) {
+  const raw = $("ml-" + id).value.trim();
+  const limit = Number(raw);
+  if (!raw || !Number.isSafeInteger(limit) || limit < 0) {
+    return toast("请输入非负整数，0 表示不限制", true);
+  }
+  try {
+    await api("PUT", `/admin/v1/models/${id}`, {max_concurrent_requests: limit});
+    toast(limit ? `并发上限已设为 ${limit}，超出调用自动排队` : "已取消并发限制");
+    await loadProviders(true);
+  } catch (e) { toast(e.message, true); }
+}
 async function activateModel(id) {
   if (!confirm("设为当前模型将驱逐全部在线 Session，确认应用？")) return;
   try {
@@ -1071,8 +1089,8 @@ function toggleImport() {
 }
 // 单个 Provider 内的 JSON 导入：模型数组或含 models/配置 的对象
 const PRV_EXAMPLE = [
-  {name: "deepseek-v4-pro", vision: false},
-  {name: "qwen3-vl-plus", vision: true}
+  {name: "deepseek-v4-pro", vision: false, max_concurrent_requests: 0},
+  {name: "qwen3-vl-plus", vision: true, max_concurrent_requests: 0}
 ];
 function togglePrvImport() {
   const nowHidden = $("prv-import-panel").classList.toggle("hidden");
@@ -1094,8 +1112,8 @@ async function doPrvImport() {
   if (Array.isArray(doc)) doc = {models: doc};
   try {
     const r = await api("POST", "/admin/v1/providers/import",
-      {providers: [{name: p.name, ...doc}]});
-    toast(`导入完成：新增 ${r.added_models} 个模型，已合并进 ${p.name}`);
+      {document: {providers: [{name: p.name, ...doc}]}});
+    toast(`导入完成：新增 ${r.models_created} 个模型，已合并进 ${p.name}`);
     closePrvImport();
     await loadProviders(true);
   } catch (e) { toast(e.message, true); }

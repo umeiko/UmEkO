@@ -6,8 +6,8 @@
       "api_key": "replace-with-your-key",
       "proxy": null,
       "models": [
-        {"name": "your-text-model", "vision": false},
-        {"name": "your-vision-model", "vision": true}
+        {"name": "your-text-model", "vision": false, "max_concurrent_requests": 0},
+        {"name": "your-vision-model", "vision": true, "max_concurrent_requests": 0}
       ]
     }
   ],

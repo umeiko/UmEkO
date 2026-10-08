@@ -105,11 +105,13 @@ class _ProviderPatch(BaseModel):
 class _ModelIn(BaseModel):
     name: str
     vision: bool = False
+    max_concurrent_requests: int = Field(default=0, ge=0, strict=True)
 
 
 class _ModelPatch(BaseModel):
     name: str | None = None
     vision: bool | None = None
+    max_concurrent_requests: int | None = Field(default=None, ge=0, strict=True)
 
 
 class _ActiveModelIn(BaseModel):
@@ -281,7 +283,7 @@ def create_admin_app(settings: Settings, service: AgentService, store: Store) ->
     @app.post("/admin/v1/providers/{provider_id}/models", status_code=201)
     def add_model(provider_id: str, payload: _ModelIn) -> dict:
         try:
-            return store.add_model(provider_id, payload.name, payload.vision)
+            return store.add_model(provider_id, payload.name, payload.vision, payload.max_concurrent_requests)
         except ValueError as exc:
             raise HTTPException(400, str(exc)) from exc
 
@@ -291,6 +293,8 @@ def create_admin_app(settings: Settings, service: AgentService, store: Store) ->
             store.update_model(model_id, **payload.model_dump(exclude_none=True))
         except KeyError as exc:
             raise HTTPException(404, "模型不存在") from exc
+        except ValueError as exc:
+            raise HTTPException(400, str(exc)) from exc
 
     @app.delete("/admin/v1/models/{model_id}", status_code=204)
     def delete_model(model_id: str) -> None:

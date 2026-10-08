@@ -4,9 +4,14 @@ import hashlib
 import hmac
 import secrets
 import sqlite3
+import threading
 import uuid
 from datetime import datetime, timedelta, timezone
 from pathlib import Path
+
+from ..llm.concurrency import set_model_limit, validate_limit
+
+_model_updates_lock = threading.Lock()
 
 
 def _now() -> str:
@@ -73,6 +78,7 @@ class Store:
               provider_id TEXT NOT NULL REFERENCES providers(id) ON DELETE CASCADE,
               name TEXT NOT NULL, vision INTEGER NOT NULL DEFAULT 0,
               created_at TEXT NOT NULL,
+              max_concurrent_requests INTEGER NOT NULL DEFAULT 0 CHECK(max_concurrent_requests >= 0),
               UNIQUE(provider_id, name)
             );
             CREATE TABLE IF NOT EXISTS user_model_prefs (
@@ -105,6 +111,10 @@ class Store:
             );
             """)
             # 旧库迁移：users 补 role 列（管理员入口，role='admin'）
+            model_cols = {row["name"] for row in db.execute("PRAGMA table_info(provider_models)")}
+            if "max_concurrent_requests" not in model_cols:
+                db.execute("ALTER TABLE provider_models ADD COLUMN max_concurrent_requests "
+                           "INTEGER NOT NULL DEFAULT 0 CHECK(max_concurrent_requests >= 0)")
             cols = {row["name"] for row in db.execute("PRAGMA table_info(users)")}
             if "role" not in cols:
                 db.execute(
@@ -266,7 +276,8 @@ class Store:
         by_pid: dict[str, list[dict]] = {}
         for m in models:
             by_pid.setdefault(m["provider_id"], []).append(
-                {"id": m["id"], "name": m["name"], "vision": bool(m["vision"])}
+                {"id": m["id"], "name": m["name"], "vision": bool(m["vision"]),
+                 "max_concurrent_requests": m["max_concurrent_requests"]}
             )
         return [
             {
@@ -356,20 +367,26 @@ class Store:
                 (mid,),
             )
 
-    def add_model(self, provider_id: str, name: str, vision: bool = False) -> dict:
+    def add_model(
+        self, provider_id: str, name: str, vision: bool = False,
+        max_concurrent_requests: int = 0,
+    ) -> dict:
         name = name.strip()
         if not name:
             raise ValueError("模型名不能为空")
+        limit = validate_limit(max_concurrent_requests)
         mid = f"mdl_{uuid.uuid4().hex}"
         try:
             with self.connect() as db:
                 db.execute(
-                    "INSERT INTO provider_models VALUES (?,?,?,?,?)",
-                    (mid, provider_id, name, 1 if vision else 0, _now()),
+                    "INSERT INTO provider_models (id,provider_id,name,vision,created_at,max_concurrent_requests) "
+                    "VALUES (?,?,?,?,?,?)",
+                    (mid, provider_id, name, 1 if vision else 0, _now(), limit),
                 )
         except sqlite3.IntegrityError as exc:
             raise ValueError("该 Provider 下模型已存在") from exc
-        return {"id": mid, "name": name, "vision": bool(vision)}
+        set_model_limit(mid, limit)
+        return {"id": mid, "name": name, "vision": bool(vision), "max_concurrent_requests": limit}
 
     def update_model(self, model_id: str, **fields) -> None:
         updates: dict = {}
@@ -377,16 +394,22 @@ class Store:
             updates["name"] = str(fields["name"]).strip()
         if "vision" in fields:
             updates["vision"] = 1 if fields["vision"] else 0
+        if "max_concurrent_requests" in fields:
+            updates["max_concurrent_requests"] = validate_limit(fields["max_concurrent_requests"])
         if not updates:
             return
         clause = ",".join(f"{k}=?" for k in updates)
-        with self.connect() as db:
-            result = db.execute(
-                f"UPDATE provider_models SET {clause} WHERE id=?",
-                (*updates.values(), model_id),
-            )
-        if not result.rowcount:
-            raise KeyError(model_id)
+        # Keep committed settings and the live queue ordered across admin writes.
+        with _model_updates_lock:
+            with self.connect() as db:
+                result = db.execute(
+                    f"UPDATE provider_models SET {clause} WHERE id=?",
+                    (*updates.values(), model_id),
+                )
+            if not result.rowcount:
+                raise KeyError(model_id)
+            if "max_concurrent_requests" in updates:
+                set_model_limit(model_id, updates["max_concurrent_requests"])
 
     def delete_model(self, model_id: str) -> None:
         with self.connect() as db:
@@ -416,7 +439,7 @@ class Store:
     def active_model(self) -> dict | None:
         with self.connect() as db:
             row = db.execute("""
-              SELECT m.id AS model_id, m.name AS model, m.vision,
+              SELECT m.id AS model_id, m.name AS model, m.vision, m.max_concurrent_requests,
                      p.id AS provider_id, p.name AS provider,
                      p.base_url, p.api_key, p.proxy
               FROM app_config c
@@ -430,7 +453,7 @@ class Store:
         """按 id 取模型（含 Provider 凭据），形状与 active_model 一致。"""
         with self.connect() as db:
             row = db.execute("""
-              SELECT m.id AS model_id, m.name AS model, m.vision,
+              SELECT m.id AS model_id, m.name AS model, m.vision, m.max_concurrent_requests,
                      p.id AS provider_id, p.name AS provider,
                      p.base_url, p.api_key, p.proxy
               FROM provider_models m
@@ -502,7 +525,7 @@ class Store:
         """主模型无视觉时的 OCR/看图兜底：优先同 Provider 的视觉模型。"""
         with self.connect() as db:
             rows = db.execute("""
-              SELECT m.name AS model, p.id AS provider_id,
+              SELECT m.id AS model_id, m.name AS model, m.max_concurrent_requests, p.id AS provider_id,
                      p.base_url, p.api_key, p.proxy
               FROM provider_models m JOIN providers p ON p.id = m.provider_id
               WHERE m.vision=1 ORDER BY m.created_at
@@ -569,11 +592,12 @@ class Store:
                 mname = str(m.get("name", "")).strip()
                 if not mname:
                     continue
+                limit = validate_limit(m.get("max_concurrent_requests", 0))
                 try:
-                    self.add_model(pid, mname, bool(m.get("vision", False)))
+                    self.add_model(pid, mname, bool(m.get("vision", False)), limit)
                     created_m += 1
                 except ValueError:
-                    if "vision" in m:  # 已存在则更新视觉标记
+                    if "vision" in m or "max_concurrent_requests" in m:
                         row = next(
                             (x for x in self.list_providers() if x["id"] == pid), None
                         )
@@ -582,7 +606,12 @@ class Store:
                              if x["name"] == mname), None,
                         )
                         if hit:
-                            self.update_model(hit["id"], vision=bool(m["vision"]))
+                            updates = {}
+                            if "vision" in m:
+                                updates["vision"] = bool(m["vision"])
+                            if "max_concurrent_requests" in m:
+                                updates["max_concurrent_requests"] = limit
+                            self.update_model(hit["id"], **updates)
         activated = None
         active = str(doc.get("active", "")).strip()
         if active:
