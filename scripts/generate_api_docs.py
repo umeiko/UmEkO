@@ -46,6 +46,8 @@ def supplement(spec: dict, admin: bool) -> None:
                 operation["security"] = [] if (path, method) in public or path.startswith("/.well-known/") else [{cookie: []}]
                 if not admin and path.startswith("/v1/tasks"):
                     operation["security"] = [{"serviceBearer": []}, {cookie: []}]
+                    note = "管理员开启免鉴权后可省略凭据；免鉴权调用共用任务身份。默认仍需要凭据。"
+                    operation["description"] = (operation.get("description", "") + "\n\n" + note).strip()
     if admin:
         return
     raw = {
@@ -134,7 +136,7 @@ def reference(spec: dict, admin: bool) -> str:
             lines += ["", f"## {method.upper()} {path}", "", op.get("summary", ""), "",
                       "认证：" + ("服务账号凭据（表单或 HTTP Basic）。" if path == "/oauth/token" else
                                   "无须登录。" if not op["security"] else
-                                  "服务 Bearer Token 或 `umeko_auth` Cookie；按 scope 和任务归属授权。" if path.startswith("/v1/tasks") else
+                                  "服务 Bearer Token 或 `umeko_auth` Cookie；开启免鉴权后可省略凭据，共享匿名任务归属。" if path.startswith("/v1/tasks") else
                                   f"`{'umeko_admin' if admin else 'umeko_auth'}` Cookie。")]
             if op.get("description"):
                 lines += ["", op["description"]]

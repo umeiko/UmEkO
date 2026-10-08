@@ -4,7 +4,7 @@ UMEKO 提供两种生命周期：网页会话保留聊天历史；机器任务�
 
 ```mermaid
 flowchart TB
-    REST[REST /v1/tasks] --> Identity[服务凭据与 scope]
+    REST[REST /v1/tasks] --> Identity[凭据身份或共享免鉴权身份]
     MCP[MCP /mcp] --> Identity
     A2A[A2A /a2a] --> Identity
     Identity --> Admission[输入校验 / 幂等 / 容量检查]
@@ -24,6 +24,8 @@ flowchart TB
 凭据只存 SHA-256 摘要，支持有效期、停用和更换。可直接传 Bearer 服务凭据，也可通过 OAuth `client_credentials` 换取有 scope 和 resource 限制的短期令牌。凭据更换或停用会撤销其短期令牌。
 
 权限在 `IdentityStore` / `TaskService` 检查，而不只放在某个协议的中间件。任务查询、取消和下载同时检查调用者归属；知道任务 ID 并不能读取别人数据。调用 UMEKO 的凭据与 Provider 的模型 API Key 分开管理。
+
+管理员可通过 `SERVICE_AUTH_MODE` 数据库设置切换 `required` / `anonymous`，默认 `required`，在服务接入页保存后立即生效。免鉴权请求使用单个持久化 `kind=anonymous` 身份，共享任务、产物与每账号容量，不按 IP 分配身份。带凭据仍按账号授权，无效凭据不降级。IP 仅记录在任务表及提交日志，普通网页登录和管理鉴权不受影响。
 
 ## 对象与持久化
 

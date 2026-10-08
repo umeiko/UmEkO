@@ -1526,6 +1526,28 @@
 }
 ```
 
+### _ServiceAccessIn
+
+```json
+{
+  "properties": {
+    "auth_mode": {
+      "enum": [
+        "required",
+        "anonymous"
+      ],
+      "title": "Auth Mode",
+      "type": "string"
+    }
+  },
+  "required": [
+    "auth_mode"
+  ],
+  "title": "_ServiceAccessIn",
+  "type": "object"
+}
+```
+
 ### _ServiceAccountIn
 
 ```json

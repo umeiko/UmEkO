@@ -50,6 +50,27 @@ class IdentityStore:
         with self.store.connect() as db:
             return [self._view(r) for r in db.execute("SELECT * FROM service_accounts ORDER BY created_at")]
 
+    def auth_mode(self) -> str:
+        return "anonymous" if self.store.config().get("SERVICE_AUTH_MODE") == "anonymous" else "required"
+
+    def set_auth_mode(self, mode: str) -> None:
+        if mode not in {"required", "anonymous"}:
+            raise ValueError("接入方式须为 required 或 anonymous")
+        self.store.set_config({"SERVICE_AUTH_MODE": mode})
+
+    def anonymous_principal(self) -> dict:
+        # A single persistent identity for open access; IP is never an ownership key.
+        with self.store.connect() as db:
+            db.execute("BEGIN IMMEDIATE")
+            row = db.execute("SELECT id FROM users WHERE kind='anonymous' LIMIT 1").fetchone()
+            if row:
+                user_id = row["id"]
+            else:
+                user_id = "usr_" + uuid.uuid4().hex
+                db.execute("INSERT INTO users(id,username,password_hash,created_at,role,kind) VALUES(?,?,?,?,?,?)",
+                           (user_id, "anonymous-" + user_id, "!machine-only", now(), "user", "anonymous"))
+        return {"id": "anonymous", "user_id": user_id, "name": "免鉴权调用", "scopes": sorted(SCOPES)}
+
     def create(self, name: str, scopes: list[str], expires_days: int = 90) -> dict:
         name = name.strip()
         if not 1 <= len(name) <= 80 or not scopes or not set(scopes) <= SCOPES:

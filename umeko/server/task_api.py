@@ -4,6 +4,7 @@ from __future__ import annotations
 import asyncio
 import base64
 import json
+from ipaddress import ip_address
 from urllib.parse import unquote
 
 from fastapi import HTTPException, Query, Request
@@ -31,6 +32,14 @@ def public_base(settings, request: Request) -> str:
     return settings.public_url or str(request.base_url).rstrip("/")
 
 
+def caller_ip(request: Request) -> str | None:
+    # The ASGI server resolves trusted proxies. Never trust arbitrary forwarded headers here.
+    try:
+        return str(ip_address(request.client.host)) if request.client else None
+    except ValueError:
+        return None
+
+
 def task_view(task: dict, base: str) -> dict:
     return {**task, "artifacts": [{**a, "download_url": base + f"/v1/tasks/{task['id']}/artifacts/{a['id']}/content",
                                   "resource_uri": f"umeko://tasks/{task['id']}/artifacts/{a['id']}"}
@@ -52,7 +61,7 @@ def add_task_routes(app, settings, tasks, identities):
     def submit_task(payload: TaskCreateInput, request: Request) -> dict:
         try:
             task = tasks.submit(request.state.principal, payload.model_dump(),
-                                idempotency_key=request.headers.get("Idempotency-Key"))
+                                idempotency_key=request.headers.get("Idempotency-Key"), caller_ip=caller_ip(request))
             return task_view(task, public_base(settings, request))
         except (KeyError, ValueError, PermissionError) as exc:
             raise api_error(exc) from exc

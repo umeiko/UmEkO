@@ -27,7 +27,7 @@ from mcp.types import ToolAnnotations
 from .. import __version__
 from ..host.identities import require_scope
 from ..host.tasks import TERMINAL
-from .task_api import public_base, task_view
+from .task_api import caller_ip, public_base, task_view
 
 MAX_INLINE_ARTIFACT = 256 * 1024
 
@@ -62,7 +62,8 @@ def build_mcp(settings, tasks):
         不接受服务器路径。任务独立执行，默认保留 24 小时；幂等键防止重复提交。"""
         task = await asyncio.to_thread(_mcp_call, tasks.submit, principal(ctx),
                                       {"prompt": prompt, "files": files or [], "model_id": model_id},
-                                      source="mcp", idempotency_key=idempotency_key)
+                                      source="mcp", idempotency_key=idempotency_key,
+                                      caller_ip=caller_ip(ctx.request_context.request))
         return task_view(task, public_base(settings, ctx.request_context.request))
 
     @server.tool(structured_output=True, annotations=ToolAnnotations(readOnlyHint=True, openWorldHint=False))
@@ -84,7 +85,7 @@ def build_mcp(settings, tasks):
     @server.tool(structured_output=True, annotations=ToolAnnotations(readOnlyHint=True, openWorldHint=False))
     def read_artifact(task_id: str, artifact_id: str, ctx: Context) -> dict[str, Any]:
         """读取自己任务的产物，最多 256 KiB；文本返回 text，二进制返回 content_base64。
-        更大的产物请使用 get_task 返回的下载地址与服务凭据下载。"""
+        更大的产物请使用 get_task 返回的下载地址；需要凭据模式下附带服务凭据。"""
         path, media_type = _mcp_call(tasks.artifact, principal(ctx), task_id, artifact_id)
         if path.stat().st_size > MAX_INLINE_ARTIFACT:
             raise ToolError("产物超过 256 KiB，请使用受保护的 HTTP 下载入口")
@@ -131,6 +132,7 @@ class A2AContextBuilder(ServerCallContextBuilder):
     def build(self, request):
         return ServerCallContext(state={"principal": request.state.principal,
                                         "headers": dict(request.headers),
+                                        "caller_ip": caller_ip(request),
                                         "base": public_base(self.settings, request)})
 
 
@@ -222,7 +224,7 @@ class A2AHandler(RequestHandler):
             record = await asyncio.to_thread(self.tasks.submit, context.state["principal"],
                 {"prompt": "\n".join(prompt), "files": files, "model_id": options.get("model_id")}, source="a2a",
                 context_id=message.context_id or None, idempotency_key=options.get("idempotency_key") or "a2a:" + message.message_id,
-                message_id=message.message_id)
+                message_id=message.message_id, caller_ip=context.state.get("caller_ip"))
             return record
         except KeyError as exc:
             raise TaskNotFoundError(str(exc)) from exc
@@ -334,7 +336,7 @@ def add_a2a_routes(app, settings, tasks):
                  "defaultInputModes": ["text/plain", "application/octet-stream", "application/json"],
                  "defaultOutputModes": ["text/plain", "application/octet-stream"],
                  "securitySchemes": {"serviceBearer": {"httpAuthSecurityScheme": {"scheme": "bearer", "bearerFormat": "UMEKO service credential"}}},
-                 "securityRequirements": [{"schemes": {"serviceBearer": {"list": []}}}],
+                 "securityRequirements": [] if tasks.service.identity_store.auth_mode() == "anonymous" else [{"schemes": {"serviceBearer": {"list": []}}}],
                  "skills": [{"id": "file_task", "name": "文件任务", "description": "按要求处理文本、图像和文件，返回结果与报告",
                              "tags": ["files", "documents", "images"], "examples": ["检查附件内容并生成报告"]}]}
         return MessageToDict(ParseDict(value, a2a.AgentCard()))

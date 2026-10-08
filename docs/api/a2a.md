@@ -1,6 +1,6 @@
 # A2A API
 
-Agent Card：`BASE_URL/.well-known/agent-card.json`；协议入口：`BASE_URL/a2a`。BASE_URL 必须包含部署前缀。Card 可公开读取，协议请求需要服务 Bearer 和 `A2A-Version: 1.0`。
+Agent Card：`BASE_URL/.well-known/agent-card.json`；协议入口：`BASE_URL/a2a`。BASE_URL 必须包含部署前缀。Card 可公开读取；协议请求带 `A2A-Version: 1.0`，需要凭据模式下另外带服务 Bearer。管理员开启免鉴权后无需 Bearer，Card 不再声明必需鉴权。免鉴权调用共用任务身份，详见[机器任务](machine-tasks.md)。
 
 ## 方法与输入
 
@@ -41,10 +41,11 @@ from a2a.client import ClientConfig, ClientFactory
 
 async def main():
     base = os.environ["UMEKO_SERVICE_URL"].rstrip("/")
-    async with httpx.AsyncClient(headers={
-        "Authorization": "Bearer " + os.environ["UMEKO_SERVICE_TOKEN"],
-        "A2A-Version": "1.0",
-    }, timeout=120) as http:
+    token = os.getenv("UMEKO_SERVICE_TOKEN")
+    headers = {"A2A-Version": "1.0"}
+    if token:
+        headers["Authorization"] = "Bearer " + token
+    async with httpx.AsyncClient(headers=headers, timeout=120) as http:
         client = await ClientFactory(ClientConfig(httpx_client=http, streaming=True)).create_from_url(base)
         request = a2a.SendMessageRequest(message=a2a.Message(
             message_id="document-001", role=a2a.Role.ROLE_USER,

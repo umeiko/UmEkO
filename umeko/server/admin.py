@@ -11,6 +11,7 @@ Session 即时生效）。
 from __future__ import annotations
 
 from pathlib import Path
+from typing import Literal
 
 from fastapi import FastAPI, HTTPException, Request, Response
 from fastapi.responses import HTMLResponse, JSONResponse
@@ -135,6 +136,10 @@ class _ServiceAccountPatch(BaseModel):
     expires_days: int = Field(default=90, ge=1, le=3650)
 
 
+class _ServiceAccessIn(BaseModel):
+    auth_mode: Literal["required", "anonymous"]
+
+
 def create_admin_app(settings: Settings, service: AgentService, store: Store) -> FastAPI:
     app = FastAPI(
         title="Umeko Admin",
@@ -189,8 +194,18 @@ def create_admin_app(settings: Settings, service: AgentService, store: Store) ->
     def service_accounts() -> dict:
         base = settings.public_url or settings.base_path
         return {"accounts": service.identity_store.list(), "scopes": sorted(SCOPES),
+                "auth_mode": service.identity_store.auth_mode(),
                 "endpoints": {"mcp": base + "/mcp", "a2a": base + "/a2a",
                               "agent_card": base + "/.well-known/agent-card.json", "tasks": base + "/v1/tasks"}}
+
+    @app.get("/admin/v1/service-access", tags=["service access"])
+    def service_access() -> dict:
+        return {"auth_mode": service.identity_store.auth_mode()}
+
+    @app.put("/admin/v1/service-access", tags=["service access"])
+    def update_service_access(payload: _ServiceAccessIn) -> dict:
+        service.identity_store.set_auth_mode(payload.auth_mode)
+        return service_access()
 
     @app.post("/admin/v1/service-accounts", status_code=201, tags=["service access"])
     def create_service_account(payload: _ServiceAccountIn, response: Response) -> dict:
@@ -213,8 +228,8 @@ def create_admin_app(settings: Settings, service: AgentService, store: Store) ->
     @app.get("/admin/v1/tasks", tags=["monitoring"])
     def monitored_tasks() -> list[dict]:
         with store.connect() as db:
-            rows = db.execute("SELECT t.id,t.source,t.status,t.created_at,t.updated_at,t.expires_at,"
-                              "COALESCE(a.name,u.username) AS caller FROM service_tasks t "
+            rows = db.execute("SELECT t.id,t.source,t.status,t.created_at,t.updated_at,t.expires_at,t.caller_ip,"
+                              "CASE WHEN u.kind='anonymous' THEN '免鉴权调用' ELSE COALESCE(a.name,u.username) END AS caller FROM service_tasks t "
                               "JOIN users u ON u.id=t.user_id LEFT JOIN service_accounts a ON a.user_id=t.user_id "
                               "ORDER BY t.created_at DESC LIMIT 100").fetchall()
         return [dict(r) for r in rows]

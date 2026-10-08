@@ -3591,6 +3591,7 @@
     },
     "/v1/tasks": {
       "get": {
+        "description": "管理员开启免鉴权后可省略凭据；免鉴权调用共用任务身份。默认仍需要凭据。",
         "operationId": "list_tasks_v1_tasks_get",
         "parameters": [
           {
@@ -3655,6 +3656,7 @@
         ]
       },
       "post": {
+        "description": "管理员开启免鉴权后可省略凭据；免鉴权调用共用任务身份。默认仍需要凭据。",
         "operationId": "submit_task_v1_tasks_post",
         "requestBody": {
           "content": {
@@ -3706,6 +3708,7 @@
     },
     "/v1/tasks/{task_id}": {
       "get": {
+        "description": "管理员开启免鉴权后可省略凭据；免鉴权调用共用任务身份。默认仍需要凭据。",
         "operationId": "get_task_v1_tasks__task_id__get",
         "parameters": [
           {
@@ -3758,6 +3761,7 @@
     },
     "/v1/tasks/{task_id}/artifacts/{artifact_id}/content": {
       "get": {
+        "description": "管理员开启免鉴权后可省略凭据；免鉴权调用共用任务身份。默认仍需要凭据。",
         "operationId": "download_artifact_v1_tasks__task_id__artifacts__artifact_id__content_get",
         "parameters": [
           {
@@ -3818,6 +3822,7 @@
     },
     "/v1/tasks/{task_id}/cancel": {
       "post": {
+        "description": "管理员开启免鉴权后可省略凭据；免鉴权调用共用任务身份。默认仍需要凭据。",
         "operationId": "cancel_task_v1_tasks__task_id__cancel_post",
         "parameters": [
           {
@@ -3870,6 +3875,7 @@
     },
     "/v1/tasks/{task_id}/events": {
       "get": {
+        "description": "管理员开启免鉴权后可省略凭据；免鉴权调用共用任务身份。默认仍需要凭据。",
         "operationId": "task_events_v1_tasks__task_id__events_get",
         "parameters": [
           {

@@ -76,7 +76,9 @@
 
 Submit Task
 
-认证：服务 Bearer Token 或 `umeko_auth` Cookie；按 scope 和任务归属授权。
+认证：服务 Bearer Token 或 `umeko_auth` Cookie；开启免鉴权后可省略凭据，共享匿名任务归属。
+
+管理员开启免鉴权后可省略凭据；免鉴权调用共用任务身份。默认仍需要凭据。
 
 请求体：必填。
 
@@ -91,7 +93,9 @@ Submit Task
 
 List Tasks
 
-认证：服务 Bearer Token 或 `umeko_auth` Cookie；按 scope 和任务归属授权。
+认证：服务 Bearer Token 或 `umeko_auth` Cookie；开启免鉴权后可省略凭据，共享匿名任务归属。
+
+管理员开启免鉴权后可省略凭据；免鉴权调用共用任务身份。默认仍需要凭据。
 
 | 参数 | 位置 | 必填 | 类型与约束 |
 | --- | --- | --- | --- |
@@ -107,7 +111,9 @@ List Tasks
 
 Get Task
 
-认证：服务 Bearer Token 或 `umeko_auth` Cookie；按 scope 和任务归属授权。
+认证：服务 Bearer Token 或 `umeko_auth` Cookie；开启免鉴权后可省略凭据，共享匿名任务归属。
+
+管理员开启免鉴权后可省略凭据；免鉴权调用共用任务身份。默认仍需要凭据。
 
 | 参数 | 位置 | 必填 | 类型与约束 |
 | --- | --- | --- | --- |
@@ -122,7 +128,9 @@ Get Task
 
 Cancel Task
 
-认证：服务 Bearer Token 或 `umeko_auth` Cookie；按 scope 和任务归属授权。
+认证：服务 Bearer Token 或 `umeko_auth` Cookie；开启免鉴权后可省略凭据，共享匿名任务归属。
+
+管理员开启免鉴权后可省略凭据；免鉴权调用共用任务身份。默认仍需要凭据。
 
 | 参数 | 位置 | 必填 | 类型与约束 |
 | --- | --- | --- | --- |
@@ -137,7 +145,9 @@ Cancel Task
 
 Task Events
 
-认证：服务 Bearer Token 或 `umeko_auth` Cookie；按 scope 和任务归属授权。
+认证：服务 Bearer Token 或 `umeko_auth` Cookie；开启免鉴权后可省略凭据，共享匿名任务归属。
+
+管理员开启免鉴权后可省略凭据；免鉴权调用共用任务身份。默认仍需要凭据。
 
 | 参数 | 位置 | 必填 | 类型与约束 |
 | --- | --- | --- | --- |
@@ -153,7 +163,9 @@ Task Events
 
 Download Artifact
 
-认证：服务 Bearer Token 或 `umeko_auth` Cookie；按 scope 和任务归属授权。
+认证：服务 Bearer Token 或 `umeko_auth` Cookie；开启免鉴权后可省略凭据，共享匿名任务归属。
+
+管理员开启免鉴权后可省略凭据；免鉴权调用共用任务身份。默认仍需要凭据。
 
 | 参数 | 位置 | 必填 | 类型与约束 |
 | --- | --- | --- | --- |

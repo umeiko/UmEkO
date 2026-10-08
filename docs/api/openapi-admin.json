@@ -321,6 +321,23 @@
         "title": "_ScriptTestIn",
         "type": "object"
       },
+      "_ServiceAccessIn": {
+        "properties": {
+          "auth_mode": {
+            "enum": [
+              "required",
+              "anonymous"
+            ],
+            "title": "Auth Mode",
+            "type": "string"
+          }
+        },
+        "required": [
+          "auth_mode"
+        ],
+        "title": "_ServiceAccessIn",
+        "type": "object"
+      },
       "_ServiceAccountIn": {
         "properties": {
           "expires_days": {
@@ -1230,6 +1247,80 @@
           }
         ],
         "summary": "Set Runtime Config"
+      }
+    },
+    "/admin/v1/service-access": {
+      "get": {
+        "operationId": "service_access_admin_v1_service_access_get",
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "additionalProperties": true,
+                  "title": "Response Service Access Admin V1 Service Access Get",
+                  "type": "object"
+                }
+              }
+            },
+            "description": "Successful Response"
+          }
+        },
+        "security": [
+          {
+            "umeko_admin": []
+          }
+        ],
+        "summary": "Service Access",
+        "tags": [
+          "service access"
+        ]
+      },
+      "put": {
+        "operationId": "update_service_access_admin_v1_service_access_put",
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/_ServiceAccessIn"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "additionalProperties": true,
+                  "title": "Response Update Service Access Admin V1 Service Access Put",
+                  "type": "object"
+                }
+              }
+            },
+            "description": "Successful Response"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            },
+            "description": "Validation Error"
+          }
+        },
+        "security": [
+          {
+            "umeko_admin": []
+          }
+        ],
+        "summary": "Update Service Access",
+        "tags": [
+          "service access"
+        ]
       }
     },
     "/admin/v1/service-accounts": {

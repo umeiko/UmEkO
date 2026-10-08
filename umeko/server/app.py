@@ -164,6 +164,8 @@ def create_app(
             principal = identities.authenticate(auth[7:] if auth.lower().startswith("bearer ") else None, audience)
             if principal is None and not auth and user and path.startswith("/v1/tasks"):
                 principal = {"user_id": user["id"], "scopes": sorted(SCOPES), "id": user["id"]}
+            if principal is None and not auth and identities.auth_mode() == "anonymous":
+                principal = identities.anonymous_principal()
             if principal is None:
                 metadata = public_base(settings, request) + "/.well-known/oauth-protected-resource/mcp"
                 return JSONResponse({"detail": "需要有效的服务凭据"}, status_code=401,

@@ -23,6 +23,8 @@ flowchart LR
 
 管理员创建服务凭据，调用方发送 `Authorization: Bearer <token>`。也提供受保护资源元数据、授权服务器元数据和 OAuth 客户端凭据令牌入口。当前没有交互式 OAuth 登录、授权码 / PKCE、动态客户端注册，也没有 stdio 传输。需要交互式 OAuth 的客户端应先确认是否支持自定义 Header 或客户端凭据流程。
 
+管理员也可开启免鉴权，客户端省略 Authorization 直接调用。此模式使用共享任务身份；IP 只写入后台记录，不参与授权。有效 Bearer 调用仍采用对应服务账号的 scope 与数据归属。
+
 生产配置 `UMEKO_PUBLIC_URL`，确保外部 Host 被 MCP 的 DNS 重绑定保护接受，资源 metadata 和下载链接使用正确的域名与前缀。NGINX 保留 Authorization、允许足够请求大小、关闭协议流的缓冲；详情见 [部署指南](../deployment.md)。
 
 验证使用官方 `mcp.client.Client`，覆盖现代与 legacy 客户端、根路径与公司路径前缀、附件、结果、资源和取消；业务身份隔离、容量限制、轮换与过期清理由共享 TaskService 测试覆盖。测试使用受控 Agent 回复，不调用真实模型。

@@ -252,14 +252,17 @@
       <div class="table-scroll"><table><thead><tr><th>Provider</th><th>模型</th><th>并发上限</th><th>正在调用</th><th>等待调用</th></tr></thead><tbody id="monitor-models"></tbody></table></div>
     </div>
     <div class="monitor-section"><h3>机器任务队列</h3><p class="muted" id="monitor-queue"></p>
-      <div class="table-scroll"><table><thead><tr><th>任务</th><th>调用者</th><th>入口</th><th>状态</th><th>提交时间</th><th>操作</th></tr></thead><tbody id="monitor-tasks"></tbody></table></div>
+      <div class="table-scroll"><table><thead><tr><th>任务</th><th>调用者</th><th>来源 IP</th><th>入口</th><th>状态</th><th>提交时间</th><th>操作</th></tr></thead><tbody id="monitor-tasks"></tbody></table></div>
     </div>
   </div>
 
   <div id="page-access" class="card hidden">
-    <strong>服务接入</strong><p class="muted">为程序或其他 Agent 创建独立凭据，无需网页账号密码。每个服务账号的任务和文件分别隔离；停用或更换凭据后，旧凭据立即失效。</p>
+    <strong>服务接入</strong>
+    <div class="row"><label for="service-auth-mode">接入方式</label><select id="service-auth-mode"><option value="required">需要服务凭据</option><option value="anonymous">免鉴权（无需凭据）</option></select><button class="primary" onclick="saveServiceAccess()">保存接入方式</button></div>
+    <p class="muted" id="service-auth-note"></p>
+    <p class="muted">也可为程序或其他 Agent 创建独立凭据。带凭据调用的任务和文件按服务账号隔离；停用或更换后，旧凭据立即失效。</p>
     <div id="access-endpoints" class="access-endpoints"></div>
-    <p class="muted">以上入口使用用户服务的访问地址和前缀。生产部署请在 .env 设置 UMEKO_PUBLIC_URL，使 Agent Card 能返回完整外部地址。调用时发送 Authorization: Bearer &lt;服务凭据&gt;。</p>
+    <p class="muted">以上入口使用用户服务的访问地址和前缀。生产部署请在 .env 设置 UMEKO_PUBLIC_URL，使 Agent Card 能返回完整外部地址。使用凭据时发送 Authorization: Bearer &lt;服务凭据&gt;；免鉴权调用可省略此项。</p>
     <div class="row"><input id="sa-name" placeholder="服务账号名称，如 document-worker" maxlength="80"><label class="muted">有效天数</label><input id="sa-days" type="number" value="90" min="1" max="3650" style="width:90px"><button class="primary" onclick="createServiceAccount()">创建服务账号</button></div>
     <div class="row" id="sa-scopes">
       <label class="checkline"><input type="checkbox" value="tasks:create" checked>提交任务</label>
@@ -972,7 +975,7 @@ async function loadMonitor() {
     $('monitor-models').innerHTML=c.models.length?c.models.map(m=>`<tr><td>${safeHtml(m.provider)}</td><td>${safeHtml(m.name)}</td><td>${m.limit||'不限'}</td><td>${m.active}</td><td>${m.waiting}</td></tr>`).join(''):'<tr><td colspan="5" class="muted">尚未配置模型</td></tr>';
     $('monitor-queue').textContent=`等待 ${c.tasks.counts.queued||0} / ${c.tasks.queue_limit} · 执行或取消中 ${(c.tasks.counts.running||0)+(c.tasks.counts.cancelling||0)} / ${c.tasks.workers} · 每个调用者最多 ${c.tasks.caller_limit} 个未结束任务 · 完成后保留 ${Math.round(c.tasks.retention_seconds/3600)} 小时`;
     const labels={queued:'排队',running:'执行中',cancelling:'正在停止',completed:'已完成',failed:'失败',cancelled:'已取消'};
-    $('monitor-tasks').innerHTML=tasks.length?tasks.map(t=>`<tr><td title="${safeHtml(t.id)}"><code>${safeHtml(t.id.slice(-10))}</code></td><td>${safeHtml(t.caller)}</td><td>${safeHtml(t.source.toUpperCase())}</td><td>${labels[t.status]||safeHtml(t.status)}</td><td>${new Date(t.created_at).toLocaleString()}</td><td>${['queued','running','cancelling'].includes(t.status)?`<button onclick="stopMachineTask('${safeHtml(t.id)}')">停止</button>`:'—'}</td></tr>`).join(''):'<tr><td colspan="6" class="muted">暂无机器调用任务</td></tr>';
+    $('monitor-tasks').innerHTML=tasks.length?tasks.map(t=>`<tr><td title="${safeHtml(t.id)}"><code>${safeHtml(t.id.slice(-10))}</code></td><td>${safeHtml(t.caller)}</td><td>${safeHtml(t.caller_ip||'未知')}</td><td>${safeHtml(t.source.toUpperCase())}</td><td>${labels[t.status]||safeHtml(t.status)}</td><td>${new Date(t.created_at).toLocaleString()}</td><td>${['queued','running','cancelling'].includes(t.status)?`<button onclick="stopMachineTask('${safeHtml(t.id)}')">停止</button>`:'—'}</td></tr>`).join(''):'<tr><td colspan="7" class="muted">暂无机器调用任务</td></tr>';
     $('monitor-updated').textContent='更新于 '+new Date(c.timestamp).toLocaleTimeString();
   } catch(e) { $('monitor-updated').textContent='读取失败：'+e.message; }
   finally { monitorLoading=false; if(activeTab==='resources' && !document.hidden && !document.body.classList.contains('auth')) monitorTimer=setTimeout(loadMonitor,5000); }
@@ -982,9 +985,20 @@ async function stopMachineTask(id) { try { await api('POST',`/admin/v1/tasks/${i
 async function loadServiceAccounts() {
   try {
     const data=await api('GET','/admin/v1/service-accounts');
+    $('service-auth-mode').value=data.auth_mode;
+    showServiceAuthNote(data.auth_mode);
     $('access-endpoints').innerHTML=Object.entries(data.endpoints).map(([name,url])=>`<strong>${safeHtml(name==='agent_card'?'Agent Card':name.toUpperCase())}</strong><code>${safeHtml(url)}</code>`).join('');
     $('service-accounts').innerHTML=data.accounts.length?data.accounts.map(a=>`<tr><td>${safeHtml(a.name)}</td><td class="muted">${safeHtml(a.scopes.join(', '))}</td><td>${!a.enabled?'已停用':new Date(a.expires_at)<new Date()?'已过期':'可用'}</td><td>${new Date(a.expires_at).toLocaleDateString()}</td><td>${a.last_used_at?new Date(a.last_used_at).toLocaleString():'尚未使用'}</td><td><div class="row"><button onclick="rotateServiceAccount('${a.id}')">更换凭据</button><button onclick="toggleServiceAccount('${a.id}',${!a.enabled})">${a.enabled?'停用':'启用'}</button></div></td></tr>`).join(''):'<tr><td colspan="6" class="muted">暂无服务账号</td></tr>';
   } catch(e) {toast(e.message,true);}
+}
+function showServiceAuthNote(mode) {
+  $('service-auth-note').textContent=mode==='anonymous'
+    ?'免鉴权已开启：不带凭据即可调用 MCP、A2A 和机器任务 API。免鉴权调用共享任务及文件访问权限，也共用每账号队列额度。IP 仅供后台记录，拿不到时显示未知。网页登录和管理员登录仍需账号密码。'
+    :'当前需要有效服务凭据。接入方式保存在服务端，保存后立即生效。';
+}
+async function saveServiceAccess() {
+  try {const result=await api('PUT','/admin/v1/service-access',{auth_mode:$('service-auth-mode').value});showServiceAuthNote(result.auth_mode);toast('接入方式已保存，立即生效');}
+  catch(e){toast(e.message,true);loadServiceAccounts();}
 }
 function showServiceSecret(account) { $('service-client-id').value=account.id;$('service-token').value=account.token;$('service-secret').showModal(); }
 function clearServiceSecret() { $('service-client-id').value='';$('service-token').value=''; }

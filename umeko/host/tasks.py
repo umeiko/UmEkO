@@ -84,7 +84,7 @@ class TaskService:
               input_json TEXT NOT NULL, request_hash TEXT NOT NULL, idempotency_key TEXT,
               session_id TEXT, run_id TEXT, created_at TEXT NOT NULL, updated_at TEXT NOT NULL,
               completed_at TEXT, expires_at TEXT NOT NULL, cancel_requested INTEGER NOT NULL DEFAULT 0,
-              reply TEXT, error TEXT,
+              reply TEXT, error TEXT, caller_ip TEXT,
               UNIQUE(user_id, idempotency_key)
             );
             CREATE INDEX IF NOT EXISTS idx_service_tasks_owner ON service_tasks(user_id, created_at);
@@ -101,6 +101,9 @@ class TaskService:
               PRIMARY KEY(task_id,id)
             );
             """)
+            columns = {row["name"] for row in db.execute("PRAGMA table_info(service_tasks)")}
+            if "caller_ip" not in columns:
+                db.execute("ALTER TABLE service_tasks ADD COLUMN caller_ip TEXT")
 
     def start(self):
         if self._thread is not None:
@@ -140,7 +143,7 @@ class TaskService:
             shutil.rmtree(candidate)
 
     def submit(self, principal: dict, payload: dict, *, source="rest", idempotency_key=None,
-               context_id=None, message_id=None) -> dict:
+               context_id=None, message_id=None, caller_ip=None) -> dict:
         owner = require_scope(principal, "tasks:create")
         normalized, contents = validate_input(payload)
         if normalized["model_id"] and self.store.model_by_id(normalized["model_id"]) is None:
@@ -179,9 +182,9 @@ class TaskService:
                 for i, content in enumerate(contents):
                     (directory / str(i)).write_bytes(content)
                 db.execute("INSERT INTO service_tasks(id,user_id,source,context_id,status,input_json,"
-                           "request_hash,idempotency_key,created_at,updated_at,expires_at) "
-                           "VALUES(?,?,?,?,?,?,?,?,?,?,?)", (task_id, owner, source, context_id or "ctx_" + uuid.uuid4().hex,
-                            "queued", json.dumps(normalized, ensure_ascii=False), fingerprint, idempotency_key, stamp, stamp, expires))
+                           "request_hash,idempotency_key,created_at,updated_at,expires_at,caller_ip) "
+                           "VALUES(?,?,?,?,?,?,?,?,?,?,?,?)", (task_id, owner, source, context_id or "ctx_" + uuid.uuid4().hex,
+                            "queued", json.dumps(normalized, ensure_ascii=False), fingerprint, idempotency_key, stamp, stamp, expires, caller_ip))
                 self._event(db, task_id, "task.queued", {})
             except BaseException:
                 self._remove_staging(task_id)
@@ -189,6 +192,7 @@ class TaskService:
             row = db.execute("SELECT * FROM service_tasks WHERE id=?", (task_id,)).fetchone()
             result = self._view(db, row)
         self._wake.set()
+        logger.info("Machine task submitted: id=%s source=%s caller_id=%s caller_ip=%s", task_id, source, owner, caller_ip or "unknown")
         return self._visible(result, principal)
 
     @staticmethod

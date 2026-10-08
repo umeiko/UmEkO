@@ -2,7 +2,7 @@
 
 > 自动生成：请修改源码或生成器，不直接编辑本文件。
 
-共 **47** 个 HTTP 操作。[下载 OpenAPI](openapi-admin.json) · [数据结构](schemas.md)
+共 **49** 个 HTTP 操作。[下载 OpenAPI](openapi-admin.json) · [数据结构](schemas.md)
 
 路径为应用内部路由；带前缀部署时在公共 URL 前加 `UMEKO_BASE_PATH`。登录、原始字节体与 SSE 契约由生成器显式补充。
 
@@ -19,6 +19,8 @@
 | GET | `/admin/v1/resources` | Resources |
 | GET | `/admin/v1/service-accounts` | Service Accounts |
 | POST | `/admin/v1/service-accounts` | Create Service Account |
+| GET | `/admin/v1/service-access` | Service Access |
+| PUT | `/admin/v1/service-access` | Update Service Access |
 | PATCH | `/admin/v1/service-accounts/{account_id}` | Update Service Account |
 | GET | `/admin/v1/tasks` | Monitored Tasks |
 | POST | `/admin/v1/tasks/{task_id}/cancel` | Stop Machine Task |
@@ -138,6 +140,31 @@ Create Service Account
 | 响应码 | 内容 |
 | --- | --- |
 | 201 | application/json: object |
+| 422 | application/json: HTTPValidationError |
+
+## GET /admin/v1/service-access
+
+Service Access
+
+认证：`umeko_admin` Cookie。
+
+| 响应码 | 内容 |
+| --- | --- |
+| 200 | application/json: object |
+
+## PUT /admin/v1/service-access
+
+Update Service Access
+
+认证：`umeko_admin` Cookie。
+
+请求体：必填。
+
+`application/json` → `_ServiceAccessIn`
+
+| 响应码 | 内容 |
+| --- | --- |
+| 200 | application/json: object |
 | 422 | application/json: HTTPValidationError |
 
 ## PATCH /admin/v1/service-accounts/{account_id}

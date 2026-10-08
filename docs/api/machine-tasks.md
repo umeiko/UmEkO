@@ -1,6 +1,16 @@
 # 机器任务与服务凭据
 
-程序或其他 Agent 无需创建网页用户名密码。管理员在管理端“服务接入”创建服务账号，保存只显示一次的凭据。调用 UMEKO 的凭据与 Provider 模型 API Key 是两套配置。
+程序或其他 Agent 无需创建网页用户名密码。管理员在“服务接入”选择接入方式：默认需要服务凭据，也可开启免鉴权。调用 UMEKO 的凭据与 Provider 模型 API Key 是两套配置；免鉴权不会向调用方提供模型密钥。
+
+## 免鉴权接入
+
+选择“免鉴权（无需凭据）”并保存后，MCP、A2A、REST `/v1/tasks` 及其事件、产物入口可不带 Authorization。只需配置服务地址；设置保存在数据库中，后续请求立即生效，重启后仍保留。网页登录和管理端登录不受此开关影响。
+
+所有不带凭据的机器调用共用一个持久化身份，能查询、取消及下载该身份下的任务与文件，也共用每账号队列额度。不会为每个请求或 IP 创建服务账号，不按 IP 鉴权或隔离数据。共享幂等键须由调用方使用唯一业务标识。
+
+带有效凭据的调用仍按对应服务账号隔离；传了无效或过期凭据会返回 401，不自动降级到免鉴权。切回“需要服务凭据”后，新的免凭据请求被拒绝，已接收任务继续执行。免鉴权任务可由管理员在资源监控中查看和停止。
+
+后台任务列表及服务日志记录提交时的来源 IP，无法取得时显示未知。IP 仅作辅助记录，不出现在公开任务响应中。经过代理时以服务实际看到的地址为准，详见[部署指南](../deployment.md)。
 
 ## 地址和权限
 
@@ -15,13 +25,13 @@
 
 A2A 的等待、查询和流式操作需要 `tasks:read`，发送还需要 `tasks:create`，取消同时需要 `tasks:cancel`。建议给完整任务流程授予上述四项；只读集成可只授予读取权限。
 
-REST `/v1/tasks` 同时接受服务 Bearer 和网页 Cookie；MCP / A2A 必须使用服务 Bearer，个人本地工作台的免登录模式也不会自动放开协议入口。
+需要凭据模式下，REST `/v1/tasks` 接受服务 Bearer 或网页 Cookie；MCP / A2A 使用服务 Bearer。个人本地工作台的免登录模式不会自动放开 MCP / A2A，仍需显式开启服务接入的免鉴权模式。
 
 仅有提交或取消权限时，相关响应只提供任务状态和标识，回复、错误正文及产物列表为空；幂等重试也不会绕过读取权限。
 
 ## 最小调用
 
-在调用方环境配置 `UMEKO_SERVICE_URL` 和 `UMEKO_SERVICE_TOKEN`，后者不要放入仓库。下面的 Python 示例使用 `httpx`，带前缀时无需改其他路径。
+在调用方环境配置 `UMEKO_SERVICE_URL`；需要凭据时另外配置 `UMEKO_SERVICE_TOKEN`，后者不要放入仓库。免鉴权时不设置 Token。下面的 Python 示例使用 `httpx`，带前缀时无需改其他路径。
 
 ```python
 import base64
@@ -31,8 +41,9 @@ from pathlib import Path
 import httpx
 
 base = os.environ["UMEKO_SERVICE_URL"].rstrip("/")
-token = os.environ["UMEKO_SERVICE_TOKEN"]
-with httpx.Client(headers={"Authorization": f"Bearer {token}"}, timeout=30) as client:
+token = os.getenv("UMEKO_SERVICE_TOKEN")
+headers = {"Authorization": f"Bearer {token}"} if token else {}
+with httpx.Client(headers=headers, timeout=30) as client:
     response = client.post(base + "/v1/tasks", headers={"Idempotency-Key": "document-001"}, json={
         "prompt": "检查附件并生成报告",
         "files": [{"name": "input.txt", "content_base64": base64.b64encode(Path("input.txt").read_bytes()).decode()}],

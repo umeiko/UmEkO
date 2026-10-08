@@ -1,6 +1,6 @@
 # MCP API
 
-入口为用户服务基址加 `/mcp`，传输为 Streamable HTTP。先在管理端“服务接入”创建服务凭据；客户端连接时发送 `Authorization: Bearer <token>`。服务需要已配置并激活的 Provider / Model。
+入口为用户服务基址加 `/mcp`，传输为 Streamable HTTP。需要凭据模式下，在管理端“服务接入”创建凭据，客户端发送 `Authorization: Bearer <token>`；管理员开启免鉴权后可省略此 Header。服务需要已配置并激活的 Provider / Model。免鉴权调用共用任务身份，详见[机器任务](machine-tasks.md)。
 
 ## 工具
 
@@ -30,9 +30,9 @@ from mcp.client.streamable_http import streamable_http_client
 
 async def main():
     base = os.environ["UMEKO_SERVICE_URL"].rstrip("/")
-    async with httpx2.AsyncClient(headers={
-        "Authorization": "Bearer " + os.environ["UMEKO_SERVICE_TOKEN"]
-    }) as http:
+    token = os.getenv("UMEKO_SERVICE_TOKEN")
+    headers = {"Authorization": "Bearer " + token} if token else {}
+    async with httpx2.AsyncClient(headers=headers) as http:
         async with Client(streamable_http_client(base + "/mcp", http_client=http), cache=None) as client:
             print([tool.name for tool in (await client.list_tools()).tools])
             result = await client.call_tool("submit_task", {"prompt": "说明你可以如何处理文件"})
