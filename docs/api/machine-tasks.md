@@ -17,6 +17,8 @@ A2A 的等待、查询和流式操作需要 `tasks:read`，发送还需要 `task
 
 REST `/v1/tasks` 同时接受服务 Bearer 和网页 Cookie；MCP / A2A 必须使用服务 Bearer，个人本地工作台的免登录模式也不会自动放开协议入口。
 
+仅有提交或取消权限时，相关响应只提供任务状态和标识，回复、错误正文及产物列表为空；幂等重试也不会绕过读取权限。
+
 ## 最小调用
 
 在调用方环境配置 `UMEKO_SERVICE_URL` 和 `UMEKO_SERVICE_TOKEN`，后者不要放入仓库。下面的 Python 示例使用 `httpx`，带前缀时无需改其他路径。

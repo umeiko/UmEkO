@@ -43,6 +43,15 @@ def test_task_roundtrip_artifact_isolation_and_memory_release(machine_client):
     assert app.state.store.sessions(a["user_id"]) == []
     assert all(u["id"] != a["user_id"] for u in app.state.store.list_users())
     assert not app.state.task_service._directory(task_id).exists()
+    base = "http://127.0.0.1/v1/tasks"
+    create_token = app.state.identity_store.issue_access_token(a["id"], a["token"], base, ["tasks:create"])["access_token"]
+    repeated = client.post("/v1/tasks", json=payload, headers={"Authorization": "Bearer " + create_token, "Idempotency-Key": "same"})
+    assert repeated.status_code == 202 and repeated.json()["id"] == task_id
+    assert repeated.json()["reply"] is None and repeated.json()["artifacts"] == []
+    cancel_token = app.state.identity_store.issue_access_token(a["id"], a["token"], base, ["tasks:cancel"])["access_token"]
+    stopped = client.post("/v1/tasks/" + task_id + "/cancel", headers={"Authorization": "Bearer " + cancel_token})
+    assert stopped.status_code == 200
+    assert stopped.json()["reply"] is None and stopped.json()["artifacts"] == []
 
 
 def test_bounded_admission_cancel_and_permissions(machine_client):
@@ -91,6 +100,7 @@ def test_restart_queued_tasks_and_expiry(machine_app):
     restarted.start()
     try:
         assert restarted.get(principal, interrupted["id"])["status"] == "failed"
+        assert any(e["type"] == "task.failed" for e in restarted.events(principal, interrupted["id"]))
         deadline = time.monotonic()+5
         while restarted.get(principal, queued["id"])["status"] not in {"completed","failed"} and time.monotonic()<deadline:
             time.sleep(.03)

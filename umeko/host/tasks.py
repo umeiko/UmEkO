@@ -108,9 +108,13 @@ class TaskService:
         self._stop.clear()
         # Single service process: never silently replay tools that may have side effects.
         with self.store.connect() as db:
+            db.execute("BEGIN IMMEDIATE")
+            interrupted = db.execute("SELECT id FROM service_tasks WHERE status IN ('running','cancelling')").fetchall()
             db.execute("UPDATE service_tasks SET status='failed',error=?,completed_at=?,updated_at=?,expires_at=? "
                        "WHERE status IN ('running','cancelling')",
                        ("服务重启，任务执行已中断；请重新提交", now(), now(), expiry(self.settings)))
+            for row in interrupted:
+                self._event(db, row["id"], "task.failed", {"error": "服务重启，任务执行已中断；请重新提交"})
         self._executor = ThreadPoolExecutor(max_workers=self.settings.task_workers, thread_name_prefix="umeko-task")
         self._thread = threading.Thread(target=self._schedule, name="umeko-task-scheduler", daemon=True)
         self._thread.start()
@@ -160,7 +164,7 @@ class TaskService:
                 if row:
                     if row["request_hash"] != fingerprint:
                         raise IdempotencyConflict("同一幂等键对应的输入不同")
-                    return self._view(db, row)
+                    return self._visible(self._view(db, row), principal)
             if context_id and db.execute("SELECT 1 FROM service_tasks WHERE context_id=? AND user_id=?",
                                          (context_id, owner)).fetchone() is None:
                 raise KeyError("Context 不存在或无权访问")
@@ -185,6 +189,13 @@ class TaskService:
             row = db.execute("SELECT * FROM service_tasks WHERE id=?", (task_id,)).fetchone()
             result = self._view(db, row)
         self._wake.set()
+        return self._visible(result, principal)
+
+    @staticmethod
+    def _visible(result, principal):
+        # Submission and cancellation do not grant permission to read an old result.
+        if "tasks:read" not in principal.get("scopes", []):
+            return {**result, "reply": None, "error": None, "artifacts": []}
         return result
 
     def _view(self, db, row) -> dict:
@@ -243,7 +254,7 @@ class TaskService:
         if result["status"] == "cancelled":
             self._remove_staging(task_id)
         self._wake.set()
-        return result
+        return self._visible(result, principal)
 
     def events(self, principal, task_id, after=0) -> list[dict]:
         owner = require_scope(principal, "tasks:read")
