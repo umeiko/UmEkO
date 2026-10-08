@@ -17,8 +17,7 @@ import threading
 
 
 def _bootstrap_admin(store, logger: logging.Logger) -> None:
-    """没有任何管理员时：环境变量优先，否则创建默认管理员 your-admin-name / your-admin-password。
-    首次登录后请立即在管理面修改密码。"""
+    """没有任何管理员时创建引导账号，环境变量优先。"""
     if store.has_admin():
         return
     username = os.getenv("UMEKO_ADMIN_USERNAME", "umeko")

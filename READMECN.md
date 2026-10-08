@@ -39,7 +39,7 @@ UMEKO 是一个用于处理文件的 Python Agent 服务，提供网页工作台
 
 从 [Releases](https://github.com/umeiko/UmEkO/releases) 下载 `umeko-server.exe`，放到固定目录后运行。
 
-首次启动会创建默认管理员 your-admin-name / your-admin-password，并生成部署 `.env` 模板。开始对话前，在管理面 Provider / Model 或 CLI 中配置并激活模型。
+首次启动会初始化管理员账号，并生成部署 `.env` 模板。使用已配置的管理员凭据登录，开始对话前在管理面 Provider / Model 或 CLI 中配置并激活模型。
 
 ```ini
 UMEKO_DATA_ROOT=server_data

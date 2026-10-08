@@ -6,7 +6,7 @@
 {"username":"your-admin-name","password":"your-admin-password"}
 ```
 
-以上为首次引导默认账号；已有数据库以当前账号密码为准。登录成功返回 `{id, username}`，Cookie 的 Max-Age 为 7 天，服务同时校验数据库 Token。`GET /admin/v1/me` 查询管理员；`POST /admin/logout` 返回 `204`。
+示例使用占位符，调用时替换为已配置的管理员凭据。已有数据库以当前账号密码为准。登录成功返回 `{id, username}`，Cookie 的 Max-Age 为 7 天，服务同时校验数据库 Token。`GET /admin/v1/me` 查询管理员；`POST /admin/logout` 返回 `204`。
 
 以下所有 `/admin/v1/...` 都要求管理员角色。完整输入模型与路由见[管理完整参考](reference-admin.md)。
 

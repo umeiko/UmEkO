@@ -41,8 +41,9 @@ a CLI and an HTTP API, with model configuration, user management and skill packs
 Download `umeko-server.exe` from [Releases](https://github.com/umeiko/UmEkO/releases),
 place it in a directory and run it.
 
-On first startup, the server creates a default admin account (your-admin-name / your-admin-password)
-and a deployment `.env` template. Configure and activate a model in the admin
+On first startup, the server initializes the admin account and generates a
+deployment `.env` template. Use your configured admin credentials to sign in, then
+configure and activate a model in the admin
 Provider / Model page or through the CLI before starting a conversation.
 
 ```ini
@@ -111,7 +112,7 @@ the same resolver. `.env` contains deployment settings and runtime defaults.
 | `UMEKO_DATA_ROOT` | persistent data / Provider registry directory (default `server_data`) |
 | `UMEKO_BASE_PATH` | public URL prefix, e.g. `/doc-master/consistency/image-text`; empty for root |
 | `MODEL_CA_FILE` | additional PEM CA for HTTPS model services; certificate checks remain enabled |
-| `UMEKO_ADMIN_USERNAME/PASSWORD` | admin bootstrap (defaults to your-admin-name / your-admin-password) |
+| `UMEKO_ADMIN_USERNAME/PASSWORD` | credentials for initializing the first admin account |
 
 Copy `providers.example.json` to `providers.local`, fill it in and import:
 

@@ -22,7 +22,7 @@ Windows 可从 [GitHub Releases](https://github.com/umeiko/UmEkO/releases) 下�
 
 ## 2. 配置模型
 
-打开管理面，首次默认管理员是 **your-admin-name / your-admin-password**。这个默认值只用于没有管理员的数据库，重启不会重置已有密码。
+打开管理面，使用已配置的管理员凭据登录。首次部署可通过 `UMEKO_ADMIN_USERNAME` 和 `UMEKO_ADMIN_PASSWORD` 设置引导账号；重启不会重置已有密码。
 
 在 Provider 页面添加模型服务地址和 API Key，再添加模型名称、视觉能力与并发上限，激活一个主模型。模型上限填 `0` 表示无限制；如果公司按模型限制同时请求数，就填该模型的额度。
 
@@ -32,8 +32,6 @@ Windows 可从 [GitHub Releases](https://github.com/umeiko/UmEkO/releases) 下�
 UMEKO_DATA_ROOT=server_data
 UMEKO_BASE_PATH=
 MODEL_CA_FILE=
-UMEKO_ADMIN_USERNAME=your-admin-name
-UMEKO_ADMIN_PASSWORD=your-admin-password
 ```
 
 如果沿用旧版 `.env` 中的模型配置，按[迁移说明](deployment.md)迁入 Provider 注册表。
