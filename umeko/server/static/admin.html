@@ -321,8 +321,8 @@
     <div class="help-heading"><strong id="agent-definition-title">新建智能体</strong><button type="button" class="help-trigger" aria-label="智能体配置说明" data-help="选择要下发的技能，Card 会自动生成公开说明。配置变更对新提交任务生效，已接收的任务保留提交时的配置。">?</button></div>
     <form id="agent-definition-form" class="agent-definition-form" onsubmit="saveAgentDefinition(event)" novalidate>
       <div class="agent-definition-fields">
-        <label>名称 *<input id="agent-definition-name" required autofocus placeholder="例如：图文质检 Agent"></label>
-        <div class="agent-definition-field"><div class="help-heading"><label for="agent-definition-slug">访问路径 *</label><button type="button" class="help-trigger" aria-label="访问路径说明" data-help="生成 /agent/image-qc/ 这样的独立访问路径，创建后保持不变。使用小写字母、数字或连字符。">?</button></div><input id="agent-definition-slug" required placeholder="例如：image-qc"></div>
+        <label>名称 *<input id="agent-definition-name" required autofocus placeholder="例如：我的智能体"></label>
+        <div class="agent-definition-field"><div class="help-heading"><label for="agent-definition-slug">访问路径 *</label><button type="button" class="help-trigger" aria-label="访问路径说明" data-help="生成 /agent/my-agent/ 这样的独立访问路径，创建后保持不变。使用小写字母、数字或连字符。">?</button></div><input id="agent-definition-slug" required placeholder="例如：my-agent"></div>
         <label class="wide">介绍 *<textarea id="agent-definition-description" required placeholder="向调用方说明适用任务"></textarea></label>
         <label>版本 *<input id="agent-definition-version" required></label>
         <label>默认模型<select id="agent-definition-model"><option value="">跟随平台默认模型</option></select></label>
