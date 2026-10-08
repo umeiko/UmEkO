@@ -86,7 +86,9 @@ try {
       await ready(publicBase + '/health', child);
       await ready(adminBase + '/health', child);
       const state = JSON.parse(await readFile(path.join(directory, 'state.json'), 'utf8'));
-      context = await browser.newContext({ viewport: { width: 1440, height: 1000 } });
+      // Keep host OS language from changing selectors, and exercise both UI locales.
+      const locale = prefix ? 'en-US' : 'zh-CN';
+      context = await browser.newContext({ viewport: { width: 1440, height: 1000 }, locale });
       const page = await context.newPage(),
         errors = [];
       page.on('pageerror', (e) => errors.push(e.message));
@@ -268,6 +270,7 @@ try {
       await work.locator('#auth-password').fill('fixture-browser-only');
       await work.locator('#register').click();
       await work.locator('#status-dot.ready').waitFor();
+      assert.equal(await work.locator('html').getAttribute('lang'), prefix ? 'en' : 'zh-CN');
       assert.equal(await work.locator('#user-name').innerText(), 'ui-browser');
       assert.ok(
         assets.length >= 3 &&
@@ -279,10 +282,7 @@ try {
       await work.locator('#file-actions').click();
       await work.locator('[data-file-action=new-file]').click();
       await work.locator('#file-entry-name').fill('notes.txt');
-      await work
-        .locator('#file-entry-form')
-        .getByRole('button', { name: '确认', exact: true })
-        .click();
+      await work.locator('#file-entry-form button[type=submit]').click();
       await work.locator('.tree-file').filter({ hasText: 'notes.txt' }).waitFor();
       await work.locator('#file').setInputFiles({
         name: 'table.csv',
@@ -332,7 +332,7 @@ try {
       assert.ok(await work.locator('#prompt').isVisible());
       assert.deepEqual(errors, []);
       console.log(
-        `Passed browser workflows: ${prefix || '/'} (admin, files, streaming, 20 folded tools, cancellation, desktop/mobile)`,
+        `Passed browser workflows: ${prefix || '/'} (${locale}, admin, files, streaming, 20 folded tools, cancellation, desktop/mobile)`,
       );
     } catch (e) {
       if (diagnostics) console.error(diagnostics);
