@@ -68,8 +68,14 @@ def main() -> None:
             "# 模型地址、密钥、模型名在管理面 Provider / Model 或 CLI 中配置。\n"
             "# 部署配置（修改后重启；本地开发前缀/CA 保持为空）\n"
             "UMEKO_BASE_PATH=\n"
+            "UMEKO_PUBLIC_URL=\n"
             "MODEL_CA_FILE=\n"
             "UMEKO_DATA_ROOT=server_data\n"
+            "UMEKO_TASK_WORKERS=4\n"
+            "UMEKO_TASK_QUEUE_LIMIT=100\n"
+            "UMEKO_TASK_CALLER_LIMIT=20\n"
+            "UMEKO_TASK_RETENTION_SECONDS=86400\n"
+            "UMEKO_TASK_TIMEOUT_SECONDS=3600\n"
         )
         try:
             env_path.write_text(template, encoding="utf-8")

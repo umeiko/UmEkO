@@ -15,6 +15,7 @@ from pathlib import Path
 from fastapi import FastAPI, HTTPException, Request, Response
 from fastapi.responses import HTMLResponse, JSONResponse
 from pydantic import BaseModel, Field
+from ..host.identities import SCOPES
 
 from ..config import Settings
 from ..host.service import AgentService
@@ -122,6 +123,18 @@ class _ImportIn(BaseModel):
     document: dict
 
 
+class _ServiceAccountIn(BaseModel):
+    name: str = Field(min_length=1, max_length=80)
+    scopes: list[str] = Field(default_factory=lambda: sorted(SCOPES))
+    expires_days: int = Field(default=90, ge=1, le=3650)
+
+
+class _ServiceAccountPatch(BaseModel):
+    enabled: bool | None = None
+    rotate: bool = False
+    expires_days: int = Field(default=90, ge=1, le=3650)
+
+
 def create_admin_app(settings: Settings, service: AgentService, store: Store) -> FastAPI:
     app = FastAPI(
         title="Umeko Admin",
@@ -167,6 +180,52 @@ def create_admin_app(settings: Settings, service: AgentService, store: Store) ->
     @app.get("/admin/v1/me")
     def me(request: Request) -> dict:
         return request.state.admin
+
+    @app.get("/admin/v1/resources", tags=["monitoring"])
+    def resources() -> dict:
+        return service.resource_monitor.snapshot()
+
+    @app.get("/admin/v1/service-accounts", tags=["service access"])
+    def service_accounts() -> dict:
+        base = settings.public_url or settings.base_path
+        return {"accounts": service.identity_store.list(), "scopes": sorted(SCOPES),
+                "endpoints": {"mcp": base + "/mcp", "a2a": base + "/a2a",
+                              "agent_card": base + "/.well-known/agent-card.json", "tasks": base + "/v1/tasks"}}
+
+    @app.post("/admin/v1/service-accounts", status_code=201, tags=["service access"])
+    def create_service_account(payload: _ServiceAccountIn, response: Response) -> dict:
+        response.headers["Cache-Control"] = "no-store"
+        try:
+            return service.identity_store.create(payload.name, payload.scopes, payload.expires_days)
+        except ValueError as exc:
+            raise HTTPException(400, str(exc)) from exc
+
+    @app.patch("/admin/v1/service-accounts/{account_id}", tags=["service access"])
+    def update_service_account(account_id: str, payload: _ServiceAccountPatch, response: Response) -> dict:
+        response.headers["Cache-Control"] = "no-store"
+        try:
+            return service.identity_store.update(account_id, **payload.model_dump())
+        except KeyError as exc:
+            raise HTTPException(404, str(exc)) from exc
+        except ValueError as exc:
+            raise HTTPException(400, str(exc)) from exc
+
+    @app.get("/admin/v1/tasks", tags=["monitoring"])
+    def monitored_tasks() -> list[dict]:
+        with store.connect() as db:
+            rows = db.execute("SELECT t.id,t.source,t.status,t.created_at,t.updated_at,t.expires_at,"
+                              "COALESCE(a.name,u.username) AS caller FROM service_tasks t "
+                              "JOIN users u ON u.id=t.user_id LEFT JOIN service_accounts a ON a.user_id=t.user_id "
+                              "ORDER BY t.created_at DESC LIMIT 100").fetchall()
+        return [dict(r) for r in rows]
+
+    @app.post("/admin/v1/tasks/{task_id}/cancel", tags=["monitoring"])
+    def stop_machine_task(task_id: str) -> dict:
+        with store.connect() as db:
+            row = db.execute("SELECT user_id FROM service_tasks WHERE id=?", (task_id,)).fetchone()
+        if row is None:
+            raise HTTPException(404, "任务不存在")
+        return service.task_service.cancel({"user_id": row["user_id"], "scopes": sorted(SCOPES)}, task_id)
 
     @app.get("/admin/v1/users")
     def users() -> list[dict]:

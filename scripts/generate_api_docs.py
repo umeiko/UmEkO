@@ -30,15 +30,22 @@ def supplement(spec: dict, admin: bool) -> None:
     cookie = "umeko_admin" if admin else "umeko_auth"
     spec.setdefault("components", {}).setdefault("securitySchemes", {})[cookie] = {
         "type": "apiKey", "in": "cookie", "name": cookie,
-        "description": "登录后保存 Cookie；当前实现不接受 Bearer Token。",
+        "description": "网页登录后保存 Cookie；管理与用户 Cookie 相互独立。",
     }
     spec["servers"] = [{"url": "http://127.0.0.1:9000" if admin else "http://127.0.0.1:8000"}]
     public = {("/health", "get"), ("/admin/login", "post")} if admin else {
-        ("/health", "get"), ("/v1/auth/login", "post"), ("/v1/auth/register", "post")}
+        ("/health", "get"), ("/v1/auth/login", "post"), ("/v1/auth/register", "post"),
+        ("/oauth/token", "post")}
+    if not admin:
+        spec["components"]["securitySchemes"]["serviceBearer"] = {
+            "type": "http", "scheme": "bearer",
+            "description": "管理员创建的服务凭据，或 /oauth/token 签发的 client_credentials 访问令牌。"}
     for path, operations in spec["paths"].items():
         for method, operation in operations.items():
             if method in METHODS:
-                operation["security"] = [] if (path, method) in public else [{cookie: []}]
+                operation["security"] = [] if (path, method) in public or path.startswith("/.well-known/") else [{cookie: []}]
+                if not admin and path.startswith("/v1/tasks"):
+                    operation["security"] = [{"serviceBearer": []}, {cookie: []}]
     if admin:
         return
     raw = {
@@ -69,6 +76,7 @@ def supplement(spec: dict, admin: bool) -> None:
         "/v1/sessions/{session_id}/workspace/files/raw/{file_path}",
         "/v1/sessions/{session_id}/workspace/files/download",
         "/v1/sessions/{session_id}/artifacts/{artifact_id}/content",
+        "/v1/tasks/{task_id}/artifacts/{artifact_id}/content",
     ]
     for path in downloads:
         spec["paths"][path]["get"]["responses"]["200"] = {
@@ -80,6 +88,16 @@ def supplement(spec: dict, admin: bool) -> None:
         "content": {"text/event-stream": {"schema": {"type": "string"}}},
     }
     spec["components"]["schemas"]["EventView"] = EventView.model_json_schema()
+    spec["paths"]["/v1/tasks/{task_id}/events"]["get"]["responses"]["200"] = {
+        "description": "持久化任务事件 SSE；保留最近 500 条，支持 after 与 Last-Event-ID。",
+        "content": {"text/event-stream": {"schema": {"type": "string"}}}}
+    spec["paths"]["/oauth/token"]["post"]["requestBody"] = {
+        "required": True, "description": "client_credentials；也可用 HTTP Basic 传 client_id/client_secret。",
+        "content": {"application/x-www-form-urlencoded": {"schema": {
+            "type": "object", "required": ["grant_type"], "properties": {
+                "grant_type": {"type": "string", "enum": ["client_credentials"]},
+                "client_id": {"type": "string"}, "client_secret": {"type": "string", "writeOnly": True},
+                "resource": {"type": "string"}, "scope": {"type": "string"}}}}}}
 
 
 def schemas_text(schema: dict) -> str:
@@ -114,7 +132,10 @@ def reference(spec: dict, admin: bool) -> str:
             if method not in METHODS:
                 continue
             lines += ["", f"## {method.upper()} {path}", "", op.get("summary", ""), "",
-                      "认证：" + ("无须登录。" if not op["security"] else f"`{'umeko_admin' if admin else 'umeko_auth'}` Cookie。")]
+                      "认证：" + ("服务账号凭据（表单或 HTTP Basic）。" if path == "/oauth/token" else
+                                  "无须登录。" if not op["security"] else
+                                  "服务 Bearer Token 或 `umeko_auth` Cookie；按 scope 和任务归属授权。" if path.startswith("/v1/tasks") else
+                                  f"`{'umeko_admin' if admin else 'umeko_auth'}` Cookie。")]
             if op.get("description"):
                 lines += ["", op["description"]]
             if op.get("parameters"):

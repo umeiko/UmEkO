@@ -72,8 +72,8 @@ nav:
       - CLI: architecture/cli.md
       - Web Server: architecture/webserver.md
       - API 服务: architecture/api-service.md
-      - MCP 接入设计: architecture/mcp.md
-      - A2A 接入设计: architecture/a2a.md
+      - MCP: architecture/mcp.md
+      - A2A: architecture/a2a.md
   - API 文档:
       - 概览: api/index.md
       - 调用入门: api/quickstart.md
@@ -81,6 +81,10 @@ nav:
       - 会话与运行: api/sessions-runs.md
       - 文件与技能: api/files-skills.md
       - 一次性调用: api/proxy.md
+      - 机器任务与凭据: api/machine-tasks.md
+      - MCP: api/mcp.md
+      - A2A: api/a2a.md
+      - 资源监控: api/monitoring.md
       - 管理 API: api/admin.md
       - 流式事件: api/events.md
       - 用户接口完整参考: api/reference-user.md

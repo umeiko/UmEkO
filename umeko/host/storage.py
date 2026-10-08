@@ -8,6 +8,7 @@ import threading
 import uuid
 from datetime import datetime, timedelta, timezone
 from pathlib import Path
+from contextlib import contextmanager
 
 from ..llm.concurrency import set_model_limit, validate_limit
 
@@ -26,11 +27,16 @@ class Store:
         self.path.parent.mkdir(parents=True, exist_ok=True)
         self._init()
 
+    @contextmanager
     def connect(self):
         db = sqlite3.connect(self.path, timeout=10)
         db.row_factory = sqlite3.Row
         db.execute("PRAGMA foreign_keys=ON")
-        return db
+        try:
+            with db:
+                yield db
+        finally:
+            db.close()
 
     def _init(self):
         with self.connect() as db:
@@ -120,6 +126,8 @@ class Store:
                 db.execute(
                     "ALTER TABLE users ADD COLUMN role TEXT NOT NULL DEFAULT 'user'"
                 )
+            if "kind" not in cols:
+                db.execute("ALTER TABLE users ADD COLUMN kind TEXT NOT NULL DEFAULT 'human'")
             # 旧库迁移：agent_sessions 补 model_override_id 列（用户会话级模型覆盖）
             session_cols = {
                 row["name"] for row in db.execute("PRAGMA table_info(agent_sessions)")
@@ -128,6 +136,8 @@ class Store:
                 db.execute(
                     "ALTER TABLE agent_sessions ADD COLUMN model_override_id TEXT"
                 )
+            if "purpose" not in session_cols:
+                db.execute("ALTER TABLE agent_sessions ADD COLUMN purpose TEXT NOT NULL DEFAULT 'chat'")
             # 旧库迁移：default_skills 补 enabled 列（管理员停用/启用，停用不下发）
             skill_cols = {
                 row["name"] for row in db.execute("PRAGMA table_info(default_skills)")
@@ -201,7 +211,7 @@ class Store:
     def authenticate(self, username: str, password: str) -> dict | None:
         with self.connect() as db:
             row = db.execute("SELECT * FROM users WHERE username=?", (username.strip(),)).fetchone()
-        if row and self.verify_password(password, row["password_hash"]):
+        if row and row["kind"] == "human" and self.verify_password(password, row["password_hash"]):
             return self._user_view(row)
         return None
 
@@ -210,6 +220,7 @@ class Store:
             rows = db.execute("""
               SELECT users.*, COUNT(agent_sessions.id) AS session_count
               FROM users LEFT JOIN agent_sessions ON agent_sessions.user_id=users.id
+              WHERE users.kind='human'
               GROUP BY users.id ORDER BY users.created_at
             """).fetchall()
         return [
@@ -706,7 +717,7 @@ class Store:
 
     def sessions(self, user_id: str) -> list[dict]:
         with self.connect() as db:
-            rows = db.execute("SELECT * FROM agent_sessions WHERE user_id=? ORDER BY updated_at DESC", (user_id,)).fetchall()
+            rows = db.execute("SELECT * FROM agent_sessions WHERE user_id=? AND purpose='chat' ORDER BY updated_at DESC", (user_id,)).fetchall()
         return [dict(row) for row in rows]
 
     def session(self, session_id: str, user_id: str) -> dict | None:

@@ -115,6 +115,7 @@ class UmekoAgent:
             if self._vision or settings.vision_model is None
             else LLMClient(settings.vision_model)
         )
+        self._vision_llm = vision_llm
         skills = build_file_tools(
             session,
             self._pending,
@@ -184,6 +185,13 @@ class UmekoAgent:
         self._cb_reasoning = self._fanout_text(on_reasoning, ev.REASONING_DELTA)
 
     # ---------- 事件扇出 ----------
+
+    def close(self) -> None:
+        """Release idle model connections after a machine task or session eviction."""
+        self._llm.close()
+        if self._vision_llm is not None:
+            self._vision_llm.close()
+        self._subagent.close()
 
     @property
     def settings(self) -> Settings:

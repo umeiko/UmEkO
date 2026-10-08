@@ -5,6 +5,7 @@ import html
 import json
 import re
 from pathlib import Path
+from contextlib import asynccontextmanager
 
 from fastapi import FastAPI, Header, HTTPException, Query, Request, Response
 from fastapi.responses import FileResponse, HTMLResponse, JSONResponse, StreamingResponse
@@ -16,6 +17,12 @@ from ..config import Settings, normalize_base_path
 from ..host.profile import CLOUD_PROFILE, Profile
 from ..host.service import AgentService, SessionState
 from ..host.storage import Store
+from ..host.identities import IdentityStore, SCOPES
+from ..host.tasks import TaskService
+from .monitor import ResourceMonitor
+from .body_limit import MachineBodyLimitMiddleware
+from .protocols import add_a2a_routes, build_mcp
+from .task_api import add_task_routes, public_base
 from ..runner import Run as RunState
 from .models import (
     ArtifactView,
@@ -91,7 +98,20 @@ def create_app(
 ) -> FastAPI:
     base_path = normalize_base_path(settings.base_path)
     data_root = data_root if data_root is not None else settings.data_root
+    @asynccontextmanager
+    async def lifespan(app):
+        service.task_service.start()
+        service.resource_monitor.start()
+        try:
+            async with mcp_server.session_manager.run():
+                yield
+        finally:
+            service.resource_monitor.stop()
+            await asyncio.to_thread(service.task_service.stop)
+            service.run_manager.shutdown()
+
     app = FastAPI(
+        lifespan=lifespan,
         root_path=base_path,
         title="Umeko API",
         version=__version__,
@@ -108,6 +128,17 @@ def create_app(
     app.state.agent_service = service
     app.state.store = store
     app.state.profile = profile
+    identities = IdentityStore(store)
+    service.identity_store = identities
+    service.task_service = TaskService(service, settings)
+    service.resource_monitor = ResourceMonitor(service, service.task_service)
+    app.state.task_service = service.task_service
+    app.state.identity_store = identities
+    mcp_server, mcp_app = build_mcp(settings, service.task_service)
+    app.state.mcp_server = mcp_server
+    add_task_routes(app, settings, service.task_service, identities)
+    add_a2a_routes(app, settings, service.task_service)
+    app.add_middleware(MachineBodyLimitMiddleware)
     # 本地场景：所有请求都落在隐式单用户上，免登录直达工作台
     local_user = None if profile.auth_enabled else store.ensure_local_user()
     app.mount("/static", StaticFiles(directory=STATIC_DIR), name="static")
@@ -125,6 +156,23 @@ def create_app(
             if profile.auth_enabled else local_user
         )
         request.state.user = user
+        machine_path = path == "/mcp" or path == "/a2a" or path == "/v1/tasks" or path.startswith("/v1/tasks/")
+        if machine_path:
+            audience = public_base(settings, request) + (
+                "/mcp" if path == "/mcp" else "/a2a" if path == "/a2a" else "/v1/tasks")
+            auth = request.headers.get("Authorization", "")
+            principal = identities.authenticate(auth[7:] if auth.lower().startswith("bearer ") else None, audience)
+            if principal is None and not auth and user and path.startswith("/v1/tasks"):
+                principal = {"user_id": user["id"], "scopes": sorted(SCOPES), "id": user["id"]}
+            if principal is None:
+                metadata = public_base(settings, request) + "/.well-known/oauth-protected-resource/mcp"
+                return JSONResponse({"detail": "需要有效的服务凭据"}, status_code=401,
+                                    headers={"WWW-Authenticate": f'Bearer resource_metadata="{metadata}"' if path == "/mcp" else "Bearer"})
+            request.state.principal = principal
+            length = request.headers.get("Content-Length", "0")
+            if length.isdigit() and int(length) > 30 * 1024 * 1024:
+                return JSONResponse({"detail": "请求超过 30 MiB"}, status_code=413)
+            return await call_next(request)
         if path.startswith("/v1/") and not public and user is None:
             return JSONResponse({"detail": "请先登录"}, status_code=401)
         match = re.match(r"/v1/sessions/([^/]+)", path)
@@ -957,4 +1005,5 @@ def create_app(
             artifacts=artifacts,
         )
 
+    app.mount("/", mcp_app)
     return app

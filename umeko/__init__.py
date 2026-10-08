@@ -16,4 +16,4 @@ try:
 
     __version__ = _pkg_version("umeko")
 except Exception:  # 未以包形式安装（直接源码运行）时的回退
-    __version__ = "0.1.0"
+    __version__ = "0.1.2"

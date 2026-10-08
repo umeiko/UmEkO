@@ -2,7 +2,7 @@
 
 > 自动生成：请修改源码或生成器，不直接编辑本文件。
 
-共 **41** 个 HTTP 操作。[下载 OpenAPI](openapi-admin.json) · [数据结构](schemas.md)
+共 **47** 个 HTTP 操作。[下载 OpenAPI](openapi-admin.json) · [数据结构](schemas.md)
 
 路径为应用内部路由；带前缀部署时在公共 URL 前加 `UMEKO_BASE_PATH`。登录、原始字节体与 SSE 契约由生成器显式补充。
 
@@ -16,6 +16,12 @@
 | POST | `/admin/login` | Login |
 | POST | `/admin/logout` | Logout |
 | GET | `/admin/v1/me` | Me |
+| GET | `/admin/v1/resources` | Resources |
+| GET | `/admin/v1/service-accounts` | Service Accounts |
+| POST | `/admin/v1/service-accounts` | Create Service Account |
+| PATCH | `/admin/v1/service-accounts/{account_id}` | Update Service Account |
+| GET | `/admin/v1/tasks` | Monitored Tasks |
+| POST | `/admin/v1/tasks/{task_id}/cancel` | Stop Machine Task |
 | GET | `/admin/v1/users` | Users |
 | POST | `/admin/v1/users` | Create User |
 | PUT | `/admin/v1/users/{user_id}/password` | Set Password |
@@ -98,6 +104,85 @@ Me
 | 响应码 | 内容 |
 | --- | --- |
 | 200 | application/json: object |
+
+## GET /admin/v1/resources
+
+Resources
+
+认证：`umeko_admin` Cookie。
+
+| 响应码 | 内容 |
+| --- | --- |
+| 200 | application/json: object |
+
+## GET /admin/v1/service-accounts
+
+Service Accounts
+
+认证：`umeko_admin` Cookie。
+
+| 响应码 | 内容 |
+| --- | --- |
+| 200 | application/json: object |
+
+## POST /admin/v1/service-accounts
+
+Create Service Account
+
+认证：`umeko_admin` Cookie。
+
+请求体：必填。
+
+`application/json` → `_ServiceAccountIn`
+
+| 响应码 | 内容 |
+| --- | --- |
+| 201 | application/json: object |
+| 422 | application/json: HTTPValidationError |
+
+## PATCH /admin/v1/service-accounts/{account_id}
+
+Update Service Account
+
+认证：`umeko_admin` Cookie。
+
+| 参数 | 位置 | 必填 | 类型与约束 |
+| --- | --- | --- | --- |
+| `account_id` | path | 是 | `{"title": "Account Id", "type": "string"}` |
+
+请求体：必填。
+
+`application/json` → `_ServiceAccountPatch`
+
+| 响应码 | 内容 |
+| --- | --- |
+| 200 | application/json: object |
+| 422 | application/json: HTTPValidationError |
+
+## GET /admin/v1/tasks
+
+Monitored Tasks
+
+认证：`umeko_admin` Cookie。
+
+| 响应码 | 内容 |
+| --- | --- |
+| 200 | application/json: array<object> |
+
+## POST /admin/v1/tasks/{task_id}/cancel
+
+Stop Machine Task
+
+认证：`umeko_admin` Cookie。
+
+| 参数 | 位置 | 必填 | 类型与约束 |
+| --- | --- | --- | --- |
+| `task_id` | path | 是 | `{"title": "Task Id", "type": "string"}` |
+
+| 响应码 | 内容 |
+| --- | --- |
+| 200 | application/json: object |
+| 422 | application/json: HTTPValidationError |
 
 ## GET /admin/v1/users
 

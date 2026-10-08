@@ -321,6 +321,64 @@
         "title": "_ScriptTestIn",
         "type": "object"
       },
+      "_ServiceAccountIn": {
+        "properties": {
+          "expires_days": {
+            "default": 90,
+            "maximum": 3650.0,
+            "minimum": 1.0,
+            "title": "Expires Days",
+            "type": "integer"
+          },
+          "name": {
+            "maxLength": 80,
+            "minLength": 1,
+            "title": "Name",
+            "type": "string"
+          },
+          "scopes": {
+            "items": {
+              "type": "string"
+            },
+            "title": "Scopes",
+            "type": "array"
+          }
+        },
+        "required": [
+          "name"
+        ],
+        "title": "_ServiceAccountIn",
+        "type": "object"
+      },
+      "_ServiceAccountPatch": {
+        "properties": {
+          "enabled": {
+            "anyOf": [
+              {
+                "type": "boolean"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Enabled"
+          },
+          "expires_days": {
+            "default": 90,
+            "maximum": 3650.0,
+            "minimum": 1.0,
+            "title": "Expires Days",
+            "type": "integer"
+          },
+          "rotate": {
+            "default": false,
+            "title": "Rotate",
+            "type": "boolean"
+          }
+        },
+        "title": "_ServiceAccountPatch",
+        "type": "object"
+      },
       "_UserCreate": {
         "properties": {
           "password": {
@@ -347,7 +405,7 @@
     },
     "securitySchemes": {
       "umeko_admin": {
-        "description": "登录后保存 Cookie；当前实现不接受 Bearer Token。",
+        "description": "网页登录后保存 Cookie；管理与用户 Cookie 相互独立。",
         "in": "cookie",
         "name": "umeko_admin",
         "type": "apiKey"
@@ -1077,6 +1135,34 @@
         "summary": "Add Model"
       }
     },
+    "/admin/v1/resources": {
+      "get": {
+        "operationId": "resources_admin_v1_resources_get",
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "additionalProperties": true,
+                  "title": "Response Resources Admin V1 Resources Get",
+                  "type": "object"
+                }
+              }
+            },
+            "description": "Successful Response"
+          }
+        },
+        "security": [
+          {
+            "umeko_admin": []
+          }
+        ],
+        "summary": "Resources",
+        "tags": [
+          "monitoring"
+        ]
+      }
+    },
     "/admin/v1/runtime-config": {
       "get": {
         "operationId": "get_runtime_config_admin_v1_runtime_config_get",
@@ -1144,6 +1230,139 @@
           }
         ],
         "summary": "Set Runtime Config"
+      }
+    },
+    "/admin/v1/service-accounts": {
+      "get": {
+        "operationId": "service_accounts_admin_v1_service_accounts_get",
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "additionalProperties": true,
+                  "title": "Response Service Accounts Admin V1 Service Accounts Get",
+                  "type": "object"
+                }
+              }
+            },
+            "description": "Successful Response"
+          }
+        },
+        "security": [
+          {
+            "umeko_admin": []
+          }
+        ],
+        "summary": "Service Accounts",
+        "tags": [
+          "service access"
+        ]
+      },
+      "post": {
+        "operationId": "create_service_account_admin_v1_service_accounts_post",
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/_ServiceAccountIn"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "201": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "additionalProperties": true,
+                  "title": "Response Create Service Account Admin V1 Service Accounts Post",
+                  "type": "object"
+                }
+              }
+            },
+            "description": "Successful Response"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            },
+            "description": "Validation Error"
+          }
+        },
+        "security": [
+          {
+            "umeko_admin": []
+          }
+        ],
+        "summary": "Create Service Account",
+        "tags": [
+          "service access"
+        ]
+      }
+    },
+    "/admin/v1/service-accounts/{account_id}": {
+      "patch": {
+        "operationId": "update_service_account_admin_v1_service_accounts__account_id__patch",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "account_id",
+            "required": true,
+            "schema": {
+              "title": "Account Id",
+              "type": "string"
+            }
+          }
+        ],
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/_ServiceAccountPatch"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "additionalProperties": true,
+                  "title": "Response Update Service Account Admin V1 Service Accounts  Account Id  Patch",
+                  "type": "object"
+                }
+              }
+            },
+            "description": "Successful Response"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            },
+            "description": "Validation Error"
+          }
+        },
+        "security": [
+          {
+            "umeko_admin": []
+          }
+        ],
+        "summary": "Update Service Account",
+        "tags": [
+          "service access"
+        ]
       }
     },
     "/admin/v1/sessions/{session_id}": {
@@ -1800,6 +2019,86 @@
           }
         ],
         "summary": "Put Skill Source"
+      }
+    },
+    "/admin/v1/tasks": {
+      "get": {
+        "operationId": "monitored_tasks_admin_v1_tasks_get",
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "items": {
+                    "additionalProperties": true,
+                    "type": "object"
+                  },
+                  "title": "Response Monitored Tasks Admin V1 Tasks Get",
+                  "type": "array"
+                }
+              }
+            },
+            "description": "Successful Response"
+          }
+        },
+        "security": [
+          {
+            "umeko_admin": []
+          }
+        ],
+        "summary": "Monitored Tasks",
+        "tags": [
+          "monitoring"
+        ]
+      }
+    },
+    "/admin/v1/tasks/{task_id}/cancel": {
+      "post": {
+        "operationId": "stop_machine_task_admin_v1_tasks__task_id__cancel_post",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "task_id",
+            "required": true,
+            "schema": {
+              "title": "Task Id",
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "additionalProperties": true,
+                  "title": "Response Stop Machine Task Admin V1 Tasks  Task Id  Cancel Post",
+                  "type": "object"
+                }
+              }
+            },
+            "description": "Successful Response"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            },
+            "description": "Validation Error"
+          }
+        },
+        "security": [
+          {
+            "umeko_admin": []
+          }
+        ],
+        "summary": "Stop Machine Task",
+        "tags": [
+          "monitoring"
+        ]
       }
     },
     "/admin/v1/users": {

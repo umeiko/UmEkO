@@ -772,6 +772,8 @@ class AgentService:
         run = state.active_run_holder["run"]
         if run is not None and not run.finished:
             run.request_cancel()
+        else:
+            state.agent.close()
         return True
 
     def evict_all_sessions(self) -> int:
@@ -888,17 +890,29 @@ class AgentService:
             raise KeyError(f"未知会话：{session_id}")
         self.evict_session(session_id)
         self.store.delete_session(session_id, record["user_id"])
-        shutil.rmtree(
-            self.data_root / "users" / record["user_id"] / "sessions" / session_id,
-            ignore_errors=True,
-        )
+        target = (self.data_root / "users" / record["user_id"] / "sessions" / session_id).resolve()
+        if not target.is_relative_to(self.data_root / "users") or target == self.data_root / "users":
+            raise ValueError("Session 目录超出数据边界")
+        shutil.rmtree(target, ignore_errors=True)
 
     def delete_user_admin(self, user_id: str) -> None:
         """删除用户：驱逐其全部内存态 Session + DB 级联 + 磁盘目录。"""
-        for row in self.store.sessions(user_id):
+        tasks = []
+        with self.store.connect() as db:
+            if hasattr(self, "task_service"):
+                tasks = db.execute("SELECT id,status FROM service_tasks WHERE user_id=?", (user_id,)).fetchall()
+                if any(t["status"] not in {"completed", "failed", "cancelled"} for t in tasks):
+                    raise ValueError("该用户仍有机器任务，请先停止任务并等待结束")
+            sessions = db.execute("SELECT id FROM agent_sessions WHERE user_id=?", (user_id,)).fetchall()
+        for row in sessions:
             self.evict_session(row["id"])
         self.store.delete_user(user_id)
-        shutil.rmtree(self.data_root / "users" / user_id, ignore_errors=True)
+        target = (self.data_root / "users" / user_id).resolve()
+        if not target.is_relative_to(self.data_root / "users") or target == self.data_root / "users":
+            raise ValueError("用户目录超出数据边界")
+        shutil.rmtree(target, ignore_errors=True)
+        for task in tasks:
+            self.task_service._remove_staging(task["id"])
 
     # ---------- 客户端 Skill 资源 ----------
 

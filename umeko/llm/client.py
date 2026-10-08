@@ -308,6 +308,12 @@ class LLMClient:
                 if self._client is client:
                     self._client = None
 
+    def close(self) -> None:
+        with self._client_lock:
+            client, self._client = self._client, None
+        if client is not None:
+            client.close()
+
     @property
     def model_name(self) -> str:
         return self._model.name

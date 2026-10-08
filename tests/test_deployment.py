@@ -12,7 +12,9 @@ def test_root_and_prefixed_ui_auth_and_session_isolation(tmp_path, prefix):
     app = create_app(Settings(ModelConfig("test", "key", "https://test/v1"), base_path=prefix),
                      data_root=tmp_path / "data", workspace_root=tmp_path / "output")
     try:
-        with TestClient(app) as owner, TestClient(app) as other:
+        # One running server lifecycle, with two independent client cookie jars.
+        with TestClient(app) as owner:
+            other = TestClient(app)
             html = owner.get(prefix + "/").text
             assert f'<meta name="umeko-base-path" content="{prefix}">' in html
             resources = re.findall(r'(?:src|href)="([^"?]*/static/[^"?]+)', html)

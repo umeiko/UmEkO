@@ -2,6 +2,10 @@
 
 管理接口默认在 **9000** 端口。先 `POST /admin/login`，保存 `umeko_admin` Cookie。用户端口的登录不能代替管理端口登录。
 
+资源监控、机器任务和服务凭据见[监控指南](monitoring.md)。创建服务账号使用 `POST /admin/v1/service-accounts`，JSON 为 `name`、可选 `scopes`（默认四项任务权限）、`expires_days`（默认 90，1–3650）。响应仅这一次包含 `token`；列表不返回已有凭据。
+
+`PATCH /admin/v1/service-accounts/{id}` 可传 `enabled` 启用 / 停用，或 `rotate:true` 与可选 `expires_days` 更换凭据。更换和停用会撤销旧访问令牌；停用不取消已接收任务，需在资源监控中显式停止。
+
 ```json
 {"username":"your-admin-name","password":"your-admin-password"}
 ```

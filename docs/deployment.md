@@ -13,7 +13,7 @@ uv sync --extra server
 ```
 
 没有 `uv` 时，用 `python -m pip install -e ".[server]"`，之后直接使用 `python -m ...` 启动。
-普通 `uv sync` 只安装基础模型客户端依赖，Web 服务还需要 `server` 中的 FastAPI、Uvicorn 和文件上传依赖。
+普通 `uv sync` 只安装基础模型客户端依赖，Web 服务还需要 `server` 中的 FastAPI、Uvicorn、文件上传、MCP、A2A SDK 与资源监控依赖。
 
 首次部署从 [.env.example](https://github.com/umeiko/UmEkO/blob/main/.env.example) 复制 `.env`；已经有 `.env` 时保留现有文件。
 Windows PowerShell 可以使用：
@@ -139,6 +139,7 @@ python -m umeko.cli --env .env --data-root server_data providers migrate-env --r
 ```ini
 UMEKO_DATA_ROOT=server_data
 UMEKO_BASE_PATH=/doc-master/consistency/image-text
+UMEKO_PUBLIC_URL=https://example.internal/doc-master/consistency/image-text
 MODEL_CA_FILE=/etc/umeko/certs/company-model-ca.pem
 ```
 
@@ -146,6 +147,8 @@ MODEL_CA_FILE=/etc/umeko/certs/company-model-ca.pem
 允许 URL 安全的英文、数字及 `- _ . ~` 路径段，末尾斜杠会自动移除。
 本地根路径访问时留空。它在返回 HTML 时注入，因此不需要重新构建前端。
 CSS/JS、普通 API、头像、预览、下载与事件连接都会带此前缀，Cookie 也限定在此前缀内。
+
+`UMEKO_PUBLIC_URL` 为机器协议提供完整的外部基址，路径必须与 `UMEKO_BASE_PATH` 一致，不带末尾斜杠、查询参数或用户凭据。Agent Card、OAuth metadata、resource 校验与产物链接都使用它；MCP Host 校验也接受这个域名。本地可留空从请求推导，生产请显式配置，避免代理内部主机名进入下载链接。
 
 代理和应用要约定：**浏览器使用完整前缀，转到应用前移除一次前缀。**
 
@@ -170,6 +173,7 @@ location /doc-master/consistency/image-text/ {
     proxy_http_version 1.1;
     proxy_set_header Connection "";
     proxy_set_header Host $http_host;
+    proxy_set_header Authorization $http_authorization;
     proxy_set_header X-Forwarded-For $proxy_add_x_forwarded_for;
     proxy_set_header X-Forwarded-Proto $scheme;
     proxy_buffering off;
@@ -193,6 +197,34 @@ location /doc-master/consistency/image-text/ {
 代理 HTTPS 的协议信息由 `X-Forwarded-Proto` 传递。NGINX 同机时默认信任回环来源；
 容器或远端代理可通过 Uvicorn 支持的 `FORWARDED_ALLOW_IPS` 环境变量显式信任相应代理地址。
 管理面仍在独立端口，`UMEKO_BASE_PATH` 只影响用户工作台。
+
+### MCP、A2A 与自动发现
+
+`/mcp`、`/a2a`、`/v1/tasks`、`/oauth/token`、`/.well-known/...` 都在用户服务入口下，与静态页面使用同一公共前缀。代理应转发 Authorization，不能把协议请求改成网页登录页；A2A SSE 与 REST 任务流都要关闭缓冲。机器请求体最多 30 MiB，OAuth 表单最多 16 KiB，网关可设置更严格的限制。
+
+使用客户端配置的完整 MCP URL、Agent Card URL 或 ClientFactory 基址时，始终包含前缀。MCP 未授权响应提供 `WWW-Authenticate` 的 `resource_metadata` 地址，可据此访问本服务的 metadata。
+
+带路径的 OAuth issuer 自动发现可能按 RFC 8414 在域名根下寻找 `/.well-known/oauth-authorization-server/<服务前缀>`；受保护资源也可能寻找 `/.well-known/oauth-protected-resource/<服务前缀>/mcp`。本应用的 metadata 位于公共前缀下。需要自动发现的网关应为这些域名根路径配置到对应 metadata 的路由，或让调用方显式配置 metadata 地址。不要把其他服务的整个 `/.well-known/` 目录都转发到 UMEKO。当前只实现客户端凭据流程，没有交互式 OAuth / PKCE。
+
+## 机器任务容量与资源监控
+
+在管理端“服务接入”创建调用凭据，“资源监控”查看资源、模型队列和机器任务，并可停止活跃任务。具体指标见[资源监控](api/monitoring.md)。这些管理入口不在用户端口暴露。
+
+`.env` 可配置以下参数，修改后重启：
+
+```ini
+UMEKO_TASK_WORKERS=4
+UMEKO_TASK_QUEUE_LIMIT=100
+UMEKO_TASK_CALLER_LIMIT=20
+UMEKO_TASK_RETENTION_SECONDS=86400
+UMEKO_TASK_TIMEOUT_SECONDS=3600
+```
+
+`WORKERS` 限制机器调度同时占用的执行槽，`QUEUE_LIMIT` 限制全局等待数量，`CALLER_LIMIT` 限制每账号未结束任务。当前 Run 执行池也有容量限制；增加任务槽并不直接增加模型吞吐。每模型额度仍在 Provider 页面设置。
+
+终态结果和工作区默认保留 24 小时，清理约每分钟一次；运行中的任务不会因结果保留期限被删除。超时发起协作式取消，外部工具停止可能需要时间。新机器任务记录落盘，排队任务在重启后继续调度，执行中任务标记中断失败；普通网页 Run 仍不能跨重启恢复。
+
+备份应包含整个 `UMEKO_DATA_ROOT`，其中数据库含服务凭据摘要和 Provider 配置，任务产物在用户工作区。不要只备份 SQLite 而漏掉待执行输入与产物。部署仍要求单个应用进程；多进程共享数据库不等于支持多 Worker 调度。
 
 ## 模型并发与调用排队
 

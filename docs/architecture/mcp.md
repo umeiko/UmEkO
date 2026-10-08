@@ -1,58 +1,30 @@
-# MCP 接入架构设计
+# MCP 接入架构
 
-**状态：设计方案，尚未实现 MCP 端点。** 当前 REST API 不能直接当作 MCP 服务，仍需协议适配、工具描述、授权与生命周期处理。
-
-## MCP 对这个项目的作用
-
-MCP 让其他支持该协议的模型客户端发现并调用 UMEKO 的工具。调用者掌握自己的对话，UMEKO 提供“处理这份文件”“查询处理进度”“下载报告”等能力。
+**已实现 Streamable HTTP MCP 服务，入口 `/mcp`。** 使用官方 Python SDK `mcp>=2.3,<3`，通过 SDK 处理现代请求级协商以及旧版初始化客户端。服务工具调用返回业务 Task，不让一条 MCP 请求长期占用 Agent 执行连接。
 
 ```mermaid
-flowchart TB
-    Client[MCP 客户端] --> Adapter[MCP 工具与传输适配器]
-    Adapter --> Auth[统一 Principal / 权限]
-    Auth --> Tasks[TaskService · 待实现]
-    Tasks --> Engine[现有 Agent / 技能 / 文件]
-    Tasks --> Artifacts[产物存储]
+flowchart LR
+    Client[MCP 客户端] --> HTTP[官方 SDK · Streamable HTTP]
+    HTTP --> Auth[Bearer / scope]
+    Auth --> Tools[六个工具与产物资源]
+    Tools --> Tasks[共享 TaskService]
+    Tasks --> Agent[现有执行引擎]
 ```
 
-本设计以 **MCP 2026-07-28** 的核心传输与授权规范为基线；长任务采用单独的 Tasks 扩展。实现时必须核对选用 SDK 和客户端实际支持的版本。[MCP 规范](https://modelcontextprotocol.io/specification/2026-07-28)、[Streamable HTTP](https://modelcontextprotocol.io/specification/2026-07-28/basic/transports/streamable-http)。
+## 工具与资源
 
-## 工具契约建议
+`list_models`、`submit_task`、`get_task`、`list_tasks`、`cancel_task`、`read_artifact` 提供结构化结果。产物另有 `umeko://tasks/{task_id}/artifacts/{artifact_id}` 资源模板；小文件通过 MCP 读取，大文件通过受保护 HTTP 下载。
 
-以下名称是 UMEKO 的拟议业务工具，不是 MCP 规定的通用方法。
+工具可被发现，不代表凭据有权限执行。每次调用检查 scope 和任务归属。模型发现只返回 ID、名称、视觉能力和 Provider 名称，不返回模型地址或密钥。
 
-| 工具 | 输入 | 输出 / 约束 |
-| --- | --- | --- |
-| `submit_task` | 技能、问题、文件引用、可选幂等键 | 稳定 Task ID、状态、到期时间 |
-| `get_task` | Task ID | 状态、进度、结构化结果和产物引用 |
-| `cancel_task` | Task ID | 取消请求是否接受与当前状态 |
-| `read_artifact` | Task ID、产物 ID | 在大小与类型限制内返回内容或受控引用 |
+长任务使用 `submit_task → get_task → read_artifact` 的业务轮询流程。当前未声明 MCP 原生 Tasks 扩展，不把业务 Task ID 当成该扩展的协议任务。取消 MCP 请求或断开连接不会取消已经接收的业务 Task，需要显式 `cancel_task`。
 
-文件引用绑定当前 Principal，不能接受任意服务器绝对路径。大型文件通过独立上传能力或受控资源机制交换；大型报告通过受控下载交付，避免把整份文件塞进模型上下文。
+## 授权与部署
 
-工具描述应标明输入限制、耗时、是否有副作用和返回结构。工具列表按权限过滤；模型、Key、管理员 API 和服务器内部路径不作为普通工具暴露。
+管理员创建服务凭据，调用方发送 `Authorization: Bearer <token>`。也提供受保护资源元数据、授权服务器元数据和 OAuth 客户端凭据令牌入口。当前没有交互式 OAuth 登录、授权码 / PKCE、动态客户端注册，也没有 stdio 传输。需要交互式 OAuth 的客户端应先确认是否支持自定义 Header 或客户端凭据流程。
 
-## 传输与长任务
+生产配置 `UMEKO_PUBLIC_URL`，确保外部 Host 被 MCP 的 DNS 重绑定保护接受，资源 metadata 和下载链接使用正确的域名与前缀。NGINX 保留 Authorization、允许足够请求大小、关闭协议流的缓冲；详情见 [部署指南](../deployment.md)。
 
-核心 Streamable HTTP 的协议请求不能沿用旧版 MCP 的初始化和会话假设：2026-07-28 采用请求级能力协商，移除了旧的协议会话和独立 GET 事件流。POST 请求中的 SSE 断开按该传输的取消语义处理。[传输规范](https://modelcontextprotocol.io/specification/2026-07-28/basic/transports/streamable-http)。
+验证使用官方 `mcp.client.Client`，覆盖现代与 legacy 客户端、根路径与公司路径前缀、附件、结果、资源和取消；业务身份隔离、容量限制、轮换与过期清理由共享 TaskService 测试覆盖。测试使用受控 Agent 回复，不调用真实模型。
 
-UMEKO 的普通 REST SSE 断开会让业务 Run 继续执行。两种传输语义不能直接混用；MCP 适配器必须明确请求取消与持久化 Task 取消的关系。
-
-长任务有两种兼容路径：
-
-1. 客户端和服务端都支持 **Tasks 扩展**时，按扩展声明能力，持久化任务后返回任务结果，并支持 `tasks/get`、输入补充与协作式取消。
-2. 不支持扩展时，`submit_task` 快速返回业务 Task ID，客户端通过 `get_task` 轮询。不能擅自给不支持扩展的客户端返回扩展结果。
-
-Tasks 使用 `io.modelcontextprotocol/tasks` 扩展能力，并通过请求协商。Task 的完成、失败、取消、等待输入与有效期均由适配器转换；中间状态由 TaskService 提供，不能只保存在 HTTP 连接中。[Tasks 扩展](https://modelcontextprotocol.io/extensions/tasks/overview)。
-
-## 授权与地址
-
-HTTP MCP 按标准授权规范提供受保护资源信息与 OAuth 接入。无人值守客户端可在双方支持时采用 OAuth Client Credentials 扩展，接入公司的机器身份；不能假定所有 MCP 客户端支持手填 API Key。[授权规范](https://modelcontextprotocol.io/specification/2026-07-28/basic/authorization)、[客户端凭据扩展](https://modelcontextprotocol.io/extensions/auth/oauth-client-credentials)。
-
-拟议入口如 `https://example.internal/doc-master/consistency/image-text/mcp`。公开地址、OAuth 资源标识和下载引用使用外部完整 URL，不能把 `127.0.0.1:8000` 写给外部客户端。NGINX / ALB 对 SSE 与长连接的配置也需验证。
-
-## 实施与验收
-
-先完成 [TaskService](api-service.md)，选择明确支持目标协议版本的 SDK，再实现适配器。可以先验证本地 stdio 工具调用，再验证生产 HTTP、OAuth 和路径前缀。
-
-验收覆盖工具发现、合法 / 非法参数、权限隔离、提交 / 查询 / 取消、客户端断开、Tasks 支持与不支持两条路径、文件交付和长任务过期。需要真实 MCP 客户端互操作测试；仅用 REST 测试成功不能证明 MCP 兼容。
+接入步骤、工具参数和客户端示例见 [MCP API](../api/mcp.md)。规范参考：[MCP 2026-07-28](https://modelcontextprotocol.io/specification/2026-07-28)、[官方 Python SDK](https://github.com/modelcontextprotocol/python-sdk)、[客户端凭据扩展](https://modelcontextprotocol.io/extensions/auth/oauth-client-credentials)。

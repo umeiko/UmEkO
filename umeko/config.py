@@ -11,6 +11,7 @@ import re
 import ssl
 from dataclasses import dataclass, replace
 from pathlib import Path
+from urllib.parse import urlsplit
 
 from dotenv import dotenv_values, load_dotenv
 
@@ -56,6 +57,12 @@ class Settings:
     data_root: str = "server_data"
     # load_settings 使用持久化 Provider；直接构造 Settings 仍支持显式注入模型。
     registry_managed: bool = False
+    public_url: str = ""
+    task_workers: int = 4
+    task_queue_limit: int = 100
+    task_caller_limit: int = 20
+    task_retention_seconds: int = 86400
+    task_timeout_seconds: int = 3600
 
 
 def normalize_base_path(value: str) -> str:
@@ -85,6 +92,18 @@ def _load_model_ca(env_path: Path) -> str | None:
     except (OSError, ssl.SSLError) as exc:
         raise RuntimeError(f"MODEL_CA_FILE 无法加载 CA 证书：{path} ({exc})") from exc
     return str(path.resolve())
+
+
+def normalize_public_url(value: str, base_path: str) -> str:
+    value = value.strip().rstrip("/")
+    if not value:
+        return ""
+    parsed = urlsplit(value)
+    if (parsed.scheme not in {"http", "https"} or not parsed.netloc
+            or parsed.username or parsed.password or parsed.query or parsed.fragment
+            or parsed.path != base_path):
+        raise RuntimeError("UMEKO_PUBLIC_URL 必须是外部完整服务地址，路径须与 UMEKO_BASE_PATH 一致")
+    return value
 
 
 def model_config_unconfigured(settings) -> bool:
@@ -122,6 +141,13 @@ def load_settings(env_path: str | Path | None = None, data_root: str | Path | No
             1, int(os.getenv("MAX_SUBAGENT_TOOL_ITERATIONS", "24"))
         ),
         max_tool_iterations=max(1, int(os.getenv("MAX_TOOL_ITERATIONS", "32"))),
+        public_url=normalize_public_url(os.getenv("UMEKO_PUBLIC_URL", ""),
+                                        normalize_base_path(os.getenv("UMEKO_BASE_PATH", ""))),
+        task_workers=max(1, int(os.getenv("UMEKO_TASK_WORKERS", "4"))),
+        task_queue_limit=max(1, int(os.getenv("UMEKO_TASK_QUEUE_LIMIT", "100"))),
+        task_caller_limit=max(1, int(os.getenv("UMEKO_TASK_CALLER_LIMIT", "20"))),
+        task_retention_seconds=max(60, int(os.getenv("UMEKO_TASK_RETENTION_SECONDS", "86400"))),
+        task_timeout_seconds=max(1, int(os.getenv("UMEKO_TASK_TIMEOUT_SECONDS", "3600"))),
     )
     from .host.configuration import LEGACY_MODEL_KEYS, migrate_legacy_models, resolve_provider_settings
     from .host.storage import Store

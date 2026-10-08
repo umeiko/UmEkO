@@ -6,13 +6,19 @@
       运行时数据 server_data/ 与 .env 落在 exe 同目录）
 """
 
+from PyInstaller.utils.hooks import copy_metadata
+
+protocol_metadata = []
+for package in ("umeko", "mcp", "mcp-types", "a2a-sdk"):
+    protocol_metadata.extend(copy_metadata(package))
+
 a = Analysis(
     ["run_server.py"],
     pathex=[],
     binaries=[],
     datas=[
         ("umeko/server/static", "umeko/server/static"),
-    ],
+    ] + protocol_metadata,
     hiddenimports=[
         "uvicorn.logging",
         "uvicorn.loops.auto",

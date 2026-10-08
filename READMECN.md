@@ -33,7 +33,8 @@ UMEKO 是一个用于处理文件的 Python Agent 服务，提供网页工作台
 - **任务委派**：主 Agent 通过 `delegate_task` 派发文件任务，子 Agent 返回结果后释放上下文。
 - **图像分析**：`image_reasoning` 支持图像分析和文字提取，执行进度显示在工具详情中。
 - **模型配置**：支持多个 Provider 和模型、视觉能力标记、JSON 导入及每模型并发上限。
-- **管理面**：通过独立端口管理用户、会话、模型和技能包。
+- **管理面**：通过独立端口管理用户、会话、模型、技能包、服务凭据，并监控资源和队列。
+- **机器接入**：MCP Streamable HTTP 与 A2A 1.0 JSON-RPC，共用有界任务队列、持久化结果、归属隔离和自动过期清理。
 - **文件操作**：在会话目录内读取、搜索、编辑和写入文件，支持 7-Zip 解压及拖拽上传。
 - **历史记录**：消息、工具调用和附件映射保存在 SQLite 中。
 - **运行控制**：通过 SSE 返回执行输出，支持协作式取消。
@@ -83,7 +84,7 @@ uv run python -m umeko.local  --port 8765 # 本地模式（免登录）
 | L1：运行时 | Agent、Run 生命周期和事件 | `agent.py`、`sub_agent.py`、`runner.py`、`events.py` |
 | L0：核心能力 | 模型客户端、工具、技能和取消 | `llm/`、`skills/`、`cancellation.py` |
 
-Web 和 CLI 使用 `events.py` 中的事件定义展示执行进度。当前实现和 MCP / A2A 扩展方案见[架构文档](https://umeiko.github.io/UmEkO/architecture/)。
+Web 和 CLI 使用 `events.py` 中的事件定义展示执行进度。当前实现见[架构文档](https://umeiko.github.io/UmEkO/architecture/)。机器接入支持 [MCP](https://umeiko.github.io/UmEkO/api/mcp/) 与 [A2A](https://umeiko.github.io/UmEkO/api/a2a/)，共用[持久化任务与服务凭据](https://umeiko.github.io/UmEkO/api/machine-tasks/)。管理员可在[资源监控](https://umeiko.github.io/UmEkO/api/monitoring/)查看 CPU、内存、磁盘和任务 / 模型队列。
 
 ## 技能包
 

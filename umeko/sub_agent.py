@@ -110,6 +110,7 @@ class FileSubAgent:
             if self._vision or settings.vision_model is None
             else LLMClient(settings.vision_model)
         )
+        self._vision_llm = vision_llm
         skills = build_file_tools(
             session,
             self._images,
@@ -212,6 +213,13 @@ class FileSubAgent:
     @property
     def tool_names(self) -> set[str]:
         return set(self._skills)
+
+    def close(self) -> None:
+        self._llm.close()
+        if self._image_reasoning_llm is not None:
+            self._image_reasoning_llm.close()
+        if self._vision_llm is not None:
+            self._vision_llm.close()
 
     def run(self, task: str, *, allowed_tools: set[str] | None = None) -> str:
         task = (task or "").strip()

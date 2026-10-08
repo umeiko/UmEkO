@@ -1,67 +1,48 @@
-# A2A 接入架构设计
+# A2A 接入架构
 
-**状态：设计方案，尚未实现 Agent Card 或 A2A 协议端点。** A2A 把 UMEKO 描述为可以接收业务任务并交付结果的 Agent 服务。
-
-## 定位与协议基线
-
-MCP 面向工具调用；A2A 面向 Agent 之间的任务协作。二者在 UMEKO 中共用身份、TaskService 和产物存储，不分别建立永久会话池。
-
-本设计以 **A2A 1.0.0** 为发布规范基线，协议线上的版本为 `1.0`。不能直接套用早期 0.3 示例中的字段和鉴别方式；实现时按选用 SDK 的 1.0 类型生成协议对象。[A2A 1.0.0 规范](https://a2a-protocol.org/v1.0.0/specification/)。
+**已实现 A2A 1.0 JSON-RPC 服务与公开 Agent Card。** 使用官方 `a2a-sdk>=1.2.2,<2` 的 protobuf 类型、路由和客户端，协议请求带 `A2A-Version: 1.0`。
 
 ```mermaid
 sequenceDiagram
-    participant C as 调用 Agent
+    participant C as 外部 Agent
     participant A as A2A 适配器
     participant T as TaskService
-    participant E as 执行引擎
+    participant E as 现有执行引擎
     C->>A: 获取 Agent Card
-    A-->>C: 技能、接口、协议版本、授权要求
-    C->>A: 发送消息与文件引用
-    A->>T: 鉴权、幂等、持久化 Task
-    T->>E: 创建执行 Attempt / Run
-    A-->>C: Task 状态
-    E-->>T: 进度、结果、产物
-    C->>A: 查询 / 订阅 / 取消任务
-    A-->>C: 协议 Task / 状态更新 / 产物
+    C->>A: Bearer + SendMessage / SendStreamingMessage
+    A->>T: 校验身份、输入、幂等与队列容量
+    T-->>A: 持久化 Task ID
+    T->>E: 调度任务，创建临时工作区
+    A-->>C: Task / 状态 / 增量产物
+    C->>A: GetTask / SubscribeToTask / CancelTask
+    E-->>T: 最终回复与文件产物
+    A-->>C: 终态与受保护的产物 URL
 ```
 
-## Agent Card
+## 当前能力
 
-Card 描述服务名称、说明、可用技能、输入输出类型、支持的接口绑定、协议版本和安全方案。仅发布已经实现并验证的能力：例如没有可靠推送通知时，就不声明支持推送。
+Card 位于 `/.well-known/agent-card.json`，声明 `/a2a` 的 JSONRPC 1.0 接口、流式能力、Bearer 鉴权和文件处理技能。公开 Card 不包含服务凭据、Provider Key 或主机文件路径。
 
-规范提供 `/.well-known/agent-card.json` 发现方式，也允许直接配置 Card URL 或使用目录服务。如果公司域名下有多个路径服务，域名根目录的 well-known 路径由网关协调；不能让每个项目自行占用根路径。可以先向调用方提供明确的带前缀 Card URL。
+支持发送、流式发送、查询、分页列表、取消和订阅活跃任务。不提供 gRPC、HTTP+JSON 绑定、推送回调或扩展 Agent Card；相关可选能力未宣称支持，调用时返回明确的协议错误。
 
-Card 的接口 URL 使用**公共域名和完整前缀**。卡片中的服务接口、安全声明与实际认证中间件必须一致，不应发布内部端口或 Provider Key。[Agent Card 与发现规范](https://a2a-protocol.org/v1.0.0/specification/)。
+输入支持文本、结构化 JSON、内联文件。文件 URL 只接受同一服务、同一调用者有权读取的任务产物，不抓取任意外部 URL。附件限制与 REST / MCP 相同。
 
-## 数据映射
+## 生命周期映射
 
-| A2A 概念 | UMEKO 建议映射 |
+| UMEKO | A2A |
 | --- | --- |
-| 调用者身份 | Principal，不由 `contextId` 代替 |
-| Context | 可选持续上下文；绑定归属与过期策略 |
-| Message / Part | 问题、文本、文件与结构化输入 |
-| Task | 持久化业务工单 |
-| 一次执行 | Task 下的 Attempt，驱动现有 Run |
-| Artifact | 报告 / 文件 / 结构化结果，保留访问权限 |
-| 状态更新与订阅 | Task 事件适配，支持断线后的状态查询 |
+| queued | SUBMITTED |
+| running / cancelling | WORKING |
+| completed | COMPLETED |
+| failed | FAILED |
+| cancelled | CANCELED |
 
-一个 Task 可能包含重试或补充输入产生的多个 Run。协议任务不能简单等同于一个内存 Run，也不能把一条网页聊天会话当成所有任务的共享房间。
+每个 Message 创建独立业务 Task。`messageId` 默认用于幂等；重试同一消息不会重复创建任务。`contextId` 可将自己已有的任务归为一组，**不共享模型记忆**。暂不接受向已有 `taskId` 补充输入，也不支持 INPUT_REQUIRED 工作流。
 
-当前引擎有 queued、running、cancelling 和三种终态。适配器将这些映射到 A2A 的任务生命周期；如果以后支持要求调用方补充文件或确认，TaskService 还需增加等待输入状态。当前引擎尚无完整的输入补充流程。
+非流式发送可设 `configuration.returnImmediately=true` 立即拿到 Task；否则等待终态。流式发送依次返回初始 Task、回复增量、最终产物和终态。最终文本以 `append=false` 替换累积片段，防止重连或有界事件历史造成结果不完整。
 
-## 协议接口与认证
+`GetTask` 可指定 `historyLength`；`ListTasks` 支持分页、context、状态、更新时间过滤及产物选项。产物下载需要服务凭据，URL 自身不授予权限。取消和业务连接断开的行为与共享 TaskService 一致。
 
-适配器按 A2A 1.0 SDK 实现发送消息、查询任务、取消与订阅操作；不要把已有 `/v1/proxy/sessions` 改名后就宣称协议兼容。
+测试使用官方 ClientFactory 在真实 HTTP 服务上发现 Card、发送附件、接收流式 / 非流式结果、查询、列表和下载，并验证部署前缀与跨调用者隔离。模型业务效果需要配置真实 Provider 后另行验证。
 
-机器调用采用公司 OAuth 或服务凭据，Card 声明所用安全方案；查询、订阅、取消和下载都检查 Task 所有权。多租户系统中，猜到一个任务 ID 不能获得任务内容。
-
-业务任务长时间执行时，连接断开后仍可查询持久化状态。若增加推送通知，还需验证回调目标、持久化投递与重试、凭据管理和幂等接收；初期可以只实现查询与订阅。
-
-## 分阶段交付
-
-1. 完成共享身份与 TaskService，先跑通 REST 业务工单。
-2. 发布 Card，明确一个接口绑定与已支持能力。
-3. 实现消息提交、状态查询、取消、文件与产物。
-4. 增加订阅和等待输入；确有需求时增加推送通知。
-
-用真实 A2A 1.0 客户端验收：Card 发现、协议版本、授权失败、跨身份隔离、长任务、取消、断线查询、多 Part 输入、产物下载、重启与到期处理，以及公司路径前缀。协议兼容性与业务结果正确性分别验证。
+请求示例见 [A2A API](../api/a2a.md)。规范参考：[A2A 1.0.1](https://a2a-protocol.org/v1.0.1/specification/)、[官方 Python SDK](https://github.com/a2aproject/a2a-python)。

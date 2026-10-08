@@ -34,7 +34,8 @@ a CLI and an HTTP API, with model configuration, user management and skill packs
 - **Agent delegation**: the main agent delegates file tasks through `delegate_task`. Sub-agent context is released after it returns a result.
 - **Image analysis**: `image_reasoning` supports image analysis and text extraction, with progress displayed in the tool details.
 - **Model configuration**: multiple providers and models, vision flags, JSON import and per-model concurrency limits.
-- **Administration**: a separate port for managing users, sessions, models and skill packs.
+- **Administration**: a separate port for users, sessions, models, skill packs, service credentials and resource monitoring.
+- **Machine integrations**: MCP Streamable HTTP and A2A 1.0 JSON-RPC, with scoped service credentials, durable tasks, bounded queues and automatic expiry.
 - **File operations**: reading, searching, editing and writing within session directories, archive extraction with 7-Zip and drag-and-drop uploads.
 - **History**: messages, tool calls and attachment mappings are stored in SQLite.
 - **Run control**: SSE output and cooperative cancellation.
@@ -95,7 +96,9 @@ process. Deployment changes in `.env` require a restart.
 
 Web and CLI use the event definitions in `events.py` to display execution progress.
 See the [architecture documentation](https://umeiko.github.io/UmEkO/architecture/)
-for current implementation details and planned MCP / A2A support.
+for current implementation details. See [machine tasks](https://umeiko.github.io/UmEkO/api/machine-tasks/),
+[MCP](https://umeiko.github.io/UmEkO/api/mcp/), [A2A](https://umeiko.github.io/UmEkO/api/a2a/)
+and [resource monitoring](https://umeiko.github.io/UmEkO/api/monitoring/) for integration instructions.
 
 ## Skill packs
 

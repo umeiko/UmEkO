@@ -735,6 +735,73 @@
 }
 ```
 
+### TaskCreateInput
+
+```json
+{
+  "additionalProperties": false,
+  "properties": {
+    "files": {
+      "items": {
+        "$ref": "#/components/schemas/TaskFileInput"
+      },
+      "maxItems": 10,
+      "title": "Files",
+      "type": "array"
+    },
+    "model_id": {
+      "anyOf": [
+        {
+          "type": "string"
+        },
+        {
+          "type": "null"
+        }
+      ],
+      "title": "Model Id"
+    },
+    "prompt": {
+      "maxLength": 200000,
+      "minLength": 1,
+      "title": "Prompt",
+      "type": "string"
+    }
+  },
+  "required": [
+    "prompt"
+  ],
+  "title": "TaskCreateInput",
+  "type": "object"
+}
+```
+
+### TaskFileInput
+
+```json
+{
+  "additionalProperties": false,
+  "properties": {
+    "content_base64": {
+      "maxLength": 28000000,
+      "title": "Content Base64",
+      "type": "string"
+    },
+    "name": {
+      "maxLength": 200,
+      "minLength": 1,
+      "title": "Name",
+      "type": "string"
+    }
+  },
+  "required": [
+    "name",
+    "content_base64"
+  ],
+  "title": "TaskFileInput",
+  "type": "object"
+}
+```
+
 ### ToolEventView
 
 ```json
@@ -1455,6 +1522,74 @@
     }
   },
   "title": "_ScriptTestIn",
+  "type": "object"
+}
+```
+
+### _ServiceAccountIn
+
+```json
+{
+  "properties": {
+    "expires_days": {
+      "default": 90,
+      "maximum": 3650.0,
+      "minimum": 1.0,
+      "title": "Expires Days",
+      "type": "integer"
+    },
+    "name": {
+      "maxLength": 80,
+      "minLength": 1,
+      "title": "Name",
+      "type": "string"
+    },
+    "scopes": {
+      "items": {
+        "type": "string"
+      },
+      "title": "Scopes",
+      "type": "array"
+    }
+  },
+  "required": [
+    "name"
+  ],
+  "title": "_ServiceAccountIn",
+  "type": "object"
+}
+```
+
+### _ServiceAccountPatch
+
+```json
+{
+  "properties": {
+    "enabled": {
+      "anyOf": [
+        {
+          "type": "boolean"
+        },
+        {
+          "type": "null"
+        }
+      ],
+      "title": "Enabled"
+    },
+    "expires_days": {
+      "default": 90,
+      "maximum": 3650.0,
+      "minimum": 1.0,
+      "title": "Expires Days",
+      "type": "integer"
+    },
+    "rotate": {
+      "default": false,
+      "title": "Rotate",
+      "type": "boolean"
+    }
+  },
+  "title": "_ServiceAccountPatch",
   "type": "object"
 }
 ```
