@@ -800,7 +800,7 @@ def create_app(
     # 用途：外部程序化调用（如同事的截图 Agent 借用质检能力）。
     # 创建会话 → 存文件 → 挂 Skill → 起任务，一次请求完成；
     # 轮询状态接口拿最终回复与产物下载地址。
-    # 权限遵循现有登录态：Bearer/Cookie 均可（走 authenticate_request 中间件）。
+    # 权限遵循现有用户 Cookie 登录态（走 authenticate_request 中间件）。
 
     @app.post(
         "/v1/proxy/sessions",
@@ -887,6 +887,8 @@ def create_app(
         - completed：reply 为文字结论；result 内联 qc-report.json 的结构化结果；
           artifacts 只列交付物（qc-report-*.zip/html/json），中间产物不列。
         """
+        if store.session(session_id, request.state.user["id"]) is None:
+            raise HTTPException(404, "Session 不存在或无权访问")
         session = get_session(session_id)
         # 状态判定：优先活跃 Run；否则看最后一条 assistant 消息是否存在
         active = service.active_run(session_id)

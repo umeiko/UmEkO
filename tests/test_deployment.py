@@ -34,6 +34,10 @@ def test_root_and_prefixed_ui_auth_and_session_isolation(tmp_path, prefix):
             assert history[0]["run_id"] == "run_history"
             assert history[0]["result"] == '{"text":"sample"}'
             assert other.get(prefix + f"/v1/sessions/{sid}/tool-events").status_code == 404
+            # The one-shot status adapter must enforce the same ownership boundary.
+            assert owner.get(prefix + f"/v1/proxy/sessions/{sid}").status_code == 200
+            assert other.get(prefix + f"/v1/proxy/sessions/{sid}").status_code == 404
+            assert owner.get(prefix + "/v1/proxy/sessions/missing").status_code == 404
             assert owner.post(prefix + "/v1/auth/logout").status_code == 204
             assert owner.get(prefix + "/v1/auth/me").status_code == 401
             owner.post(prefix + "/v1/auth/login", json={"username": "owner", "password": "password"}).raise_for_status()
