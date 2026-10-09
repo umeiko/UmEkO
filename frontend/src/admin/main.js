@@ -1,7 +1,10 @@
 import { createApp } from 'vue';
 import AdminApp from './AdminApp.vue';
+import { initAdminI18n } from '../shared/adminI18n.js';
 import '../shared/theme.css';
 import 'highlight.js/styles/github-dark.css';
 import '../shared/highlight-light.css';
 import '../shared/markdown.css';
+const disposeLocale = initAdminI18n();
 createApp(AdminApp).mount('#app');
+if (import.meta.hot) import.meta.hot.dispose(disposeLocale);

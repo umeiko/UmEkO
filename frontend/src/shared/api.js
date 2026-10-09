@@ -1,6 +1,12 @@
-export function errorMessage(detail, status) {
-  if (typeof detail === 'string') return detail;
-  if (Array.isArray(detail)) return detail.map((item) => errorMessage(item, status)).join('；');
+export function errorMessage(
+  detail,
+  status,
+  translate = (text, values = {}) =>
+    text.replace(/\{(\w+)\}/g, (match, key) => String(values[key] ?? match)),
+) {
+  if (typeof detail === 'string') return translate(detail);
+  if (Array.isArray(detail))
+    return detail.map((item) => errorMessage(item, status, translate)).join(translate('；'));
   if (detail && typeof detail === 'object') {
     const names = {
       name: '名称',
@@ -10,17 +16,24 @@ export function errorMessage(detail, status) {
       password: '密码',
       slug: '访问路径',
     };
-    const field = names[detail.loc?.at(-1)] || detail.loc?.at(-1) || '输入';
+    const field = translate(names[detail.loc?.at(-1)] || detail.loc?.at(-1) || '输入');
     const limits = detail.ctx || {};
-    if (detail.type === 'missing') return `${field}不能为空`;
-    if (detail.type === 'string_too_short') return `${field}至少需要 ${limits.min_length} 个字符`;
-    if (detail.type === 'string_too_long') return `${field}不能超过 ${limits.max_length} 个字符`;
-    if (detail.type === 'greater_than_equal') return `${field}不能小于 ${limits.ge}`;
-    if (detail.type === 'less_than_equal') return `${field}不能大于 ${limits.le}`;
-    if (detail.type?.startsWith('int_')) return `${field}必须是整数`;
-    return `${field}：${detail.msg || '格式不正确'}`;
+    if (detail.type === 'missing') return translate('{field}不能为空', { field });
+    if (detail.type === 'string_too_short')
+      return translate('{field}至少需要 {min} 个字符', { field, min: limits.min_length });
+    if (detail.type === 'string_too_long')
+      return translate('{field}不能超过 {max} 个字符', { field, max: limits.max_length });
+    if (detail.type === 'greater_than_equal')
+      return translate('{field}不能小于 {min}', { field, min: limits.ge });
+    if (detail.type === 'less_than_equal')
+      return translate('{field}不能大于 {max}', { field, max: limits.le });
+    if (detail.type?.startsWith('int_')) return translate('{field}必须是整数', { field });
+    return translate('{field}：{message}', {
+      field,
+      message: detail.msg || translate('格式不正确'),
+    });
   }
-  return `请求失败（${status}）`;
+  return translate('请求失败（{status}）', { status });
 }
 export const deploymentPrefix = () => {
   const value = document.querySelector('meta[name="umeko-base-path"]')?.content || '';

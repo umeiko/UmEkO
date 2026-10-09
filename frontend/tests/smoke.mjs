@@ -46,6 +46,115 @@ async function centered(page, id) {
   assert.ok(Math.abs(box.y + box.height / 2 - size.height / 2) < 2);
   assert.ok(box.width <= size.width - 31);
 }
+async function checkAdminLanguages(page, context, adminBase) {
+  const language = page.locator('[data-language-select]');
+  await language.selectOption('en');
+  assert.equal(await page.locator('html').getAttribute('lang'), 'en');
+  assert.equal(await page.title(), 'UMEKO · Console');
+  for (const [tab, title] of [
+    ['access', 'Service Access'],
+    ['providers', 'Models & Providers'],
+    ['dskills', 'Skill Library'],
+    ['users', 'Users'],
+    ['sessions', 'Sessions'],
+    ['resources', 'Resources'],
+  ]) {
+    await page.locator('#tab-' + tab).click();
+    assert.equal(await page.locator('.page-title h1').innerText(), title);
+  }
+  await page.getByText('Model Queues', { exact: true }).waitFor();
+  await page.locator('#tab-providers').click();
+  await page.locator('#pd-name').fill('Unsaved provider draft');
+  await language.selectOption('zh-CN');
+  assert.equal(await page.locator('#tab-providers').innerText(), '模型与供应商');
+  assert.equal(await page.locator('#pd-name').inputValue(), 'Unsaved provider draft');
+  await language.selectOption('en');
+  assert.equal(await page.locator('#pd-name').inputValue(), 'Unsaved provider draft');
+  await page.getByRole('button', { name: 'New provider', exact: true }).click();
+  await page
+    .locator('dialog[open] label[for=field-name]')
+    .getByText('Name', { exact: true })
+    .waitFor();
+  assert.equal(
+    await page.locator('#field-name').getAttribute('placeholder'),
+    'For example: internal model service',
+  );
+  await page.locator('dialog[open]').getByRole('button', { name: 'Cancel', exact: true }).click();
+  await page.getByRole('button', { name: 'About model concurrency', exact: true }).hover();
+  await page
+    .locator('.help-popover:popover-open')
+    .filter({ hasText: 'Concurrency is counted per model' })
+    .waitFor();
+  await page.keyboard.press('Escape');
+  const other = await context.newPage();
+  await other.goto(adminBase + '/');
+  assert.equal(await other.locator('html').getAttribute('lang'), 'en');
+  await other.locator('[data-language-select]').selectOption('zh-CN');
+  await page.locator('#tab-providers').getByText('模型与供应商', { exact: true }).waitFor();
+  assert.equal(await page.locator('#pd-name').inputValue(), 'Unsaved provider draft');
+  await other.locator('[data-language-select]').selectOption('en');
+  await page.locator('#tab-providers').getByText('Models & Providers', { exact: true }).waitFor();
+  await other.close();
+  await page.reload();
+  assert.equal(await language.inputValue(), 'en');
+  await page.locator('#page-access').waitFor();
+  await page.locator('#sa-create').click();
+  assert.equal(await page.locator('#sa-feedback').innerText(), 'Enter a service account name');
+  const accountUrl = adminBase + '/admin/v1/service-accounts';
+  await page.route(accountUrl, (route) =>
+    route.request().method() === 'POST'
+      ? route.fulfill({
+          status: 422,
+          contentType: 'application/json',
+          body: JSON.stringify({
+            detail: [{ loc: ['body', 'name'], type: 'string_too_short', ctx: { min_length: 5 } }],
+          }),
+        })
+      : route.continue(),
+  );
+  await page.locator('#sa-name').fill('demo');
+  await page.locator('#sa-create').click();
+  await page
+    .locator('#sa-feedback')
+    .getByText('Name needs at least 5 characters', { exact: true })
+    .waitFor();
+  await page.unroute(accountUrl);
+  await page.locator('#agent-new').click();
+  assert.equal(
+    await page.locator('#agent-definition-name').getAttribute('placeholder'),
+    'For example: My agent',
+  );
+  assert.equal(
+    await page.locator('label[for=agent-definition-vision-model]').innerText(),
+    'Default vision model',
+  );
+  await page
+    .locator('#agent-definition-editor .modal-header')
+    .getByRole('button', { name: 'Close', exact: true })
+    .click();
+  await page.locator('#tab-dskills').click();
+  const pack = page
+    .locator('.skill-pack')
+    .filter({ has: page.locator('.pack-name').getByText('ui-skill', { exact: true }) });
+  await pack.locator('.pack-button').click();
+  await pack.locator('.skill-file-button').filter({ hasText: 'ui-skill.md' }).click();
+  await page
+    .locator('.skill-metadata summary')
+    .getByText('Skill metadata', { exact: true })
+    .waitFor();
+  await page
+    .locator('.skill-document .copy-label')
+    .getByText('Copy code', { exact: true })
+    .waitFor();
+  assert.ok(
+    await page.locator('.skill-document strong').filter({ hasText: '检查已完成' }).isVisible(),
+    'Skill content retains its original language',
+  );
+  await page.setViewportSize({ width: 390, height: 844 });
+  assert.ok(await page.evaluate(() => document.documentElement.scrollWidth <= innerWidth + 1));
+  await page.setViewportSize({ width: 1440, height: 1000 });
+  await language.selectOption('zh-CN');
+}
 async function dropFiles(page, selector, files, { folder = false, hover = null } = {}) {
   const transfer = await page.evaluateHandle(
     ({ files }) => {
@@ -327,6 +436,11 @@ try {
         errors = [];
       page.on('pageerror', (e) => errors.push(e.message));
       await page.goto(adminBase + '/');
+      await page.locator('[data-language-select]').selectOption('en');
+      await page.getByRole('heading', { name: 'Sign In to Admin Console' }).waitFor();
+      await page.reload();
+      assert.equal(await page.locator('[data-language-select]').inputValue(), 'en');
+      await page.locator('[data-language-select]').selectOption('zh-CN');
       await checkThemes(page, '[data-theme-toggle]', appearance);
       const otherTab = await context.newPage();
       await otherTab.goto(adminBase + '/');
@@ -561,6 +675,7 @@ try {
       await page.locator('#page-users h2').waitFor();
       await page.locator('#tab-sessions').click();
       await page.locator('#page-sessions').waitFor();
+      await checkAdminLanguages(page, context, adminBase);
       // Browser registration, files, module assets, SSE increments, tool folding and cancellation.
       const work = await context.newPage(),
         requests = [],

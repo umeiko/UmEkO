@@ -1,6 +1,8 @@
 <script setup>
 import { ref, computed, onMounted, onBeforeUnmount, nextTick, watch } from 'vue';
 import hljs from 'highlight.js/lib/common';
+import { useAdminI18n } from './adminI18n.js';
+const { tr } = useAdminI18n();
 const props = defineProps({
   modelValue: String,
   language: { default: 'plaintext' },
@@ -58,7 +60,7 @@ onBeforeUnmount(() => observer?.disconnect());
       :disabled="disabled"
       class="source-input"
       spellcheck="false"
-      aria-label="技能文件编辑器"
+      :aria-label="tr('技能文件编辑器')"
       @input="emit('update:modelValue', $event.target.value)"
       @scroll="sync"
       @keydown="indent"

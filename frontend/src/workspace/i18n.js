@@ -5,6 +5,7 @@
 
 const I18N_LOCALES = {
   'zh-CN': {
+    'workbench.title': '工作台',
     'preview.edit': '编辑',
     'skill.metadata': '技能信息',
     'preview.download': '下载文件',
@@ -334,6 +335,7 @@ const I18N_LOCALES = {
     'upload.busy': '正在上传，请等待当前批次完成后再拖入。',
   },
   en: {
+    'workbench.title': 'Workbench',
     'preview.edit': 'Edit',
     'skill.metadata': 'Skill metadata',
     'preview.download': 'Download file',
@@ -672,6 +674,7 @@ const I18N_LOCALES = {
     'upload.busy': 'An upload is in progress. Wait for this batch to finish.',
   },
   'zh-TW': {
+    'workbench.title': '工作台',
     'preview.edit': '編輯',
     'skill.metadata': '技能資訊',
     'preview.download': '下載檔案',
@@ -1001,6 +1004,7 @@ const I18N_LOCALES = {
     'upload.busy': '正在上傳，請等待目前批次完成後再拖入。',
   },
   ko: {
+    'workbench.title': '작업 공간',
     'preview.edit': '편집',
     'skill.metadata': '스킬 정보',
     'preview.download': '파일 다운로드',
@@ -1339,6 +1343,7 @@ const I18N_LOCALES = {
     'upload.busy': '업로드 중입니다. 현재 업로드가 끝날 때까지 기다려 주세요.',
   },
   fr: {
+    'workbench.title': 'Espace de travail',
     'preview.edit': 'Modifier',
     'skill.metadata': 'Informations du skill',
     'preview.download': 'Télécharger le fichier',
@@ -1688,6 +1693,7 @@ const I18N_LOCALES = {
     'upload.busy': 'Un téléversement est en cours. Attendez la fin de ce lot.',
   },
   de: {
+    'workbench.title': 'Arbeitsbereich',
     'preview.edit': 'Bearbeiten',
     'skill.metadata': 'Skill-Informationen',
     'preview.download': 'Datei herunterladen',
@@ -2034,6 +2040,7 @@ const I18N_LOCALES = {
     'upload.busy': 'Ein Upload läuft. Bitte warten, bis er abgeschlossen ist.',
   },
   it: {
+    'workbench.title': 'Area di lavoro',
     'preview.edit': 'Modifica',
     'skill.metadata': 'Informazioni skill',
     'preview.download': 'Scarica file',

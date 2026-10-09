@@ -23,11 +23,24 @@ UMEKO 是一个用于处理文件的 Python Agent 服务，提供网页工作台
 
 **[在线文档站](https://umeiko.github.io/UmEkO/)** · [架构设计](https://umeiko.github.io/UmEkO/architecture/) · [API 文档](https://umeiko.github.io/UmEkO/api/)
 
-| ![](docs/screenshots/workspace.png) | ![](docs/screenshots/admin.png) |
-|:---:|:---:|
-| 工作台与工具调用 | 管理控制台 |
+![深色工作台中的英文对话、折叠调用历史、文件树与 Markdown 报告预览](docs/screenshots/workspace.png)
 
-截图使用独立的离线验收数据。
+深色工作台：英文交流、折叠调用历史与 Markdown 预览。
+
+<details>
+<summary>浅色主题与管理控制台</summary>
+
+![白青色工作台中的英文对话](docs/screenshots/workspace-light.png)
+
+白青色主题。
+
+![管理控制台中的供应商、文本和视觉模型、每模型并发上限](docs/screenshots/admin.png)
+
+英文管理控制台：供应商与模型配置。
+
+</details>
+
+截图来自实际界面，使用独立的离线演示数据，不调用真实模型，也不包含真实凭据。
 
 ## 功能
 
@@ -36,7 +49,7 @@ UMEKO 是一个用于处理文件的 Python Agent 服务，提供网页工作台
 - **图像分析**：`image_reasoning` 支持图像分析和文字提取，执行进度显示在工具详情中。
 - **自带图像质检智能体**：`/agent/image-qc` 配套质检技能、检查清单和 HTML / JSON / ZIP 报告脚本，配置主模型与视觉模型即可接入，在“服务接入”中修改。
 - **模型配置**：支持多个 Provider 和模型、视觉能力标记、JSON 导入及每模型并发上限。
-- **管理面**：通过独立端口管理用户、会话、模型、技能包、服务凭据，并监控资源和队列。
+- **管理面**：支持中文、英文切换，通过独立端口管理用户、会话、模型、技能包、服务凭据，并监控资源和队列。
 - **机器接入**：MCP Streamable HTTP 与 A2A 1.0 JSON-RPC，共用有界任务队列、持久化结果、归属隔离和自动过期清理。
 - **多智能体管理**：独立配置名字、工作指引、默认模型、默认视觉模型和技能选择，通过 `/agent/{slug}` 提供各自的 Card、MCP、A2A 与 REST 任务入口，共享执行基座和模型队列。
 - **文件操作**：在会话目录内读取、搜索、编辑和写入文件，支持 7-Zip 解压及拖拽上传。

@@ -1,4 +1,6 @@
 <script setup>
+import { useAdminI18n } from '../../shared/adminI18n.js';
+const { tr } = useAdminI18n();
 import { ref, computed, onMounted, onBeforeUnmount } from 'vue';
 import { codeHtml } from '../../shared/markdown.js';
 import MarkdownDocument from '../../shared/MarkdownDocument.vue';
@@ -60,7 +62,7 @@ onBeforeUnmount(() => {
   window.removeEventListener('beforeunload', beforeUnload);
 });
 async function discard() {
-  return !dirty.value || (await confirm('未保存的修改', '放弃当前文件的修改？'));
+  return !dirty.value || (await confirm(tr('未保存的修改'), tr('放弃当前文件的修改？')));
 }
 async function choose(p) {
   if (!(await discard())) return;
@@ -107,22 +109,22 @@ async function save() {
     }
     original.value = content.value;
     await load();
-    notify('文件已保存');
+    notify(tr('文件已保存'));
   });
   busy.value = false;
 }
 async function create(kind = 'md') {
   if (!(await discard())) return;
   if (kind !== 'md' && !active.value) {
-    notify('请先选择一个技能', true);
+    notify(tr('请先选择一个技能'), true);
     return;
   }
   const result = await ask(
-    kind === 'md' ? '新建技能' : kind === 'script' ? '新建脚本' : '新建成员文件',
+    kind === 'md' ? tr('新建技能') : kind === 'script' ? tr('新建脚本') : tr('新建成员文件'),
     [
       {
         name: 'name',
-        label: '文件名',
+        label: tr('文件名'),
         required: true,
         placeholder: kind === 'md' ? 'my-skill' : kind === 'script' ? 'my_script.py' : 'notes.md',
       },
@@ -132,18 +134,18 @@ async function create(kind = 'md') {
   let name = result.name.trim();
   if (kind === 'md' && !name.endsWith('.md')) name += '.md';
   if (!/^[a-zA-Z0-9_-]+\.md$/.test(name) && kind === 'md') {
-    notify('技能名称请使用字母、数字、下划线和连字符', true);
+    notify(tr('技能名称请使用字母、数字、下划线和连字符'), true);
     return;
   }
   if (kind === 'script' && !/^[\w-]+\.py$/.test(name)) {
-    notify('脚本名请使用 xxx.py，不带路径', true);
+    notify(tr('脚本名请使用 xxx.py，不带路径'), true);
     return;
   }
   if (
     kind === 'member' &&
     (!/^[\w.-]+\.(md|markdown|json|ya?ml|txt|csv)$/i.test(name) || name.includes('..'))
   ) {
-    notify('成员文件须为 .md/.json/.yaml/.txt/.csv，不带路径', true);
+    notify(tr('成员文件须为 .md/.json/.yaml/.txt/.csv，不带路径'), true);
     return;
   }
   const pname = kind === 'md' ? name.slice(0, -3) : active.value;
@@ -152,7 +154,7 @@ async function create(kind = 'md') {
     (kind === 'script' && pack.value?.scripts.some((f) => f.name === name)) ||
     (kind === 'member' && pack.value?.members.some((f) => f.name === name))
   ) {
-    notify('文件已存在，请选择它进行编辑', true);
+    notify(tr('文件已存在，请选择它进行编辑'), true);
     return;
   }
   await run(async () => {
@@ -160,8 +162,11 @@ async function create(kind = 'md') {
       kind === 'script'
         ? (await api('GET', '/admin/v1/skill-scripts-template')).content
         : kind === 'md'
-          ? `---\nname: ${pname}\ndescription: 说明技能适用的场景与用途\n---\n\n# ${pname}\n\n在这里编写执行步骤和输出要求。\n`
-          : '在这里编写内容。\n';
+          ? tr(
+              '---\nname: {p0}\ndescription: 说明技能适用的场景与用途\n---\n\n# {p1}\n\n在这里编写执行步骤和输出要求。\n',
+              { p0: pname, p1: pname },
+            )
+          : tr('在这里编写内容。\n');
     active.value = pname;
     selected.value = { pack: pname, kind, name };
     content.value = template;
@@ -174,12 +179,16 @@ async function dispatch(p) {
     if (p.imported) await api('POST', `/admin/v1/default-skills/${encode(p.md)}/toggle`);
     else await api('POST', `/admin/v1/default-skills/import/${encode(p.md)}`);
     await load();
-    notify(p.enabled ? '已停用下发' : '已启用下发');
+    notify(p.enabled ? tr('已停用下发') : tr('已启用下发'));
   });
 }
 async function remove() {
   const f = selected.value;
-  if (!f || !(await confirm('删除技能文件', `永久删除“${f.pack}/${f.name}”？`))) return;
+  if (
+    !f ||
+    !(await confirm(tr('删除技能文件'), tr('永久删除“{p0}/{p1}”？', { p0: f.pack, p1: f.name })))
+  )
+    return;
   await run(async () => {
     if (f.kind === 'md') {
       await api('DELETE', `/admin/v1/skill-source/${encode(f.name)}`);
@@ -195,34 +204,34 @@ async function remove() {
     content.value = '';
     original.value = '';
     await load();
-    notify('文件已删除');
+    notify(tr('文件已删除'));
   });
 }
 async function test() {
   if (dirty.value) {
-    notify('请先保存脚本，再运行测试', true);
+    notify(tr('请先保存脚本，再运行测试'), true);
     return;
   }
-  const result = await ask('测试脚本', [
+  const result = await ask(tr('测试脚本'), [
     {
       name: 'args',
-      label: '参数（JSON 对象）',
+      label: tr('参数（JSON 对象）'),
       type: 'textarea',
       rows: 4,
       value: '{}',
       required: true,
     },
-    { name: 'timeout', label: '超时秒数（1–30）', type: 'number', min: 1, value: 10 },
+    { name: 'timeout', label: tr('超时秒数（1–30）'), type: 'number', min: 1, value: 10 },
   ]);
   if (!result) return;
   await run(async () => {
     JSON.parse(result.args);
     const timeout = Number(result.timeout);
     if (!Number.isInteger(timeout) || timeout < 1 || timeout > 30)
-      throw new Error('超时请输入 1–30 之间的整数');
+      throw new Error(tr('超时请输入 1–30 之间的整数'));
     testOpen.value = true;
     testBusy.value = true;
-    testOutput.value = '正在执行…';
+    testOutput.value = tr('正在执行…');
     try {
       const f = selected.value,
         r = await api('POST', `/admin/v1/skill-scripts/${encode(f.pack)}/${encode(f.name)}/test`, {
@@ -241,7 +250,7 @@ async function test() {
 async function upload(files, into = false) {
   if (!(await discard())) return;
   if (into && !active.value) {
-    notify('请先选择一个技能', true);
+    notify(tr('请先选择一个技能'), true);
     return;
   }
   for (const file of files)
@@ -249,14 +258,14 @@ async function upload(files, into = false) {
       const name = file.name,
         body = { content: await file.text() };
       if (!into || name === pack.value?.md) {
-        if (!name.endsWith('.md')) throw new Error('新建技能 只接受 .md 文件');
+        if (!name.endsWith('.md')) throw new Error(tr('新建技能 只接受 .md 文件'));
         await api('PUT', `/admin/v1/skill-source/${encode(name)}`, body);
         await api('PUT', `/admin/v1/default-skills/${encode(name)}`, body);
       } else {
         const type = name.endsWith('.py') ? 'skill-scripts' : 'skill-members';
         await api('PUT', `/admin/v1/${type}/${encode(active.value)}/${encode(name)}`, body);
       }
-      notify('已导入 ' + name);
+      notify(tr('已导入 ') + name);
     });
   await load();
 }
@@ -265,15 +274,19 @@ async function upload(files, into = false) {
   <section id="page-dskills" class="card">
     <header class="card-head">
       <div class="heading-line">
-        <h2>技能库</h2>
+        <h2>{{ tr('技能库') }}</h2>
         <span class="badge">{{ packs.length }}</span>
         <HelpTip
-          text="主文件定义技能，同名目录保存脚本和成员文件。保存主文件会同步下发副本；开关控制是否下发。可拖入文件或使用导入按钮上传。"
+          :text="
+            tr(
+              '主文件定义技能，同名目录保存脚本和成员文件。保存主文件会同步下发副本；开关控制是否下发。可拖入文件或使用导入按钮上传。',
+            )
+          "
         />
       </div>
       <div class="row">
         <label class="skill-import"
-          ><UiIcon name="upload" :size="18" />导入技能
+          ><UiIcon name="upload" :size="18" />{{ tr('导入技能') }}
           <input
             type="file"
             accept=".md"
@@ -287,7 +300,7 @@ async function upload(files, into = false) {
           />
         </label>
         <button class="primary" @click="create('md')">
-          <UiIcon name="plus" :size="18" />新建技能
+          <UiIcon name="plus" :size="18" />{{ tr('新建技能') }}
         </button>
       </div>
     </header>
@@ -295,7 +308,7 @@ async function upload(files, into = false) {
     <div class="editor-layout">
       <aside
         class="editor-tree"
-        aria-label="技能文件树"
+        :aria-label="tr('技能文件树')"
         @dragover.prevent
         @drop.prevent="upload([...$event.dataTransfer.files])"
       >
@@ -319,9 +332,10 @@ async function upload(files, into = false) {
             >
             <span class="pack-meta"
               ><span class="skill-status" :class="{ enabled: p.imported && p.enabled }">{{
-                p.imported ? (p.enabled ? '下发中' : '已停用') : '未下发'
+                p.imported ? (p.enabled ? tr('下发中') : tr('已停用')) : tr('未下发')
               }}</span
-              ><span>{{ files(p).length }} 个文件</span><span v-if="p.stale">源已更新</span></span
+              ><span>{{ tr('{count} 个文件', { count: files(p).length }) }}</span
+              ><span v-if="p.stale">{{ tr('源已更新') }}</span></span
             >
           </button>
           <div
@@ -350,12 +364,17 @@ async function upload(files, into = false) {
             </div>
             <div class="skill-pack-actions">
               <button v-if="p.md" class="dispatch-button" @click="dispatch(p)">
-                {{ p.enabled ? '停用下发' : '启用下发' }}
+                {{ p.enabled ? tr('停用下发') : tr('启用下发') }}
               </button>
-              <button @click="create('script')"><UiIcon name="plus" :size="16" />脚本</button>
-              <button @click="create('member')"><UiIcon name="plus" :size="16" />文件</button>
+              <button @click="create('script')">
+                <UiIcon name="plus" :size="16" />{{ tr('脚本') }}
+              </button>
+              <button @click="create('member')">
+                <UiIcon name="plus" :size="16" />{{ tr('文件') }}
+              </button>
               <label class="skill-import"
-                ><UiIcon name="upload" :size="16" />导入文件<input
+                ><UiIcon name="upload" :size="16" />{{ tr('导入文件')
+                }}<input
                   type="file"
                   multiple
                   @change="
@@ -368,7 +387,7 @@ async function upload(files, into = false) {
             </div>
           </div>
         </div>
-        <div v-if="!packs.length" class="empty-state">暂无技能</div>
+        <div v-if="!packs.length" class="empty-state">{{ tr('暂无技能') }}</div>
       </aside>
       <div v-if="selected" class="code-editor">
         <header class="editor-toolbar">
@@ -376,25 +395,29 @@ async function upload(files, into = false) {
             <span>{{ selected.pack }}</span
             ><strong>{{ selected.name }}</strong>
           </div>
-          <span v-if="dirty" class="editor-dirty">● 未保存</span>
-          <div class="editor-modes" role="group" aria-label="文件显示方式">
-            <button id="skill-edit" :aria-pressed="!preview" @click="preview = false">编辑</button>
-            <button id="skill-preview" :aria-pressed="preview" @click="preview = true">预览</button>
+          <span v-if="dirty" class="editor-dirty">{{ tr('● 未保存') }}</span>
+          <div class="editor-modes" role="group" :aria-label="tr('文件显示方式')">
+            <button id="skill-edit" :aria-pressed="!preview" @click="preview = false">
+              {{ tr('编辑') }}
+            </button>
+            <button id="skill-preview" :aria-pressed="preview" @click="preview = true">
+              {{ tr('预览') }}
+            </button>
           </div>
           <button v-if="selected.kind === 'script'" @click="test">
-            <UiIcon name="terminal" :size="18" />测试
+            <UiIcon name="terminal" :size="18" />{{ tr('测试') }}
           </button>
           <button
             class="danger"
-            title="删除文件"
-            aria-label="删除文件"
+            :title="tr('删除文件')"
+            :aria-label="tr('删除文件')"
             @click="remove"
             :disabled="busy"
           >
             <UiIcon name="trash" :size="18" />
           </button>
           <button class="primary" @click="save" :disabled="busy">
-            <UiIcon name="save" :size="18" />{{ busy ? '正在保存…' : '保存' }}
+            <UiIcon name="save" :size="18" />{{ busy ? tr('正在保存…') : tr('保存') }}
           </button>
         </header>
         <MarkdownDocument
@@ -417,14 +440,14 @@ async function upload(files, into = false) {
       </div>
       <div v-else class="empty-state skill-empty">
         <UiIcon name="skills" :size="32" /><strong>{{
-          active ? '选择文件开始查看' : '选择一个技能'
+          active ? tr('选择文件开始查看') : tr('选择一个技能')
         }}</strong>
       </div>
     </div>
-    <UiModal v-model="testOpen" title="脚本测试结果" wide :busy="testBusy">
+    <UiModal v-model="testOpen" :title="tr('脚本测试结果')" wide :busy="testBusy">
       <pre class="json-view">{{ testOutput }}</pre>
       <template #footer
-        ><button :disabled="testBusy" @click="testOpen = false">关闭</button></template
+        ><button :disabled="testBusy" @click="testOpen = false">{{ tr('关闭') }}</button></template
       ></UiModal
     >
   </section>

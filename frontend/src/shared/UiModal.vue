@@ -1,6 +1,8 @@
 <script setup>
 import { ref, watch, onMounted } from 'vue';
 import UiIcon from './UiIcon.vue';
+import { useAdminI18n } from './adminI18n.js';
+const { tr } = useAdminI18n();
 const props = defineProps({ modelValue: Boolean, title: String, wide: Boolean, busy: Boolean });
 const emit = defineEmits(['update:modelValue', 'closed']);
 const dialog = ref();
@@ -41,7 +43,13 @@ onMounted(sync);
         <h2>{{ title }}</h2>
         <slot name="help" />
       </div>
-      <button type="button" class="icon-button" aria-label="关闭" :disabled="busy" @click="close">
+      <button
+        type="button"
+        class="icon-button"
+        :aria-label="tr('关闭')"
+        :disabled="busy"
+        @click="close"
+      >
         <UiIcon name="close" />
       </button>
     </div>

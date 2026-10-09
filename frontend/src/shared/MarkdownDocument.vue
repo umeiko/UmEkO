@@ -2,11 +2,13 @@
 import { computed, onBeforeUnmount } from 'vue';
 import { renderSkillMarkdown, renderMarkdown } from './markdown.js';
 import { copyText } from './clipboard.js';
+import { useAdminI18n } from './adminI18n.js';
+const { tr } = useAdminI18n();
 const props = defineProps({ content: String, skill: Boolean });
 const translate = (key) =>
   ({
-    'code.copy': '复制代码',
-    'skill.metadata': '技能信息',
+    'code.copy': tr('复制代码'),
+    'skill.metadata': tr('技能信息'),
   })[key] || key;
 const rendered = computed(() =>
   (props.skill ? renderSkillMarkdown : renderMarkdown)(props.content, { translate }),
@@ -19,16 +21,16 @@ async function copy(event) {
   button.disabled = true;
   try {
     await copyText(button.closest('.markdown-code').querySelector('pre code').textContent);
-    label.textContent = '已复制';
+    label.textContent = tr('已复制');
     button.classList.add('copied');
   } catch {
-    label.textContent = '复制失败';
+    label.textContent = tr('复制失败');
   } finally {
     button.disabled = false;
     const timer = setTimeout(() => {
       timers.delete(timer);
       if (button.isConnected) {
-        label.textContent = '复制代码';
+        label.textContent = tr('复制代码');
         button.classList.remove('copied');
       }
     }, 1500);

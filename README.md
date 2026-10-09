@@ -24,11 +24,24 @@ a CLI and an HTTP API, with model configuration, user management and skill packs
 
 **[Documentation site](https://umeiko.github.io/UmEkO/)** · [Architecture](https://umeiko.github.io/UmEkO/architecture/) · [API reference](https://umeiko.github.io/UmEkO/api/)
 
-| ![](docs/screenshots/workspace.png) | ![](docs/screenshots/admin.png) |
-|:---:|:---:|
-| Workspace and tool calls | Admin console |
+![English conversation in the dark workbench, with folded tool history, a file tree and a Markdown report preview](docs/screenshots/workspace.png)
 
-Screenshots use isolated offline test data.
+English conversation, folded call history and Markdown previews in the dark workbench.
+
+<details>
+<summary>Light theme and admin console</summary>
+
+![The same English conversation in the white and cyan workbench](docs/screenshots/workspace-light.png)
+
+White and cyan theme.
+
+![Admin console showing provider settings, text and vision models, and per-model concurrency limits](docs/screenshots/admin.png)
+
+Provider and model management in the English admin console.
+
+</details>
+
+Screenshots show the actual UI with isolated offline demo data; no live model calls or real credentials are used.
 
 ## Features
 
@@ -37,7 +50,7 @@ Screenshots use isolated offline test data.
 - **Image analysis**: `image_reasoning` supports image analysis and text extraction, with progress displayed in the tool details.
 - **Built-in image QC agent**: `/agent/image-qc` comes with an image inspection skill, check list and HTML/JSON/ZIP report generator. Configure your text and vision models, then customize it under Service Access.
 - **Model configuration**: multiple providers and models, vision flags, JSON import and per-model concurrency limits.
-- **Administration**: a separate port for users, sessions, models, skill packs, service credentials and resource monitoring.
+- **Administration**: a Chinese/English console on a separate port for users, sessions, models, skill packs, service credentials and resource monitoring.
 - **Machine integrations**: MCP Streamable HTTP and A2A 1.0 JSON-RPC, with scoped service credentials, durable tasks, bounded queues and automatic expiry.
 - **Multiple agents**: configure separate names, instructions, default text and vision models, and skill selections in the admin console; publish each under `/agent/{slug}` with its own Card, MCP, A2A and REST task endpoints, sharing one runtime and model queues.
 - **File operations**: reading, searching, editing and writing within session directories, archive extraction with 7-Zip and drag-and-drop uploads.

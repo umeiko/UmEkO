@@ -20,7 +20,7 @@ onBeforeUnmount(() => dispose?.());
     <header class="workbench-title">
       <div class="brand">
         <BrandMark /><strong>UMEKO</strong><span class="workbench-divider"></span
-        ><span class="workbench-label">工作台</span>
+        ><span class="workbench-label" data-i18n="workbench.title">工作台</span>
       </div>
       <div class="workbench-actions">
         <button

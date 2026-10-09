@@ -1,5 +1,7 @@
 import { reactive } from 'vue';
 import { errorMessage } from '../shared/api.js';
+import { useAdminI18n } from '../shared/adminI18n.js';
+const { tr } = useAdminI18n();
 export const admin = reactive({
   user: null,
   ready: false,
@@ -34,7 +36,7 @@ export async function api(method, path, body) {
   }
   if (!response.ok) {
     const data = await response.json().catch(() => ({}));
-    throw new Error(errorMessage(data.detail, response.status));
+    throw new Error(errorMessage(data.detail, response.status, tr));
   }
   return response.status === 204 ? null : response.json();
 }

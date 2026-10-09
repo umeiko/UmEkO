@@ -32,6 +32,10 @@
 
 ## 源码与运行方式
 
+管理控制台的登录页和顶部提供简体中文、英文选择，切换即时生效，保留当前页面和未保存的表单。选择按浏览器站点保存在 `umeko:locale`，同站点的多个管理标签页同步；用户端与管理端端口不同时，各自记住选择。首次打开按浏览器语言选择，未支持的语言回退到英文。导航、六个管理页、弹窗、问号说明、操作反馈、参数校验与日期均随语言变化；智能体介绍、技能正文、模型名和协议字段保持原文。
+
+管理界面的英文词条集中在 `frontend/src/shared/admin.en.json`，Vue 组件通过 `useAdminI18n()` 使用响应式翻译。添加语言时在同目录增加词表，并注册到 `adminLanguages`。工作台继续提供原有七种语言。
+
 ```text
 frontend/
   index.html                  工作台入口
@@ -83,6 +87,20 @@ Vite 使用相对资源路径，Python 在返回首页时把主脚本、共享�
 发布时同时更新 HTML 和整个资源目录，避免旧首页引用已经删除的文件。普通发布是 Python 服务，Vite 开发端口不作为生产入口。NGINX 仍需统一转发子路径并关闭 SSE 缓冲，配置见[部署指南](deployment.md)。
 
 ## 浏览器验收
+
+### README 展示截图
+
+在项目根目录运行 `python scripts/make_screenshots.py`，可重新生成英文对话的深色、浅色工作台，以及登录页和管理页截图。需要 Python Playwright 与 Chromium：
+
+```sh
+python -m pip install playwright
+python -m playwright install chromium
+python scripts/make_screenshots.py
+```
+
+脚本使用当前项目的实际界面，启动临时服务、随机演示账号和独立数据库，不加载 `.env`，不调用真实模型。英文示例经过实际对话接口和 SSE 传输；结束后关闭服务并删除临时数据。可用 `--output 路径` 指定截图目录，默认保存到 `docs/screenshots/`。
+
+### 交互回归
 
 安装项目 Python 开发依赖后运行：
 

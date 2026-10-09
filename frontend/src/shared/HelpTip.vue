@@ -1,6 +1,9 @@
 <script setup>
-import { ref, onMounted, onBeforeUnmount, nextTick, useId } from 'vue';
-const props = defineProps({ text: String, label: { default: '查看说明' } });
+import { ref, computed, onMounted, onBeforeUnmount, nextTick, useId } from 'vue';
+import { useAdminI18n } from './adminI18n.js';
+const { tr } = useAdminI18n();
+const props = defineProps({ text: String, label: String });
+const label = computed(() => props.label || tr('查看说明'));
 const trigger = ref(),
   tip = ref();
 let timer;
