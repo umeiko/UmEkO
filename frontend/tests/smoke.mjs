@@ -239,17 +239,42 @@ try {
       );
       // Skill creation, dispatch, script editing and sandbox test in an isolated skill directory.
       await page.locator('#tab-dskills').click();
-      await page.getByRole('button', { name: '新建 Skill', exact: true }).click();
+      await page.getByRole('button', { name: '新建技能', exact: true }).click();
       await page.locator('#field-name').fill('ui-skill');
       await page.locator('dialog[open]').getByRole('button', { name: '保存', exact: true }).click();
       await page.locator('#sk-content').waitFor();
+      const skillSample =
+        '---\nname: ui-skill\ndescription: 通用文档检查\n---\n\n' + state.markdown_sample;
+      await page.locator('#sk-content').fill(skillSample);
       await page
         .locator('#page-dskills .editor-toolbar')
         .getByRole('button', { name: '保存', exact: true })
         .click();
       await page.getByRole('status').filter({ hasText: '文件已保存' }).last().waitFor();
-      await page.locator('.pack-button').filter({ hasText: 'ui-skill' }).click();
-      await page.getByRole('button', { name: '＋ 脚本', exact: true }).click();
+      await context.grantPermissions(['clipboard-read', 'clipboard-write'], {
+        origin: new URL(adminBase).origin,
+      });
+      await page.locator('#skill-preview').click();
+      await page.locator('.skill-document strong').filter({ hasText: '检查已完成' }).waitFor();
+      assert.ok(await page.locator('.skill-document .hljs-keyword').count());
+      assert.equal(await page.locator('.skill-document table tbody tr').count(), 2);
+      await page.locator('.skill-document [data-code-copy]').click();
+      await page.locator('.skill-document .code-copy.copied').waitFor();
+      assert.equal(
+        normalizedText(await page.evaluate(() => navigator.clipboard.readText())),
+        'def greet(name):\n    print(f"Hello, {name}!")\n\ngreet("世界")\n',
+      );
+      assert.equal(await page.locator('.skill-metadata').evaluate((el) => el.open), false);
+      await page.locator('.skill-metadata summary').click();
+      assert.match(await page.locator('.skill-metadata').innerText(), /通用文档检查/);
+      await page.locator('.skill-metadata summary').click();
+      await page.locator('#skill-edit').click();
+      assert.equal(await page.locator('#sk-content').inputValue(), skillSample);
+      assert.equal(
+        await page.locator('#sk-content').evaluate((el) => getComputedStyle(el).fontSize),
+        '14px',
+      );
+      await page.getByRole('button', { name: '脚本', exact: true }).click();
       await page.locator('#field-name').fill('ui_script.py');
       await page.locator('dialog[open]').getByRole('button', { name: '保存', exact: true }).click();
       await page.locator('#sk-content').waitFor();
@@ -267,6 +292,41 @@ try {
       await page.locator('dialog[open]').getByRole('button', { name: '保存', exact: true }).click();
       await page.locator('dialog[open] .json-view').filter({ hasText: '收到参数' }).waitFor();
       await page.locator('dialog[open] .modal-header button[aria-label=关闭]').click();
+      await page.getByRole('button', { name: '文件', exact: true }).click();
+      await page.locator('#field-name').fill('ui_notes.md');
+      await page.locator('dialog[open]').getByRole('button', { name: '保存', exact: true }).click();
+      await page.locator('#sk-content').fill('## 成员文档\n\n**执行步骤**：检查图片。\n');
+      await page
+        .locator('.editor-toolbar')
+        .getByRole('button', { name: '保存', exact: true })
+        .click();
+      await page.locator('.editor-dirty').waitFor({ state: 'hidden' });
+      await page.locator('#skill-preview').click();
+      await page.locator('.skill-document strong').filter({ hasText: '执行步骤' }).waitFor();
+      await page.locator('.skill-file-button').filter({ hasText: 'ui-skill.md' }).click();
+      await page.locator('.skill-document h1').waitFor();
+      assert.equal(await page.locator('#skill-preview').getAttribute('aria-pressed'), 'true');
+      const skillNames = await page.locator('.skill-file-name').evaluateAll((els) =>
+        els.map((el) => ({
+          x: el.getBoundingClientRect().x,
+          font: getComputedStyle(el).fontSize,
+        })),
+      );
+      assert.equal(skillNames.length, 3);
+      assert.ok(
+        skillNames.every((n) => n.font === '14px' && Math.abs(n.x - skillNames[0].x) < 1),
+        'Skill files align at readable size',
+      );
+      await screenshot(page, 'skills-admin', prefix);
+      await page.locator('#skill-edit').click();
+      await screenshot(page, 'skills-editor', prefix);
+      await page.locator('#skill-preview').click();
+      await page.setViewportSize({ width: 390, height: 844 });
+      assert.ok(
+        await page.evaluate(() => document.documentElement.scrollWidth <= innerWidth + 1),
+        'Skill library fits mobile',
+      );
+      await page.setViewportSize({ width: 1440, height: 1000 });
       // Agent fields and generated public Card agree, while private instructions stay private.
       await page.locator('#tab-access').click();
       await page.locator('#agent-new').click();
@@ -606,6 +666,49 @@ try {
         'Persisted replies render with the same highlighting',
       );
       await toggle.click();
+      await work.locator('.sidebar-tab[data-section="skills"]').click();
+      const clientSkillName = 'browser-skill-with-a-long-name-for-document-image-checking.md';
+      await work.locator('#skills-panel input[type=file]').setInputFiles({
+        name: clientSkillName,
+        mimeType: 'text/markdown',
+        buffer: Buffer.from(skillSample),
+      });
+      const clientSkill = work.locator('.resource-open').filter({ hasText: clientSkillName });
+      await clientSkill.click();
+      await work.locator('#markdown-view strong').filter({ hasText: '检查已完成' }).waitFor();
+      assert.equal(
+        await work.locator('#markdown-view .skill-metadata').evaluate((el) => el.open),
+        false,
+      );
+      assert.ok(await work.locator('#resource-editor').isHidden());
+      assert.equal(await clientSkill.locator('.tree-icon').count(), 1);
+      assert.equal(await clientSkill.evaluate((el) => getComputedStyle(el).fontSize), '14px');
+      assert.ok(
+        await clientSkill
+          .locator('.resource-name')
+          .evaluate((el) => el.scrollWidth > el.clientWidth),
+        'Long skill names have ellipsis',
+      );
+      await screenshot(work, 'skills-workspace', prefix);
+      await work.locator('#markdown-source').click();
+      assert.equal(await work.locator('#resource-editor').inputValue(), skillSample);
+      assert.equal(
+        await work.locator('#resource-editor').evaluate((el) => getComputedStyle(el).fontSize),
+        '14px',
+      );
+      const editedSkill = skillSample + '\n**已补充步骤**：核对文件名。\n';
+      await work.locator('#resource-editor').fill(editedSkill);
+      await work.locator('#markdown-rendered').click();
+      await work.locator('#markdown-view strong').filter({ hasText: '已补充步骤' }).waitFor();
+      await work.locator('#save-resource').click();
+      await work.waitForFunction(() => !document.querySelector('#save-resource').disabled);
+      await clientSkill.click();
+      await work.locator('#markdown-view strong').filter({ hasText: '已补充步骤' }).waitFor();
+      await work.locator('#toggle-preview').click();
+      await work.locator('#toggle-preview').click();
+      assert.ok(await work.locator('#markdown-view').isVisible());
+      await work.locator('#toggle-preview').click();
+      await work.locator('.sidebar-tab[data-section="workspace"]').click();
       // Hold the creation response to reproduce a fast click before the Run ID arrives.
       let releaseCreation;
       const creationGate = new Promise((resolve) => {
@@ -650,7 +753,7 @@ try {
       assert.ok(await work.locator('#preview-panel').isHidden());
       assert.deepEqual(errors, []);
       console.log(
-        `Passed browser workflows: ${prefix || '/'} (${locale}, ${appearance}, Markdown preview/source, live rendering, highlighted code and clipboard, consistent preview toggle, long titles, file tree, composer, admin, files, 20 folded tools, cancellation, desktop/mobile)`,
+        `Passed browser workflows: ${prefix || '/'} (${locale}, ${appearance}, Markdown preview/source, live rendering, highlighted code and clipboard, consistent preview toggle, skill tree/Markdown/edit/save/member files, long titles, file tree, composer, admin, files, 20 folded tools, cancellation, desktop/mobile)`,
       );
     } catch (e) {
       if (diagnostics) console.error(diagnostics);

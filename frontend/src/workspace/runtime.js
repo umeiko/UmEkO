@@ -4,7 +4,8 @@ import hljs from 'highlight.js/lib/common';
 import { t, currentLocale, setLocale, applyI18n } from './i18n.js';
 import { deploymentPrefix } from '../shared/api.js';
 import { treeIcon } from './treeIcons.js';
-import { renderMarkdown as markdown, codeHtml } from './markdown.js';
+import { renderMarkdown as markdown, renderSkillMarkdown, codeHtml } from '../shared/markdown.js';
+import { copyText } from '../shared/clipboard.js';
 export function mountWorkspaceRuntime() {
   const lifecycle = new AbortController();
   function listen(target, type, callback, options = {}) {
@@ -1311,12 +1312,16 @@ export function mountWorkspaceRuntime() {
     if (!resources.length) {
       const empty = document.createElement('p');
       empty.className = 'resource-empty';
-      empty.textContent = t('resource.empty', { kind });
+      empty.textContent = t('resource.empty', { kind: t('sidebar.skills') });
       panel.append(empty);
     }
     for (const resource of resources) {
       const row = document.createElement('div');
       row.className = 'resource-item';
+      row.classList.toggle(
+        'active',
+        selectedResource?.name === resource.name && selectedResource.kind === kind,
+      );
       const mounted = document.createElement('button');
       mounted.type = 'button';
       mounted.className = `tree-attach resource-mount${resource.mounted ? ' attached' : ''}`;
@@ -1368,7 +1373,10 @@ export function mountWorkspaceRuntime() {
       const open = document.createElement('button');
       open.type = 'button';
       open.className = 'resource-open';
-      open.textContent = resource.name;
+      const label = document.createElement('span');
+      label.className = 'resource-name';
+      label.textContent = resource.name;
+      open.append(treeIcon(resource.name), label);
       open.title = resource.name;
       open.addEventListener('click', () => openResource(kind, resource.name, row));
       row.append(open, mounted);
@@ -1376,7 +1384,7 @@ export function mountWorkspaceRuntime() {
     }
     const hint = document.createElement('div');
     hint.className = 'resource-drop-hint';
-    hint.textContent = t('resource.dropHint', { kind });
+    hint.textContent = t('resource.dropHint', { kind: t('sidebar.skills') });
     panel.append(hint);
   }
 
@@ -1403,7 +1411,7 @@ export function mountWorkspaceRuntime() {
     try {
       for (const file of files) await uploadResource(kind, file);
       await refreshResources(kind);
-      setStatus(t('resource.imported', { count: files.length, kind }), true);
+      setStatus(t('resource.imported', { count: files.length, kind: t('sidebar.skills') }), true);
     } catch (error) {
       setStatus(error.message);
     }
@@ -1454,7 +1462,7 @@ export function mountWorkspaceRuntime() {
       }
       await refreshResources(kind);
       const row = [...ui.panels[kind].querySelectorAll('.resource-item')].find(
-        (node) => node.querySelector('.resource-open')?.textContent === resource.name,
+        (node) => node.querySelector('.resource-name')?.textContent === resource.name,
       );
       if (row) await openResource(kind, resource.name, row);
       ui.resourceDialog.close();
@@ -1489,25 +1497,30 @@ export function mountWorkspaceRuntime() {
   }
 
   async function openResource(kind, name, row) {
-    if (previewCollapsed) setPreviewCollapsed(false); // 浏览资源，自动展开
+    if (previewCollapsed) setPreviewCollapsed(false);
+    selectedFile = null;
+    selectedResource = null;
+    const targetSessionId = sessionId;
+    const request = resetPreviewViews();
     const resource = await api(
-      `/v1/sessions/${sessionId}/client/${kind}/${encodeURIComponent(name)}`,
+      `/v1/sessions/${targetSessionId}/client/${kind}/${encodeURIComponent(name)}`,
     );
+    if (request !== previewRequest || targetSessionId !== sessionId) return;
     selectedResource = resource;
     document
       .querySelectorAll('.resource-item.active')
       .forEach((node) => node.classList.remove('active'));
     row.classList.add('active');
-    ui.previewKicker.textContent = 'CLIENT SKILL';
     ui.previewTitle.textContent = name;
     ui.previewTitle.title = name;
     ui.saveResource.classList.remove('hidden');
     ui.deleteResource.classList.toggle('hidden', resource.builtin);
     ui.attachWorkspaceFile.classList.add('hidden');
     ui.downloadFile.classList.add('hidden');
-    resetPreviewViews();
     ui.resourceEditor.value = resource.content || '';
-    ui.resourceEditor.classList.remove('hidden');
+    previewSource = { text: ui.resourceEditor.value, path: name, resource: true };
+    ui.markdownToolbar.classList.remove('hidden');
+    setMarkdownMode('rendered');
   }
 
   function entryName(path) {
@@ -2100,25 +2113,6 @@ export function mountWorkspaceRuntime() {
     });
   }
 
-  async function copyText(text) {
-    try {
-      if (navigator.clipboard?.writeText) {
-        await navigator.clipboard.writeText(text);
-        return;
-      }
-    } catch {}
-    const focused = document.activeElement;
-    const input = document.createElement('textarea');
-    input.value = text;
-    input.style.cssText = 'position:fixed;left:-9999px;top:0';
-    document.body.append(input);
-    input.select();
-    const copied = document.execCommand('copy');
-    input.remove();
-    focused?.focus({ preventScroll: true });
-    if (!copied) throw new Error(t('code.copyFailed'));
-  }
-
   const copyTimers = new Set();
   listen(ui.workspace, 'click', async (event) => {
     const button = event.target.closest('[data-code-copy]');
@@ -2259,6 +2253,8 @@ export function mountWorkspaceRuntime() {
 
   function resetPreviewViews() {
     previewSource = null;
+    ui.markdownSource.dataset.i18n = 'preview.source';
+    ui.markdownSource.textContent = t('preview.source');
     ui.canvas.classList.add('hidden');
     ui.markdownView.classList.add('hidden');
     ui.markdownToolbar.classList.add('hidden');
@@ -2278,9 +2274,19 @@ export function mountWorkspaceRuntime() {
     ui.markdownRendered.setAttribute('aria-pressed', String(rendered));
     ui.markdownSource.setAttribute('aria-pressed', String(!rendered));
     ui.markdownView.classList.toggle('hidden', !rendered);
-    ui.codePanel.classList.toggle('hidden', rendered);
-    if (!rendered) hljsHighlight(previewSource.text, 'markdown');
+    ui.codePanel.classList.toggle('hidden', rendered || previewSource.resource);
+    ui.resourceEditor.classList.toggle('hidden', rendered || !previewSource.resource);
+    if (previewSource.resource) {
+      ui.markdownSource.dataset.i18n = 'preview.edit';
+      ui.markdownSource.textContent = t('preview.edit');
+      previewSource.text = ui.resourceEditor.value;
+      if (rendered)
+        ui.markdownView.innerHTML = renderSkillMarkdown(previewSource.text, { translate: t });
+    } else if (!rendered) hljsHighlight(previewSource.text, 'markdown');
   }
+  listen(ui.resourceEditor, 'input', () => {
+    if (previewSource?.resource) previewSource.text = ui.resourceEditor.value;
+  });
   listen(ui.markdownRendered, 'click', () => setMarkdownMode('rendered'));
   listen(ui.markdownSource, 'click', () => setMarkdownMode('source'));
 

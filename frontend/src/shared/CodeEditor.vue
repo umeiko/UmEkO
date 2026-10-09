@@ -70,7 +70,7 @@ onBeforeUnmount(() => observer?.disconnect());
   position: relative;
   flex: 1;
   min-height: 450px;
-  background: var(--bg);
+  background: var(--field);
   min-width: 0;
 }
 .source-paint,
@@ -81,7 +81,7 @@ onBeforeUnmount(() => observer?.disconnect());
   border: 0;
   border-radius: 0;
   padding: 20px;
-  font: 12px/1.8 var(--mono);
+  font: 14px/1.8 var(--mono);
   tab-size: 4;
   white-space: pre-wrap;
   overflow-wrap: break-word;

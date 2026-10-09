@@ -5,6 +5,8 @@
 
 const I18N_LOCALES = {
   'zh-CN': {
+    'preview.edit': '编辑',
+    'skill.metadata': '技能信息',
     'preview.download': '下载文件',
     'preview.show': '展开预览',
     'preview.hide': '收起预览',
@@ -320,6 +322,8 @@ const I18N_LOCALES = {
     'upload.uploading': '上传 {name}',
   },
   en: {
+    'preview.edit': 'Edit',
+    'skill.metadata': 'Skill metadata',
     'preview.download': 'Download file',
     'preview.show': 'Show preview',
     'preview.hide': 'Hide preview',
@@ -644,6 +648,8 @@ const I18N_LOCALES = {
     'upload.uploading': 'Uploading {name}',
   },
   'zh-TW': {
+    'preview.edit': '編輯',
+    'skill.metadata': '技能資訊',
     'preview.download': '下載檔案',
     'preview.show': '展開預覽',
     'preview.hide': '收起預覽',
@@ -959,6 +965,8 @@ const I18N_LOCALES = {
     'upload.uploading': '上傳 {name}',
   },
   ko: {
+    'preview.edit': '편집',
+    'skill.metadata': '스킬 정보',
     'preview.download': '파일 다운로드',
     'preview.show': '미리보기 열기',
     'preview.hide': '미리보기 닫기',
@@ -1283,6 +1291,8 @@ const I18N_LOCALES = {
     'upload.uploading': '{name} 업로드 중',
   },
   fr: {
+    'preview.edit': 'Modifier',
+    'skill.metadata': 'Informations du skill',
     'preview.download': 'Télécharger le fichier',
     'preview.show': 'Afficher l’aperçu',
     'preview.hide': 'Masquer l’aperçu',
@@ -1615,6 +1625,8 @@ const I18N_LOCALES = {
     'upload.uploading': 'Téléversement de {name}',
   },
   de: {
+    'preview.edit': 'Bearbeiten',
+    'skill.metadata': 'Skill-Informationen',
     'preview.download': 'Datei herunterladen',
     'preview.show': 'Vorschau öffnen',
     'preview.hide': 'Vorschau schließen',
@@ -1945,6 +1957,8 @@ const I18N_LOCALES = {
     'upload.uploading': '{name} wird hochgeladen',
   },
   it: {
+    'preview.edit': 'Modifica',
+    'skill.metadata': 'Informazioni skill',
     'preview.download': 'Scarica file',
     'preview.show': 'Mostra anteprima',
     'preview.hide': 'Nascondi anteprima',

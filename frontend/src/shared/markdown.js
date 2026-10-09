@@ -92,3 +92,14 @@ parser.renderer.rules.image = (tokens, index, options, env, self) => {
 export function renderMarkdown(source, env = {}) {
   return parser.render(String(source ?? ''), { translate: (key) => key, ...env });
 }
+
+export function renderSkillMarkdown(source, env = {}) {
+  const text = String(source ?? '');
+  const frontmatter = text.match(/^\uFEFF?---[ \t]*\r?\n([\s\S]*?)\r?\n---[ \t]*(?:\r?\n|$)/);
+  if (!frontmatter) return renderMarkdown(text, env);
+  const title = escape(env.translate?.('skill.metadata') || '技能信息');
+  return (
+    `<details class="skill-metadata"><summary>${title}</summary><pre tabindex="0"><code class="hljs">${codeHtml(frontmatter[1], 'yaml')}</code></pre></details>\n` +
+    renderMarkdown(text.slice(frontmatter[0].length), env)
+  );
+}

@@ -1,6 +1,6 @@
 import test from 'node:test';
 import assert from 'node:assert/strict';
-import { renderMarkdown } from '../src/workspace/markdown.js';
+import { renderMarkdown, renderSkillMarkdown } from '../src/shared/markdown.js';
 
 test('render common Markdown rather than exposing formatting markers', () => {
   const html = renderMarkdown(
@@ -50,4 +50,16 @@ test('session links and relative image paths retain the deployment prefix', () =
   );
   assert.ok(!invalid.includes('data-workspace-path'));
   assert.ok(!invalid.includes('<img'));
+});
+
+test('skill metadata is separate from rendered instructions and remains escaped', () => {
+  const source =
+    '---\r\nname: test\r\ndescription: <img src=x onerror=alert(1)>\r\n---\r\n\r\n# Instructions\r\n\r\n**Check** the image.\r\n';
+  const html = renderSkillMarkdown(source);
+  assert.match(html, /<details class="skill-metadata">/);
+  assert.ok(!html.includes('<details class="skill-metadata" open'));
+  assert.match(html, /<h1>Instructions<\/h1>/);
+  assert.match(html, /<strong>Check<\/strong>/);
+  assert.ok(!/<img/.test(html));
+  assert.equal(renderSkillMarkdown('# Plain\n'), renderMarkdown('# Plain\n'));
 });

@@ -1,6 +1,7 @@
 <script setup>
 import { ref, computed, onMounted, onBeforeUnmount } from 'vue';
-import hljs from 'highlight.js/lib/common';
+import { codeHtml } from '../../shared/markdown.js';
+import MarkdownDocument from '../../shared/MarkdownDocument.vue';
 import { api, run, ask, confirm, notify } from '../state.js';
 import { encode } from '../../shared/api.js';
 import HelpTip from '../../shared/HelpTip.vue';
@@ -22,14 +23,20 @@ let sequence = 0;
 const pack = computed(() => packs.value.find((p) => p.name === active.value));
 const dirty = computed(() => content.value !== original.value);
 const language = computed(() => {
-  const ext = selected.value?.name.split('.').at(-1);
+  const ext = selected.value?.name.split('.').at(-1).toLowerCase();
   return (
-    { py: 'python', md: 'markdown', json: 'json', yaml: 'yaml', yml: 'yaml' }[ext] || 'plaintext'
+    { py: 'python', md: 'markdown', markdown: 'markdown', json: 'json', yaml: 'yaml', yml: 'yaml' }[
+      ext
+    ] || 'plaintext'
   );
 });
-const highlighted = computed(
-  () => hljs.highlight(content.value, { language: language.value }).value,
-);
+const highlighted = computed(() => codeHtml(content.value, language.value));
+const isMarkdown = computed(() => /\.(md|markdown)$/i.test(selected.value?.name || ''));
+const files = (p) => [
+  ...(p.md ? [{ name: p.md, kind: 'md' }] : []),
+  ...p.scripts.map((f) => ({ ...f, kind: 'script' })),
+  ...p.members.map((f) => ({ ...f, kind: 'member' })),
+];
 async function load() {
   try {
     packs.value = (await api('GET', '/admin/v1/skill-library')).packs;
@@ -57,7 +64,7 @@ async function discard() {
 }
 async function choose(p) {
   if (!(await discard())) return;
-  active.value = p.name;
+  active.value = active.value === p.name ? '' : p.name;
   selected.value = null;
   content.value = '';
   original.value = '';
@@ -77,7 +84,7 @@ async function open(p, kind, name) {
     selected.value = { pack: p.name, kind, name };
     content.value = data.content;
     original.value = data.content;
-    preview.value = false;
+    preview.value = /\.(md|markdown)$/i.test(name);
   } catch (e) {
     notify(e.message, true);
   }
@@ -107,11 +114,11 @@ async function save() {
 async function create(kind = 'md') {
   if (!(await discard())) return;
   if (kind !== 'md' && !active.value) {
-    notify('请先选择一个 Skill', true);
+    notify('请先选择一个技能', true);
     return;
   }
   const result = await ask(
-    kind === 'md' ? '新建 Skill' : kind === 'script' ? '新建脚本' : '新建成员文件',
+    kind === 'md' ? '新建技能' : kind === 'script' ? '新建脚本' : '新建成员文件',
     [
       {
         name: 'name',
@@ -125,7 +132,7 @@ async function create(kind = 'md') {
   let name = result.name.trim();
   if (kind === 'md' && !name.endsWith('.md')) name += '.md';
   if (!/^[a-zA-Z0-9_-]+\.md$/.test(name) && kind === 'md') {
-    notify('Skill 名称请使用字母、数字、下划线和连字符', true);
+    notify('技能名称请使用字母、数字、下划线和连字符', true);
     return;
   }
   if (kind === 'script' && !/^[\w-]+\.py$/.test(name)) {
@@ -234,7 +241,7 @@ async function test() {
 async function upload(files, into = false) {
   if (!(await discard())) return;
   if (into && !active.value) {
-    notify('请先选择一个 Skill', true);
+    notify('请先选择一个技能', true);
     return;
   }
   for (const file of files)
@@ -242,7 +249,7 @@ async function upload(files, into = false) {
       const name = file.name,
         body = { content: await file.text() };
       if (!into || name === pack.value?.md) {
-        if (!name.endsWith('.md')) throw new Error('新建 Skill 只接受 .md 文件');
+        if (!name.endsWith('.md')) throw new Error('新建技能 只接受 .md 文件');
         await api('PUT', `/admin/v1/skill-source/${encode(name)}`, body);
         await api('PUT', `/admin/v1/default-skills/${encode(name)}`, body);
       } else {
@@ -259,26 +266,28 @@ async function upload(files, into = false) {
     <header class="card-head">
       <div class="heading-line">
         <h2>技能库</h2>
-        <span class="badge">{{ packs.length }}</span
-        ><HelpTip
-          text="Skill 主文件定义提示词，同名目录保存 Python 脚本和文本成员。保存主文件会同步下发副本；是否下发由开关控制。拖入文件或使用导入按钮上传。"
+        <span class="badge">{{ packs.length }}</span>
+        <HelpTip
+          text="主文件定义技能，同名目录保存脚本和成员文件。保存主文件会同步下发副本；开关控制是否下发。可拖入文件或使用导入按钮上传。"
         />
       </div>
       <div class="row">
-        <label class="check" style="cursor: pointer"
-          ><UiIcon name="upload" :size="15" />导入 Skill<input
+        <label class="skill-import"
+          ><UiIcon name="upload" :size="18" />导入技能
+          <input
             type="file"
             accept=".md"
             multiple
-            style="display: none"
             @change="
               (e) => {
                 upload([...e.target.files]);
                 e.target.value = '';
               }
-            " /></label
-        ><button class="primary" @click="create('md')">
-          <UiIcon name="plus" :size="15" />新建 Skill
+            "
+          />
+        </label>
+        <button class="primary" @click="create('md')">
+          <UiIcon name="plus" :size="18" />新建技能
         </button>
       </div>
     </header>
@@ -286,85 +295,116 @@ async function upload(files, into = false) {
     <div class="editor-layout">
       <aside
         class="editor-tree"
+        aria-label="技能文件树"
         @dragover.prevent
         @drop.prevent="upload([...$event.dataTransfer.files])"
       >
-        <div v-for="p in packs" :key="p.name">
-          <button class="pack-button" :class="{ active: active === p.name }" @click="choose(p)">
-            <div class="row">
-              <UiIcon name="folder" :size="15" /><strong>{{ p.name }}</strong>
-            </div>
-            <small
-              >{{ p.imported ? (p.enabled ? '下发中' : '已停用') : '未导入' }} ·
-              {{ p.scripts.length }} 脚本 <span v-if="p.stale">· 源已更新</span></small
+        <div v-for="p in packs" :key="p.name" class="skill-pack">
+          <button
+            class="pack-button"
+            :class="{ active: active === p.name }"
+            :aria-expanded="active === p.name"
+            :title="p.name"
+            @click="choose(p)"
+          >
+            <span class="pack-title"
+              ><UiIcon
+                class="pack-chevron"
+                :class="{ expanded: active === p.name }"
+                name="chevron"
+                :size="16"
+              /><UiIcon name="folder" :size="20" /><strong class="pack-name">{{
+                p.name
+              }}</strong></span
+            >
+            <span class="pack-meta"
+              ><span class="skill-status" :class="{ enabled: p.imported && p.enabled }">{{
+                p.imported ? (p.enabled ? '下发中' : '已停用') : '未下发'
+              }}</span
+              ><span>{{ files(p).length }} 个文件</span><span v-if="p.stale">源已更新</span></span
             >
           </button>
           <div
             v-if="active === p.name"
-            class="tree-files"
+            class="skill-pack-content"
             @dragover.prevent.stop
             @drop.prevent.stop="upload([...$event.dataTransfer.files], true)"
           >
-            <div v-if="p.md" class="row" style="gap: 4px; margin: 8px 0">
-              <button @click="dispatch(p)">{{ p.enabled ? '停用下发' : '启用下发' }}</button>
-            </div>
-            <button
-              v-if="p.md"
-              :class="{ active: selected?.name === p.md }"
-              @click="open(p, 'md', p.md)"
-            >
-              {{ p.md }}</button
-            ><button
-              v-for="f in p.scripts"
-              :key="f.name"
-              :class="{ active: selected?.name === f.name }"
-              @click="open(p, 'script', f.name)"
-            >
-              {{ f.name }}</button
-            ><button
-              v-for="f in p.members"
-              :key="f.name"
-              :class="{ active: selected?.name === f.name }"
-              @click="open(p, 'member', f.name)"
-            >
-              {{ f.name }}
-            </button>
-            <div class="row" style="margin: 8px 0">
-              <button @click="create('script')">＋ 脚本</button
-              ><button @click="create('member')">＋ 文件</button>
-            </div>
-            <label class="muted small" style="cursor: pointer; display: block; padding: 8px"
-              >导入包内文件<input
-                type="file"
-                multiple
-                style="display: none"
-                @change="
-                  (e) => {
-                    upload([...e.target.files], true);
-                    e.target.value = '';
-                  }
+            <div class="tree-files">
+              <button
+                v-for="f in files(p)"
+                :key="f.name"
+                class="skill-file-button"
+                :class="{ active: selected?.pack === p.name && selected?.name === f.name }"
+                :aria-current="
+                  selected?.pack === p.name && selected?.name === f.name ? 'true' : undefined
                 "
-            /></label>
+                :title="f.name"
+                @click="open(p, f.kind, f.name)"
+              >
+                <UiIcon :name="f.kind === 'script' ? 'code' : 'file'" :size="20" /><span
+                  class="skill-file-name"
+                  >{{ f.name }}</span
+                >
+              </button>
+            </div>
+            <div class="skill-pack-actions">
+              <button v-if="p.md" class="dispatch-button" @click="dispatch(p)">
+                {{ p.enabled ? '停用下发' : '启用下发' }}
+              </button>
+              <button @click="create('script')"><UiIcon name="plus" :size="16" />脚本</button>
+              <button @click="create('member')"><UiIcon name="plus" :size="16" />文件</button>
+              <label class="skill-import"
+                ><UiIcon name="upload" :size="16" />导入文件<input
+                  type="file"
+                  multiple
+                  @change="
+                    (e) => {
+                      upload([...e.target.files], true);
+                      e.target.value = '';
+                    }
+                  "
+              /></label>
+            </div>
           </div>
         </div>
-        <div v-if="!packs.length" class="empty-state">新建 Skill，或拖入 .md 文件。</div>
+        <div v-if="!packs.length" class="empty-state">暂无技能</div>
       </aside>
       <div v-if="selected" class="code-editor">
         <header class="editor-toolbar">
-          <code class="grow"
-            >{{ selected.pack }} / {{ selected.name }}
-            <span v-if="dirty" style="color: var(--accent)">●</span></code
-          ><button @click="preview = !preview">{{ preview ? '编辑' : '预览' }}</button
-          ><button v-if="selected.kind === 'script'" @click="test">
-            <UiIcon name="terminal" :size="14" />测试</button
-          ><button class="danger" @click="remove" :disabled="busy">
-            <UiIcon name="trash" :size="14" /></button
-          ><button class="primary" @click="save" :disabled="busy">
-            <UiIcon name="save" :size="14" />{{ busy ? '正在保存…' : '保存' }}
+          <div class="editor-path grow" :title="selected.pack + '/' + selected.name">
+            <span>{{ selected.pack }}</span
+            ><strong>{{ selected.name }}</strong>
+          </div>
+          <span v-if="dirty" class="editor-dirty">● 未保存</span>
+          <div class="editor-modes" role="group" aria-label="文件显示方式">
+            <button id="skill-edit" :aria-pressed="!preview" @click="preview = false">编辑</button>
+            <button id="skill-preview" :aria-pressed="preview" @click="preview = true">预览</button>
+          </div>
+          <button v-if="selected.kind === 'script'" @click="test">
+            <UiIcon name="terminal" :size="18" />测试
+          </button>
+          <button
+            class="danger"
+            title="删除文件"
+            aria-label="删除文件"
+            @click="remove"
+            :disabled="busy"
+          >
+            <UiIcon name="trash" :size="18" />
+          </button>
+          <button class="primary" @click="save" :disabled="busy">
+            <UiIcon name="save" :size="18" />{{ busy ? '正在保存…' : '保存' }}
           </button>
         </header>
+        <MarkdownDocument
+          v-if="preview && isMarkdown"
+          class="skill-document"
+          :content="content"
+          skill
+        />
         <pre
-          v-if="preview"
+          v-else-if="preview"
           class="editor-code-preview"
         ><code class="hljs" v-html="highlighted"></code></pre>
         <CodeEditor
@@ -375,11 +415,10 @@ async function upload(files, into = false) {
           :disabled="busy"
         />
       </div>
-      <div v-else class="empty-state" style="align-self: center">
-        <UiIcon name="code" :size="32" /><strong>{{
-          active ? '选择文件开始编辑' : '选择一个 Skill'
-        }}</strong
-        >在左侧管理提示词、脚本和成员文件。
+      <div v-else class="empty-state skill-empty">
+        <UiIcon name="skills" :size="32" /><strong>{{
+          active ? '选择文件开始查看' : '选择一个技能'
+        }}</strong>
       </div>
     </div>
     <UiModal v-model="testOpen" title="脚本测试结果" wide :busy="testBusy">
@@ -390,3 +429,226 @@ async function upload(files, into = false) {
     >
   </section>
 </template>
+<style scoped>
+.editor-layout {
+  grid-template-columns: 280px minmax(0, 1fr);
+}
+.editor-tree {
+  background: var(--sidebar);
+  padding: 12px;
+}
+.skill-pack + .skill-pack {
+  margin-top: 6px;
+}
+.pack-button {
+  min-height: 70px;
+  padding: 10px;
+}
+.pack-title {
+  display: grid;
+  grid-template-columns: 16px 20px minmax(0, 1fr);
+  align-items: center;
+  gap: 9px;
+}
+.pack-name {
+  font-size: 14px;
+  line-height: 1.5;
+  font-weight: 600;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+.pack-chevron {
+  color: var(--muted);
+  transition: transform 0.15s;
+}
+.pack-chevron.expanded {
+  transform: rotate(90deg);
+}
+.pack-title > :nth-child(2) {
+  color: var(--accent);
+}
+.pack-meta {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 8px;
+  margin: 8px 0 0 25px;
+  font-size: 13px;
+  line-height: 1.4;
+  color: var(--ink-secondary);
+}
+.skill-status {
+  padding: 2px 6px;
+  border-radius: 5px;
+  border: 1px solid var(--line);
+}
+.skill-status.enabled {
+  color: var(--success-ink);
+  background: var(--success-bg);
+  border-color: var(--success-border);
+}
+.tree-files {
+  margin: 0 0 12px 18px;
+  padding-left: 12px;
+  border-left: 1px solid var(--line-strong);
+}
+.tree-files .skill-file-button {
+  display: grid;
+  grid-template-columns: 20px minmax(0, 1fr);
+  align-items: center;
+  min-height: 38px;
+  gap: 9px;
+  padding: 8px;
+  font-family: inherit;
+  font-size: 14px;
+  line-height: 1.5;
+  color: var(--ink-secondary);
+}
+.skill-file-button:hover {
+  background: var(--hover);
+  color: var(--ink);
+}
+.tree-files .skill-file-button.active {
+  background: var(--accent-soft);
+  color: var(--accent);
+  box-shadow: inset 2px 0 var(--accent);
+}
+.skill-file-button svg {
+  flex-shrink: 0;
+}
+.skill-file-name {
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+.skill-pack-actions {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 8px;
+  padding: 0 8px 14px 30px;
+}
+.skill-pack-actions button,
+.skill-pack-actions .skill-import {
+  min-height: 36px;
+  padding: 7px 9px;
+  font-size: 13px;
+}
+.dispatch-button {
+  width: 100%;
+}
+.skill-import {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  gap: 7px;
+  border: 1px solid var(--line);
+  border-radius: 7px;
+  padding: 8px 12px;
+  background: var(--raised);
+  color: var(--ink);
+  font-size: 14px;
+  cursor: pointer;
+}
+.skill-import:hover {
+  background: var(--hover);
+  border-color: var(--line-strong);
+}
+.skill-import:focus-within {
+  outline: 2px solid var(--accent);
+  outline-offset: 3px;
+}
+.skill-import input {
+  position: absolute;
+  width: 1px;
+  height: 1px;
+  opacity: 0;
+  overflow: hidden;
+}
+.editor-toolbar {
+  gap: 10px;
+  padding: 14px 18px;
+  background: var(--surface);
+}
+.editor-toolbar button {
+  min-height: 36px;
+  font-size: 14px;
+}
+.editor-path {
+  min-width: 120px;
+  display: grid;
+  gap: 4px;
+}
+.editor-path span {
+  color: var(--muted);
+  font-size: 13px;
+}
+.editor-path strong {
+  color: var(--ink);
+  font-size: 15px;
+  font-weight: 600;
+}
+.editor-path span,
+.editor-path strong {
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+.editor-dirty {
+  font-size: 13px;
+  color: var(--accent);
+}
+.editor-modes {
+  display: inline-flex;
+  padding: 3px;
+  border: 1px solid var(--line);
+  border-radius: 7px;
+  background: var(--sidebar);
+}
+.editor-modes button {
+  border: 0;
+  background: transparent;
+  padding: 5px 12px;
+  color: var(--muted);
+  min-height: 30px;
+}
+.editor-modes button[aria-pressed='true'] {
+  background: var(--accent-soft);
+  color: var(--accent);
+  font-weight: 600;
+}
+.skill-document {
+  padding: 24px clamp(18px, 3vw, 36px);
+  background: var(--surface);
+  flex: 1;
+  min-width: 0;
+}
+.editor-code-preview {
+  padding: 24px;
+  background: var(--field);
+  font: 14px/1.8 var(--mono);
+  white-space: pre;
+  overflow-wrap: normal;
+}
+.editor-code-preview code {
+  padding: 0;
+  background: transparent;
+  font: inherit;
+}
+.skill-empty {
+  align-self: center;
+  font-size: 14px;
+}
+@media (max-width: 760px) {
+  .editor-layout {
+    grid-template-columns: 1fr;
+  }
+  .editor-tree {
+    max-height: 320px;
+  }
+  .editor-path {
+    flex-basis: 100%;
+  }
+}
+</style>

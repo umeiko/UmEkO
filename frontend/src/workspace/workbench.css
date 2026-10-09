@@ -577,7 +577,55 @@ body {
   background: var(--field);
   color: var(--ink-secondary);
   border-radius: 8px;
-  font: 12px/1.8 var(--mono);
+  font: 14px/1.8 var(--mono);
+}
+.resource-toolbar {
+  background: var(--sidebar);
+  gap: 8px;
+}
+.resource-tool {
+  min-height: 36px;
+  padding: 9px 10px;
+  font-family: inherit;
+  font-size: 14px;
+  line-height: 1.4;
+  color: var(--ink-secondary);
+}
+.resource-item {
+  min-height: 40px;
+  grid-template-columns: minmax(0, 1fr) 28px;
+  gap: 8px;
+  padding: 6px 8px;
+  margin: 3px 0;
+}
+.resource-item:hover {
+  background: var(--hover);
+}
+.resource-item.active {
+  background: var(--accent-soft);
+  box-shadow: inset 2px 0 var(--accent);
+}
+.resource-open {
+  display: grid;
+  grid-template-columns: 20px minmax(0, 1fr);
+  align-items: center;
+  gap: 9px;
+  min-height: 28px;
+  font: 14px/1.5 var(--mono);
+}
+.resource-name {
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+.resource-item.active .resource-open {
+  color: var(--accent);
+}
+.resource-item:focus-within .resource-mount {
+  opacity: 1;
+}
+.resource-empty {
+  font-size: 14px;
 }
 .model-item:hover,
 .model-item.active {
