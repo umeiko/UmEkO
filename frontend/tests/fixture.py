@@ -35,7 +35,8 @@ def main():
     password = secrets.token_urlsafe(20)
     user = store.create_user("ui-admin", password, role="admin")
     provider = store.create_provider("FixtureProvider", "https://example.invalid/v1", "fixture-only")
-    text = store.add_model(provider["id"], "fixture-text", False)
+    text = store.add_model(provider["id"],
+                           "fixture-model-for-document-and-image-consistency-with-a-long-name", False)
     vision = store.add_model(provider["id"], "fixture-vision", True)
     store.set_active_model(text["id"])
     service.reload_config()

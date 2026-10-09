@@ -964,7 +964,7 @@ h2 {
   margin-top: 8px;
 }
 .conversation {
-  --composer-height: 160px;
+  --composer-height: 210px;
   height: 100%;
   min-width: 0;
   min-height: 0;

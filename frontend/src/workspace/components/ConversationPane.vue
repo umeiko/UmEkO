@@ -1,3 +1,6 @@
+<script setup>
+import WorkspaceHelp from './WorkspaceHelp.vue';
+</script>
 <template>
   <article class="conversation">
     <section id="tool-activity" class="tool-activity hidden" aria-live="polite">
@@ -5,9 +8,7 @@
       <div id="tool-activity-list" class="tool-activity-list"></div>
     </section>
     <div id="messages" class="messages" aria-live="polite">
-      <div class="message assistant" data-i18n="message.welcome">
-        描述你的任务，可以附带文档或图片。
-      </div>
+      <div class="message assistant" data-i18n="message.welcome">开始新对话</div>
     </div>
     <div
       id="composer-resizer"
@@ -19,16 +20,15 @@
       tabindex="0"
     ></div>
     <form id="composer" class="composer">
-      <label class="file-button" data-i18n-title="composer.attachTitle" title="添加附件">
-        <input id="file" type="file" multiple />
-        <span data-i18n="composer.attach">＋ 附件</span>
-      </label>
+      <div class="composer-attachment-controls">
+        <label class="file-button" data-i18n-title="composer.attachTitle" title="添加附件">
+          <input id="file" type="file" multiple />
+          <span data-i18n="composer.attach">＋ 附件</span>
+        </label>
+        <WorkspaceHelp help-key="composer.help" />
+      </div>
       <div id="attachments" class="attachments"></div>
-      <div
-        class="context-controls"
-        data-i18n-title="context.hintTitle"
-        title="上下文长度为近似估算，不代表供应商计费 token"
-      >
+      <div class="context-controls">
         <span id="context-status">上下文 --</span>
         <div class="context-menu-wrap">
           <button
@@ -63,13 +63,14 @@
             </button>
           </div>
         </div>
+        <WorkspaceHelp help-key="context.hintTitle" />
       </div>
       <div class="composer-input">
         <textarea
           id="prompt"
           rows="3"
           data-i18n-placeholder="composer.placeholder"
-          placeholder="例如：帮我汇总这几个文档的要点（Enter 发送，Shift+Enter 换行）"
+          placeholder="输入任务或问题…"
           required
         ></textarea>
         <div class="composer-toolbar">

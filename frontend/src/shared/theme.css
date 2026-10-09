@@ -3,7 +3,7 @@
 :root {
   --mono: 'Cascadia Code', 'SFMono-Regular', Consolas, monospace;
   font-family: Inter, 'Segoe UI', 'Microsoft YaHei', system-ui, sans-serif;
-  font-size: 13px;
+  font-size: 14px;
 }
 * {
   box-sizing: border-box;
@@ -176,7 +176,7 @@ hr {
   font-size: 12px;
 }
 .small {
-  font-size: 11px;
+  font-size: 12px;
 }
 .row,
 .heading-line {
@@ -229,7 +229,7 @@ th {
   padding: 11px 18px;
   color: var(--muted);
   font-weight: 500;
-  font-size: 11px;
+  font-size: 13px;
   background: var(--sidebar);
   white-space: nowrap;
 }
@@ -237,7 +237,7 @@ td {
   padding: 14px 18px;
   border-top: 1px solid var(--line);
   vertical-align: middle;
-  font-size: 12px;
+  font-size: 13px;
 }
 td p {
   margin: 5px 0 0;
@@ -253,8 +253,8 @@ td .row {
   gap: 6px;
 }
 td button {
-  padding: 6px 9px;
-  font-size: 11px;
+  padding: 8px 11px;
+  font-size: 13px;
   white-space: nowrap;
 }
 .empty-state {
@@ -277,7 +277,7 @@ td button {
   border-radius: 5px;
   padding: 3px 7px;
   white-space: nowrap;
-  font-size: 10px;
+  font-size: 12px;
   color: var(--muted);
   background: var(--hover-wash);
 }
@@ -431,12 +431,13 @@ td button {
 .help-trigger {
   display: inline-grid;
   place-items: center;
-  width: 17px;
-  height: 17px;
+  width: 20px;
+  height: 20px;
+  flex-shrink: 0;
   padding: 0;
   border: 1px solid var(--line-strong);
   border-radius: 50%;
-  font-size: 10px;
+  font-size: 12px;
   color: var(--muted);
   background: transparent;
   line-height: 1;
@@ -458,7 +459,7 @@ td button {
   box-shadow: 0 10px 35px var(--shadow-strong);
   width: max-content;
   max-width: min(380px, calc(100vw - 24px));
-  font-size: 12px;
+  font-size: 14px;
   line-height: 1.9;
   white-space: normal;
   overflow-wrap: anywhere;
@@ -532,10 +533,10 @@ td button {
   background: var(--surface);
   color: var(--muted);
   padding: 7px 10px;
-  font-size: 11px;
+  font-size: 13px;
   white-space: nowrap;
   flex-shrink: 0;
-  min-height: 31px;
+  min-height: 34px;
 }
 .theme-switch:hover {
   color: var(--accent);
@@ -604,7 +605,7 @@ td button {
   display: flex;
   align-items: center;
   justify-content: space-between;
-  font-size: 11px;
+  font-size: 13px;
   color: var(--muted);
   margin-bottom: 27px;
 }

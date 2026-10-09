@@ -3,6 +3,7 @@
 import hljs from 'highlight.js/lib/common';
 import { t, currentLocale, setLocale, applyI18n } from './i18n.js';
 import { deploymentPrefix } from '../shared/api.js';
+import { treeIcon } from './treeIcons.js';
 export function mountWorkspaceRuntime() {
   const lifecycle = new AbortController();
   function listen(target, type, callback, options = {}) {
@@ -161,7 +162,7 @@ export function mountWorkspaceRuntime() {
   let activeToolDetail = null;
   const toolHistories = new Map();
 
-  const layoutDefaults = { filebar: 260, preview: 610, composer: 160 };
+  const layoutDefaults = { filebar: 280, preview: 610, composer: 210 };
   const layoutState = { ...layoutDefaults };
 
   function clamp(value, minimum, maximum) {
@@ -199,7 +200,7 @@ export function mountWorkspaceRuntime() {
         Math.min(760, totalWidth - layoutState.filebar - 340),
       );
     if (part === 'composer')
-      layoutState.composer = clamp(value, 150, Math.min(430, conversationHeight * 0.58));
+      layoutState.composer = clamp(value, 180, Math.min(430, conversationHeight * 0.58));
     applyLayout();
   }
 
@@ -280,6 +281,7 @@ export function mountWorkspaceRuntime() {
 
   function setStatus(text, ready = false) {
     ui.status.textContent = text;
+    ui.status.title = text;
     ui.statusDot.classList.toggle('ready', ready);
   }
 
@@ -929,7 +931,12 @@ export function mountWorkspaceRuntime() {
       const button = document.createElement('button');
       button.type = 'button';
       button.className = `session-tab${item.id === sessionId ? ' active' : ''}`;
-      button.textContent = item.title;
+      button.title = item.title;
+      button.setAttribute('aria-label', item.title);
+      const label = document.createElement('span');
+      label.className = 'session-label';
+      label.textContent = item.title;
+      button.append(label);
       button.addEventListener('click', () =>
         loadSession(item.id).catch((error) => setStatus(error.message)),
       );
@@ -1256,7 +1263,8 @@ export function mountWorkspaceRuntime() {
       tab.classList.toggle('active', tab.dataset.section === section);
     for (const [name, panel] of Object.entries(ui.panels))
       panel.classList.toggle('active', name === section);
-    ui.sidebarTitle.textContent = section === 'workspace' ? 'output' : section;
+    ui.sidebarTitle.dataset.i18n = section === 'workspace' ? 'sidebar.files' : 'sidebar.skills';
+    ui.sidebarTitle.textContent = t(ui.sidebarTitle.dataset.i18n);
   }
 
   for (const tab of ui.sidebarTabs) {
@@ -1483,6 +1491,7 @@ export function mountWorkspaceRuntime() {
     row.classList.add('active');
     ui.previewKicker.textContent = 'CLIENT SKILL';
     ui.previewTitle.textContent = name;
+    ui.previewTitle.title = name;
     ui.saveResource.classList.remove('hidden');
     ui.deleteResource.classList.toggle('hidden', resource.builtin);
     ui.attachWorkspaceFile.classList.add('hidden');
@@ -1490,16 +1499,6 @@ export function mountWorkspaceRuntime() {
     resetPreviewViews();
     ui.resourceEditor.value = resource.content || '';
     ui.resourceEditor.classList.remove('hidden');
-  }
-
-  function fileIcon(name) {
-    const ext = name.split('.').pop().toLowerCase();
-    if (['png', 'jpg', 'jpeg', 'gif', 'webp', 'bmp', 'svg'].includes(ext)) return '◫';
-    if (['md', 'markdown'].includes(ext)) return 'M';
-    if (['xml', 'json', 'yaml', 'yml'].includes(ext)) return '<>';
-    if (['zip', '7z', 'rar', 'tar', 'gz', 'bz2', 'xz', 'tgz', 'wim', 'jar', 'war'].includes(ext))
-      return '▤';
-    return '·';
   }
 
   function entryName(path) {
@@ -1959,7 +1958,10 @@ export function mountWorkspaceRuntime() {
         details.className = 'tree-dir';
         details.open = node.path.split('/').length <= 1;
         const summary = document.createElement('summary');
-        summary.textContent = node.name;
+        const name = document.createElement('span');
+        name.className = 'file-name';
+        name.textContent = node.name;
+        summary.append(treeIcon(node.name, true), name);
         summary.title = node.path;
         bindTreeEntry(summary, node, { dropDirectory: true });
         if (fileClipboard?.operation === 'move' && fileClipboard.path === node.path)
@@ -1979,7 +1981,7 @@ export function mountWorkspaceRuntime() {
         button.title = `${node.path} · ${node.size} bytes`;
         const icon = document.createElement('span');
         icon.className = 'file-icon';
-        icon.textContent = fileIcon(node.name);
+        icon.append(treeIcon(node.name));
         const name = document.createElement('span');
         name.className = 'file-name';
         name.textContent = node.name;
@@ -2364,6 +2366,7 @@ export function mountWorkspaceRuntime() {
     const ext = name.split('.').pop().toLowerCase();
     ui.previewKicker.textContent = 'OUTPUT FILE';
     ui.previewTitle.textContent = name;
+    ui.previewTitle.title = name;
     ui.saveResource.classList.add('hidden');
     ui.deleteResource.classList.add('hidden');
     ui.attachWorkspaceFile.classList.remove('hidden');
@@ -3145,6 +3148,7 @@ export function mountWorkspaceRuntime() {
   function clearPreview() {
     ui.previewKicker.textContent = 'PREVIEW';
     ui.previewTitle.textContent = t('preview.title');
+    ui.previewTitle.removeAttribute('title');
     ui.saveResource.classList.add('hidden');
     ui.deleteResource.classList.add('hidden');
     ui.attachWorkspaceFile.classList.add('hidden');

@@ -75,7 +75,7 @@ function select(id) {
     <section class="login-card">
       <div class="brand">
         <BrandMark />
-        <div>UMEKO<small>ADMIN CONSOLE</small></div>
+        <div>UMEKO</div>
       </div>
       <h1>登录管理控制台</h1>
       <form @submit.prevent="login">
@@ -103,9 +103,8 @@ function select(id) {
     <aside class="admin-sidebar" :class="{ open: nav }">
       <div class="brand">
         <BrandMark />
-        <div>UMEKO<small>ADMIN CONSOLE</small></div>
+        <div>UMEKO</div>
       </div>
-      <p class="nav-kicker">WORKSPACE / 管理</p>
       <nav class="admin-nav" aria-label="管理导航">
         <button
           v-for="[id, label, icon] in tabs"
@@ -146,9 +145,7 @@ function select(id) {
       </header>
       <div class="page-title">
         <h1>{{ tabs.find((t) => t[0] === admin.tab)?.[1] }}</h1>
-        <HelpTip :text="tabs.find((t) => t[0] === admin.tab)?.[3]" /><span class="mono"
-          >UMEKO / CONTROL PLANE</span
-        >
+        <HelpTip :text="tabs.find((t) => t[0] === admin.tab)?.[3]" />
       </div>
       <component :is="views[admin.tab]" :key="admin.tab" />
     </main>

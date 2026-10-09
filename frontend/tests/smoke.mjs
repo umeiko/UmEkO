@@ -67,6 +67,34 @@ async function checkThemes(page, toggle, wanted) {
     wanted,
   );
 }
+async function composerButtonsFit(page) {
+  const boxes = await page.evaluate(() => {
+    const rect = (selector) => {
+      const { top, bottom, left, right } = document.querySelector(selector).getBoundingClientRect();
+      return { top, bottom, left, right };
+    };
+    return {
+      input: rect('.composer-input'),
+      textarea: rect('#prompt'),
+      model: rect('#model-picker'),
+      send: rect('#send'),
+      form: rect('#composer'),
+    };
+  });
+  for (const button of [boxes.model, boxes.send]) {
+    assert.ok(
+      button.bottom <= boxes.input.bottom && button.bottom <= boxes.form.bottom,
+      'Composer buttons stay inside the input and form',
+    );
+    assert.ok(button.top >= boxes.textarea.bottom, 'Toolbar does not cover typing area');
+    assert.ok(
+      button.left >= boxes.input.left && button.right <= boxes.input.right,
+      'Composer buttons fit horizontally',
+    );
+  }
+  assert.ok(boxes.textarea.bottom - boxes.textarea.top >= 40, 'At least one input line remains');
+  assert.ok(boxes.model.right <= boxes.send.left, 'Model picker and send do not overlap');
+}
 const browser = await chromium.launch({ headless: true });
 try {
   for (const prefix of ['', '/doc-master/consistency/image-text']) {
@@ -326,6 +354,112 @@ try {
       assert.ok(
         (await work.locator('#open-file').getAttribute('href')).startsWith(prefix + '/v1/'),
       );
+      // Long labels, mixed file types and shrinking the composer reproduce the reported layout bugs.
+      const session = (await (await context.request.get(publicBase + '/v1/sessions')).json())[0];
+      const longTitle = '超长会话标题与文件布局回归验证 '.repeat(4);
+      assert.ok(
+        (
+          await context.request.patch(publicBase + `/v1/sessions/${session.id}/title`, {
+            data: { title: longTitle },
+          })
+        ).ok(),
+      );
+      const entries = [
+        'generate/01-notes.md',
+        'generate/02-image.png',
+        'generate/03-result.json',
+        'generate/04-report.html',
+        'generate/05-bundle.zip',
+        'generate/reports',
+        'generate/reports/nested.txt',
+      ];
+      for (const entry of entries) {
+        assert.ok(
+          (
+            await context.request.post(
+              publicBase + `/v1/sessions/${session.id}/workspace/entries`,
+              { data: { path: entry, type: entry === 'generate/reports' ? 'directory' : 'file' } },
+            )
+          ).ok(),
+        );
+      }
+      await work.reload();
+      await work.locator('#status-dot.ready').waitFor();
+      const tab = work.locator('.session-tab.active');
+      assert.equal(await tab.getAttribute('title'), longTitle.trim());
+      const titleSize = await tab
+        .locator('.session-label')
+        .evaluate((el) => ({ width: el.clientWidth, full: el.scrollWidth }));
+      assert.ok(
+        titleSize.full > titleSize.width && titleSize.width > 0,
+        'Long session title is constrained for ellipsis',
+      );
+      const generate = work
+        .locator('.tree-dir')
+        .filter({ has: work.locator('summary[data-path="generate"]') })
+        .first();
+      const fileLabels = await generate
+        .locator(':scope > .tree-children > .tree-file-row .file-name')
+        .evaluateAll((els) => els.map((el) => el.getBoundingClientRect().x));
+      assert.equal(fileLabels.length, 5);
+      assert.ok(
+        fileLabels.every((x) => Math.abs(x - fileLabels[0]) < 1),
+        'Sibling names align across file types',
+      );
+      const folderLabel = await work
+        .locator('summary[data-path="generate/reports"] .file-name')
+        .boundingBox();
+      assert.ok(
+        Math.abs(folderLabel.x - fileLabels[0]) < 1,
+        'Sibling folder and file labels align',
+      );
+      await work.locator('summary[data-path="generate/reports"]').click();
+      const nested = await work
+        .locator('.tree-file[data-path="generate/reports/nested.txt"] .file-name')
+        .boundingBox();
+      assert.ok(nested.x - fileLabels[0] >= 20, 'Nested files have a clear extra indent');
+      assert.equal(await generate.locator('.tree-file .tree-icon').count(), 6);
+      const iconSizes = await generate
+        .locator('.tree-icon')
+        .evaluateAll((els) => els.map((el) => el.getBoundingClientRect().width));
+      assert.ok(
+        iconSizes.every((width) => width === 20),
+        'All file and folder icons have the same size',
+      );
+      await work.locator('#composer-resizer').focus();
+      for (let i = 0; i < 15; i++) await work.keyboard.press('ArrowDown');
+      await composerButtonsFit(work);
+      await work.locator('#file').setInputFiles(
+        ['first.txt', 'second.txt', 'third.txt'].map((name) => ({
+          name,
+          mimeType: 'text/plain',
+          buffer: Buffer.from('layout fixture'),
+        })),
+      );
+      await work.locator('#attachments .chip').nth(2).waitFor();
+      await composerButtonsFit(work);
+      await work.locator('#user-menu summary').click();
+      await work.locator('#user-settings').click();
+      await work.locator('#user-settings-dialog[open]').waitFor();
+      await centered(work, '#user-settings-dialog');
+      assert.equal(await work.locator('#user-settings-dialog .eyebrow').count(), 0);
+      assert.equal(await work.locator('.help-popover:popover-open').count(), 0);
+      await work.locator('#user-settings-dialog legend .help-trigger').hover();
+      await work
+        .locator('.help-popover:popover-open')
+        .filter({ hasText: prefix ? 'default' : '跟随默认' })
+        .waitFor();
+      await work.keyboard.press('Escape');
+      assert.ok(
+        await work.locator('#user-settings-dialog').isVisible(),
+        'Escape closes help before its dialog',
+      );
+      await screenshot(work, 'settings', prefix);
+      await work.locator('#user-settings-cancel').click();
+      await work.locator('.tree-file[data-path="attachments/table.csv"]').click();
+      await work.locator('#csv-view').filter({ hasText: 'alpha' }).waitFor();
+      await screenshot(work, 'layout', prefix);
+      await work.locator('#composer-resizer').dblclick();
       await work.locator('#collapse-preview').click();
       await work.locator('#prompt').fill('Stream fixture');
       await work.locator('#send').click();
@@ -388,9 +522,10 @@ try {
       await work.locator('.workbench-title [data-theme-toggle]').click();
       assert.ok(await work.evaluate(() => document.documentElement.scrollWidth <= innerWidth + 1));
       assert.ok(await work.locator('#prompt').isVisible());
+      await composerButtonsFit(work);
       assert.deepEqual(errors, []);
       console.log(
-        `Passed browser workflows: ${prefix || '/'} (${locale}, ${appearance}, theme persistence, admin, files, streaming, 20 folded tools, cancellation, desktop/mobile)`,
+        `Passed browser workflows: ${prefix || '/'} (${locale}, ${appearance}, long titles, aligned file tree, minimum composer, localized help, theme persistence, admin, files, streaming, 20 folded tools, cancellation, desktop/mobile)`,
       );
     } catch (e) {
       if (diagnostics) console.error(diagnostics);

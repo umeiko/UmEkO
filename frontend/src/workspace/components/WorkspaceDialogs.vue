@@ -1,6 +1,7 @@
 <script setup>
 import BrandMark from '../../shared/BrandMark.vue';
 import ThemeSwitch from '../../shared/ThemeSwitch.vue';
+import WorkspaceHelp from './WorkspaceHelp.vue';
 </script>
 <template>
   <div id="file-context-menu" class="file-context-menu hidden" role="menu">
@@ -31,7 +32,6 @@ import ThemeSwitch from '../../shared/ThemeSwitch.vue';
   </div>
   <dialog id="file-entry-dialog" class="resource-dialog">
     <form id="file-entry-form">
-      <p class="eyebrow">WORKSPACE</p>
       <h2 id="file-entry-title">新建文件</h2>
       <label for="file-entry-name" data-i18n="form.name">名称</label
       ><input id="file-entry-name" maxlength="180" required autocomplete="off" />
@@ -45,10 +45,19 @@ import ThemeSwitch from '../../shared/ThemeSwitch.vue';
   </dialog>
   <dialog id="resource-dialog" class="resource-dialog">
     <form id="resource-dialog-form" method="dialog">
-      <p class="eyebrow">NEW SKILL</p>
-      <h2 id="resource-dialog-title" data-i18n="skill.new">新建 Skill</h2>
+      <div class="panel-heading">
+        <h2 id="resource-dialog-title" data-i18n="skill.new">新建 Skill</h2>
+        <WorkspaceHelp help-key="skill.help" />
+      </div>
       <label for="resource-name" data-i18n="form.name">名称</label>
-      <input id="resource-name" name="name" autocomplete="off" required pattern="[A-Za-z0-9_-]+" />
+      <input
+        id="resource-name"
+        name="name"
+        autocomplete="off"
+        required
+        pattern="[A-Za-z0-9_-]+"
+        autofocus
+      />
       <label for="resource-description" data-i18n="skill.description">需求描述</label>
       <textarea
         id="resource-description"
@@ -56,9 +65,6 @@ import ThemeSwitch from '../../shared/ThemeSwitch.vue';
         data-i18n-placeholder="skill.descPlaceholder"
         placeholder="描述适用场景、触发条件、操作规范或直接粘贴完整需求"
       ></textarea>
-      <p class="dialog-help" data-i18n="skill.help">
-        “AI 生成”会生成并校验完整 Skill；“空白模板”只创建合法文件头，供你手动编辑。
-      </p>
       <div class="dialog-actions">
         <button
           id="resource-dialog-cancel"
@@ -81,7 +87,6 @@ import ThemeSwitch from '../../shared/ThemeSwitch.vue';
     <div class="tool-detail-shell">
       <header class="tool-detail-head">
         <div>
-          <p class="eyebrow">TOOL CALL</p>
           <h2 id="tool-detail-title" data-i18n="tool.detail">工具调用详情</h2>
           <p id="tool-detail-meta" class="tool-detail-meta"></p>
         </div>
@@ -97,22 +102,19 @@ import ThemeSwitch from '../../shared/ThemeSwitch.vue';
       </header>
       <section id="tool-images-section" class="tool-detail-section hidden">
         <div class="tool-detail-section-head">
-          <span data-i18n="tool.images">涉及图片</span
-          ><small data-i18n="tool.imagesSub">点击放大</small>
+          <span data-i18n="tool.images">涉及图片</span><WorkspaceHelp help-key="tool.imagesSub" />
         </div>
         <div id="tool-images" class="tool-images"></div>
       </section>
       <section class="tool-detail-section">
         <div class="tool-detail-section-head">
-          <span data-i18n="tool.request">模型请求</span
-          ><small data-i18n="tool.requestSub">传给工具的参数</small>
+          <span data-i18n="tool.request">模型请求</span><WorkspaceHelp help-key="tool.requestSub" />
         </div>
         <pre id="tool-detail-request" tabindex="0"></pre>
       </section>
       <section class="tool-detail-section">
         <div class="tool-detail-section-head">
-          <span data-i18n="tool.result">工具返回</span
-          ><small data-i18n="tool.resultSub">返回给模型的结果</small>
+          <span data-i18n="tool.result">工具返回</span><WorkspaceHelp help-key="tool.resultSub" />
         </div>
         <pre id="tool-detail-result" tabindex="0"></pre>
       </section>
@@ -142,7 +144,6 @@ import ThemeSwitch from '../../shared/ThemeSwitch.vue';
   </dialog>
   <dialog id="user-settings-dialog" class="resource-dialog user-settings-dialog">
     <form id="user-settings-form">
-      <p class="eyebrow">USER SETTINGS</p>
       <h2 data-i18n="settings.title">用户设置</h2>
       <div class="avatar-editor">
         <span class="settings-avatar" aria-hidden="true"
@@ -152,8 +153,8 @@ import ThemeSwitch from '../../shared/ThemeSwitch.vue';
           ></span
         >
         <div class="avatar-editor-copy">
-          <strong id="settings-username">账户</strong
-          ><span data-i18n="settings.avatarHint">PNG、JPEG、WebP 或 GIF，最大 2 MB</span>
+          <strong id="settings-username">账户</strong>
+          <WorkspaceHelp help-key="settings.avatarHint" />
         </div>
       </div>
       <label class="avatar-file-button" for="avatar-file"
@@ -163,7 +164,7 @@ import ThemeSwitch from '../../shared/ThemeSwitch.vue';
       <fieldset class="model-prefs">
         <legend data-i18n="settings.general">通用</legend>
         <label for="pref-language" data-i18n="settings.language">界面语言</label>
-        <select id="pref-language">
+        <select id="pref-language" autofocus>
           <option value="zh-CN">简体中文</option>
           <option value="zh-TW">繁體中文</option>
           <option value="en">English</option>
@@ -174,16 +175,16 @@ import ThemeSwitch from '../../shared/ThemeSwitch.vue';
         </select>
       </fieldset>
       <fieldset class="model-prefs">
-        <legend data-i18n="settings.modelPrefs">模型偏好</legend>
+        <legend>
+          <span data-i18n="settings.modelPrefs">模型偏好</span>
+          <WorkspaceHelp help-key="settings.prefsHelp" />
+        </legend>
         <label for="pref-main" data-i18n="settings.mainAgent">主智能体</label>
         <select id="pref-main"></select>
         <label for="pref-sub" data-i18n="settings.subAgent">子智能体</label>
         <select id="pref-sub"></select>
         <label for="pref-vision" data-i18n="settings.visionAgent">视觉智能体</label>
         <select id="pref-vision"></select>
-        <p class="dialog-help" data-i18n="settings.prefsHelp">
-          “跟随默认”使用管理员配置的当前模型；改动从下一条消息开始生效。视觉智能体只列出具备视觉能力的模型。
-        </p>
       </fieldset>
       <p id="user-settings-error" class="dialog-help"></p>
       <div class="dialog-actions avatar-actions">
@@ -208,7 +209,6 @@ import ThemeSwitch from '../../shared/ThemeSwitch.vue';
   </dialog>
   <dialog id="rename-session-dialog" class="resource-dialog">
     <form id="rename-session-form">
-      <p class="eyebrow">SESSION</p>
       <h2 data-i18n="rename.title">重命名会话</h2>
       <label for="session-title-input" data-i18n="rename.name">会话名称</label
       ><input id="session-title-input" maxlength="80" required />
@@ -226,7 +226,6 @@ import ThemeSwitch from '../../shared/ThemeSwitch.vue';
   </dialog>
   <dialog id="delete-session-dialog" class="resource-dialog danger-dialog">
     <form id="delete-session-form">
-      <p class="eyebrow">DANGER ZONE</p>
       <h2 data-i18n="deleteSession.title">永久删除会话？</h2>
       <p id="delete-session-message" class="dialog-warning"></p>
       <p class="dialog-help" data-i18n="deleteSession.help">

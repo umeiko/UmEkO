@@ -1,6 +1,5 @@
 <script setup>
 import { onMounted, onBeforeUnmount } from 'vue';
-import UiIcon from '../shared/UiIcon.vue';
 import ThemeSwitch from '../shared/ThemeSwitch.vue';
 import BrandMark from '../shared/BrandMark.vue';
 import SessionBar from './components/SessionBar.vue';
@@ -23,8 +22,7 @@ onBeforeUnmount(() => dispose?.());
         ><span class="workbench-label">工作台</span>
       </div>
       <div class="workbench-actions">
-        <span class="workbench-kicker"><UiIcon name="terminal" :size="13" />AGENT WORKSPACE</span
-        ><ThemeSwitch localized />
+        <ThemeSwitch localized />
       </div>
     </header>
     <SessionBar />

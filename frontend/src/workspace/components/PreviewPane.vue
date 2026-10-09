@@ -1,9 +1,15 @@
+<script setup>
+import WorkspaceHelp from './WorkspaceHelp.vue';
+</script>
 <template>
   <aside class="preview">
     <div class="preview-head">
-      <div>
-        <p id="preview-kicker" class="eyebrow">PREVIEW</p>
-        <h2 id="preview-title">预览</h2>
+      <div class="preview-heading">
+        <p id="preview-kicker" class="hidden" aria-hidden="true"></p>
+        <div class="panel-heading">
+          <h2 id="preview-title">预览</h2>
+          <WorkspaceHelp help-key="preview.help" />
+        </div>
       </div>
       <div class="preview-actions">
         <button id="save-resource" class="text-button hidden" type="button" data-i18n="action.save">
@@ -47,9 +53,7 @@
         </button>
       </div>
     </div>
-    <div id="canvas" class="canvas empty" data-i18n="canvas.empty">
-      点击左侧文件预览；对话中的产物也会出现在这里。
-    </div>
+    <div id="canvas" class="canvas empty" data-i18n="canvas.empty">暂无预览</div>
     <article id="markdown-view" class="document-view hidden"></article>
     <section
       id="csv-view"

@@ -1,12 +1,13 @@
 <script setup>
 import UiIcon from '../../shared/UiIcon.vue';
+import WorkspaceHelp from './WorkspaceHelp.vue';
 </script>
 <template>
   <aside class="filebar">
     <div class="filebar-head">
-      <div>
-        <p class="eyebrow">CLIENT</p>
-        <h2 id="sidebar-title">output</h2>
+      <div class="panel-heading">
+        <h2 id="sidebar-title" data-i18n="sidebar.files">文件</h2>
+        <WorkspaceHelp help-key="sidebar.help" />
       </div>
       <div class="filebar-actions">
         <button
@@ -18,7 +19,7 @@ import UiIcon from '../../shared/UiIcon.vue';
           title="新建文件或目录"
           aria-label="新建文件或目录"
         >
-          <UiIcon name="plus" :size="16" /></button
+          <UiIcon name="plus" :size="19" /></button
         ><button
           id="refresh-tree"
           class="icon-button"
@@ -28,13 +29,22 @@ import UiIcon from '../../shared/UiIcon.vue';
           title="刷新文件树"
           aria-label="刷新文件树"
         >
-          <UiIcon name="refresh" :size="15" />
+          <UiIcon name="refresh" :size="18" />
         </button>
       </div>
     </div>
     <nav class="sidebar-tabs" data-i18n-aria="sidebar.resourcesAria" aria-label="客户端资源">
-      <button class="sidebar-tab active" data-section="workspace" type="button">Workspace</button>
-      <button class="sidebar-tab" data-section="skills" type="button">Skills</button>
+      <button
+        class="sidebar-tab active"
+        data-section="workspace"
+        type="button"
+        data-i18n="sidebar.files"
+      >
+        文件
+      </button>
+      <button class="sidebar-tab" data-section="skills" type="button" data-i18n="sidebar.skills">
+        技能
+      </button>
     </nav>
     <div id="workspace-panel" class="sidebar-panel active">
       <div class="tree-filter">
