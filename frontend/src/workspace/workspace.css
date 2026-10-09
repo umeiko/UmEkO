@@ -1168,9 +1168,9 @@ h2 {
   border-radius: 8px;
   color: var(--muted);
   background: var(--surface);
-  font:
-    12px/1.3 ui-monospace,
-    monospace;
+  font-family: inherit;
+  font-size: 14px;
+  line-height: 1.5;
 }
 .agent-action-text {
   min-width: 0;
@@ -1190,7 +1190,7 @@ h2 {
   content: '查看';
   margin-left: 4px;
   color: var(--muted);
-  font-size: 10px;
+  font-size: 13px;
 }
 .agent-action.inspectable:hover,
 .agent-action.inspectable:focus-visible {
@@ -1284,13 +1284,45 @@ h2 {
 }
 .tool-detail-head h2 {
   font-size: 22px;
+  overflow-wrap: anywhere;
+}
+.tool-detail-head > div {
+  min-width: 0;
 }
 .tool-detail-meta {
-  margin: 6px 0 0;
-  color: var(--muted);
-  font:
-    11px/1.4 ui-monospace,
-    monospace;
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 8px 12px;
+  margin: 10px 0 0;
+  color: var(--ink-secondary);
+  font-size: 14px;
+  line-height: 1.5;
+}
+.tool-detail-meta code {
+  font: inherit;
+  font-family: 'Cascadia Code', Consolas, ui-monospace, monospace;
+  overflow-wrap: anywhere;
+}
+.tool-detail-status {
+  padding: 2px 8px;
+  border-radius: 5px;
+  color: var(--ink-secondary);
+  background: var(--hover);
+}
+.tool-detail-status.completed {
+  color: var(--success-ink);
+  background: var(--success-bg);
+}
+.tool-detail-status.running {
+  color: var(--on-accent);
+  background: var(--accent);
+}
+.tool-detail-status.failed,
+.tool-detail-status.cancelled,
+.tool-detail-status.unknown {
+  color: var(--warning);
+  background: var(--warning-bg);
 }
 .tool-detail-close {
   width: 34px;
@@ -1328,7 +1360,7 @@ h2 {
   padding: 9px 12px;
   border-bottom: 1px solid var(--line);
   color: var(--ink);
-  font-size: 12px;
+  font-size: 14px;
   font-weight: 700;
 }
 .tool-detail-section-head small {
@@ -1341,16 +1373,18 @@ h2 {
   max-height: none;
   flex: 1;
   overflow: auto;
-  padding: 13px;
+  padding: 16px;
   border: 0;
   color: var(--ink);
   background: var(--field);
   font:
-    12px/1.55 ui-monospace,
-    'Cascadia Code',
+    14px/1.7 'Cascadia Code',
+    Consolas,
+    ui-monospace,
     monospace;
   white-space: pre-wrap;
   overflow-wrap: anywhere;
+  tab-size: 2;
 }
 .subagent-line {
   align-self: flex-start;

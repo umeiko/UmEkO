@@ -45,6 +45,8 @@ greet("世界")
 查看[数据表](workspace-file:attachments%2Ftable.csv)。
 '''
 
+DIRECTORY_SAMPLE = 'workspace/\n├── fig7_2.png (22.7 KB)\n└── reports/\n    └── output.md'
+
 
 def main():
     parser = argparse.ArgumentParser()
@@ -94,14 +96,17 @@ def main():
                         time.sleep(.05)
                     raise AssertionError("Cancellation did not arrive")
                 for i in range(20):
-                    arguments = json.dumps({"index": i})
-                    run.emit("tool.started", name="fixture_tool", arguments=arguments)
-                    event_id = store.add_tool_event(session.id, "main", "fixture_tool",
-                                                    arguments=arguments, run_id=run.id)
+                    name = "list_dir" if i == 0 else "read_pack_file" if i == 1 else "fixture_tool"
+                    params = {"directory": "workspace"} if i == 0 else {"index": i}
+                    arguments = json.dumps(params)
+                    run.emit("tool.started", name=name, arguments=arguments)
+                    # Real event persistence JSON-encodes string arguments and results.
+                    event_id = store.add_tool_event(session.id, "main", name,
+                                                    arguments=json.dumps(arguments), run_id=run.id)
                     time.sleep(.06)
-                    result = json.dumps({"ok": True, "index": i})
-                    store.complete_tool_event(event_id, result)
-                    run.emit("tool.completed", name="fixture_tool", result=result)
+                    result = DIRECTORY_SAMPLE if i == 0 else MARKDOWN_SAMPLE if i == 1 else json.dumps({"ok": True, "index": i})
+                    store.complete_tool_event(event_id, json.dumps(result))
+                    run.emit("tool.completed", name=name, result=result)
                 for text in ("STREAM_", "UI_", "OK"):
                     run.emit("assistant.delta", text=text)
                     time.sleep(.7)
@@ -119,6 +124,7 @@ def main():
         "username": user["username"], "password": password,
         "text_model": text["id"], "vision_model": vision["id"],
         "markdown_sample": MARKDOWN_SAMPLE,
+        "directory_sample": DIRECTORY_SAMPLE,
     }), encoding="utf-8")
     threading.Thread(target=lambda: uvicorn.run(admin_app, host="127.0.0.1", port=args.admin_port,
                                                log_level="error"), daemon=True).start()

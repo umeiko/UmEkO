@@ -7,7 +7,7 @@
     "dev": "vite --host 127.0.0.1",
     "build": "vite build",
     "preview": "vite preview --host 127.0.0.1",
-    "test:smoke": "node --test tests/markdown.test.mjs && node tests/smoke.mjs",
+    "test:smoke": "node --test tests/markdown.test.mjs tests/tool-data.test.mjs && node tests/smoke.mjs",
     "format": "prettier --write src tests/*.mjs *.html *.js *.json",
     "format:check": "prettier --check src tests/*.mjs *.html *.js *.json"
   },

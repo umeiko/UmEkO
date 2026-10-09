@@ -549,7 +549,45 @@ try {
       assert.equal(await work.locator('.tool-history-list .agent-action').count(), 20);
       await work.locator('.tool-history-list .agent-action').first().click();
       await work.locator('#tool-detail-dialog[open]').waitFor();
-      assert.match(await work.locator('#tool-detail-request').innerText(), /index/);
+      const directoryRequest = JSON.stringify({ directory: 'workspace' }, null, 2);
+      assert.equal(await work.locator('#tool-detail-request').textContent(), directoryRequest);
+      assert.equal(await work.locator('#tool-detail-result').textContent(), state.directory_sample);
+      assert.equal(
+        await work.locator('#tool-detail-title').innerText(),
+        prefix ? 'List Directory' : '查看目录树',
+      );
+      assert.ok(await work.locator('#tool-detail-meta .tool-detail-status.completed').isVisible());
+      const toolStyles = await work.locator('#tool-detail-dialog').evaluate((el) => {
+        const style = (selector) => getComputedStyle(el.querySelector(selector));
+        return {
+          metadata: style('#tool-detail-meta').fontSize,
+          name: style('#tool-detail-meta code').fontSize,
+          request: style('#tool-detail-request').fontSize,
+          result: style('#tool-detail-result').fontSize,
+          whitespace: style('#tool-detail-result').whiteSpace,
+        };
+      });
+      assert.ok(
+        [toolStyles.metadata, toolStyles.name, toolStyles.request, toolStyles.result].every(
+          (size) => parseFloat(size) >= 14,
+        ),
+      );
+      assert.equal(toolStyles.whitespace, 'pre-wrap');
+      await centered(work, '#tool-detail-dialog');
+      await screenshot(work, 'tool-directory', prefix);
+      await work.locator('#tool-detail-close').click();
+      await work.locator('.tool-history-list .agent-action').nth(1).click();
+      assert.equal(
+        await work.locator('#tool-detail-title').innerText(),
+        prefix ? 'Read Skill File' : '读取技能文件',
+      );
+      assert.equal(await work.locator('#tool-detail-result').textContent(), state.markdown_sample);
+      assert.equal(
+        await work.locator('#tool-detail-result').locator('h1, strong, script').count(),
+        0,
+        'Tool results stay plain text',
+      );
+      await screenshot(work, 'tool-skill', prefix);
       await work.locator('#tool-detail-close').click();
       await work.locator('.tool-history summary').click();
       await work.locator('.tree-file').filter({ hasText: 'table.csv' }).click();
@@ -560,6 +598,16 @@ try {
       await work.locator('#status-dot.ready').waitFor();
       assert.ok((await work.locator('#messages').innerText()).includes('STREAM_UI_OK'));
       assert.equal(await work.locator('.tool-history-list .agent-action').count(), 20);
+      await work.locator('.tool-history summary').first().click();
+      await work.locator('.tool-history-list .agent-action').first().click();
+      assert.equal(await work.locator('#tool-detail-request').textContent(), directoryRequest);
+      assert.equal(
+        await work.locator('#tool-detail-result').textContent(),
+        state.directory_sample,
+        'Restored JSON-encoded tree has the same lines as live output',
+      );
+      await work.locator('#tool-detail-close').click();
+      await work.locator('.tool-history summary').first().click();
       // Markdown files and streamed replies share the renderer and copy controls.
       await context.grantPermissions(['clipboard-read', 'clipboard-write'], { origin: base });
       await work.locator('#file').setInputFiles({
@@ -781,6 +829,13 @@ try {
       assert.ok(await work.evaluate(() => document.documentElement.scrollWidth <= innerWidth + 1));
       await toggle.click();
       assert.ok(await work.locator('#preview-panel').isHidden());
+      await work.locator('.tool-history summary').first().click();
+      await work.locator('.tool-history-list .agent-action').first().click();
+      await centered(work, '#tool-detail-dialog');
+      assert.equal(await work.locator('#tool-detail-result').textContent(), state.directory_sample);
+      assert.ok(await work.evaluate(() => document.documentElement.scrollWidth <= innerWidth + 1));
+      await screenshot(work, 'tool-directory-mobile', prefix);
+      await work.locator('#tool-detail-close').click();
       assert.deepEqual(errors, []);
       console.log(
         `Passed browser workflows: ${prefix || '/'} (${locale}, ${appearance}, Markdown preview/source, live rendering, highlighted code and clipboard, consistent preview toggle, skill tree/Markdown/edit/save/member files, long titles, file tree, composer, admin, files, 20 folded tools, cancellation, desktop/mobile)`,

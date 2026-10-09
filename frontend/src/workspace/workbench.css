@@ -332,7 +332,7 @@ body {
 .tool-history > summary,
 .agent-action,
 .tool-detail-section-head {
-  font-size: 13px;
+  font-size: 14px;
 }
 .tool-history {
   background: var(--raised);
@@ -750,7 +750,7 @@ body {
   color: var(--ink-secondary);
 }
 .tool-detail-section-head {
-  color: var(--muted);
+  color: var(--ink-secondary);
   background: var(--raised);
   border-color: var(--line-strong);
 }

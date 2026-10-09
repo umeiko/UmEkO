@@ -6,6 +6,7 @@ import { deploymentPrefix } from '../shared/api.js';
 import { treeIcon } from './treeIcons.js';
 import { renderMarkdown as markdown, renderSkillMarkdown, codeHtml } from '../shared/markdown.js';
 import { copyText } from '../shared/clipboard.js';
+import { prettyToolData } from './toolData.js';
 export function mountWorkspaceRuntime() {
   const lifecycle = new AbortController();
   function listen(target, type, callback, options = {}) {
@@ -429,16 +430,6 @@ export function mountWorkspaceRuntime() {
     completeToolAction(action, event.result, event.result == null ? 'unknown' : 'completed');
   }
 
-  function prettyToolData(value, emptyText) {
-    if (value === null || value === undefined || value === '') return emptyText;
-    if (typeof value !== 'string') return JSON.stringify(value, null, 2);
-    try {
-      return JSON.stringify(JSON.parse(value), null, 2);
-    } catch (_error) {
-      return value;
-    }
-  }
-
   function renderToolImages(action) {
     // 仅图像类工具（image_reasoning / read_image）做缩略图预览；
     // read_document 等通用文件工具即使 path 指向图片也不预览
@@ -486,7 +477,14 @@ export function mountWorkspaceRuntime() {
           ? t('tool.statusDone')
           : t(`tool.status.${action.status}`);
     ui.toolDetailTitle.textContent = toolLabel(action.name);
-    ui.toolDetailMeta.textContent = `${owner} · ${action.name} · ${status}`;
+    const ownerLabel = document.createElement('span');
+    ownerLabel.textContent = owner;
+    const nameLabel = document.createElement('code');
+    nameLabel.textContent = action.name;
+    const statusLabel = document.createElement('span');
+    statusLabel.className = `tool-detail-status ${action.status}`;
+    statusLabel.textContent = status;
+    ui.toolDetailMeta.replaceChildren(ownerLabel, nameLabel, statusLabel);
     renderToolImages(action);
     ui.toolDetailRequest.textContent = prettyToolData(action.request, t('tool.noParams'));
     let liveResult = '';
