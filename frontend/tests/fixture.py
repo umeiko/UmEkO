@@ -15,6 +15,36 @@ from umeko.server import admin as admin_module
 from umeko.server.app import create_app
 from umeko.skills import script_runner
 
+MARKDOWN_SAMPLE = '''# 质检图片清单
+
+本轮 **检查已完成**，以下是整理后的结果。
+
+## 检查范围
+
+- **图片路径**：`workspace/fig7_2.png`
+- **来源**：用户上传的截图
+  - 检查文字清晰度
+  - 核对内容一致性
+
+| 项目 | 结果 | 备注 |
+| --- | --- | --- |
+| 文字清晰度 | 通过 | 字体可辨认 |
+| 内容一致性 | 通过 | 与说明一致 |
+
+> 可以在右侧切换预览与原文，文件链接会打开对应内容。
+
+## Python 示例
+
+```python
+def greet(name):
+    print(f"Hello, {name}!")
+
+greet("世界")
+```
+
+查看[数据表](workspace-file:attachments%2Ftable.csv)。
+'''
+
 
 def main():
     parser = argparse.ArgumentParser()
@@ -47,6 +77,14 @@ def main():
             run.status = "running"
             run.emit("run.started")
             try:
+                if "MARKDOWN_TEST" in user_input:
+                    chunks = (MARKDOWN_SAMPLE[:120], MARKDOWN_SAMPLE[120:380], MARKDOWN_SAMPLE[380:])
+                    for chunk in chunks:
+                        run.emit("assistant.delta", text=chunk)
+                        time.sleep(.7)
+                    store.add_message(session.id, "assistant", MARKDOWN_SAMPLE)
+                    run.finish("completed", reply=MARKDOWN_SAMPLE)
+                    return
                 if "STOP_TEST" in user_input:
                     for _ in range(200):
                         if run.cancel_requested():
@@ -66,7 +104,7 @@ def main():
                     run.emit("tool.completed", name="fixture_tool", result=result)
                 for text in ("STREAM_", "UI_", "OK"):
                     run.emit("assistant.delta", text=text)
-                    time.sleep(.3)
+                    time.sleep(.7)
                 store.add_message(session.id, "assistant", "STREAM_UI_OK")
                 run.finish("completed", reply="STREAM_UI_OK")
             except Exception as exc:
@@ -80,6 +118,7 @@ def main():
     (directory / "state.json").write_text(json.dumps({
         "username": user["username"], "password": password,
         "text_model": text["id"], "vision_model": vision["id"],
+        "markdown_sample": MARKDOWN_SAMPLE,
     }), encoding="utf-8")
     threading.Thread(target=lambda: uvicorn.run(admin_app, host="127.0.0.1", port=args.admin_port,
                                                log_level="error"), daemon=True).start()

@@ -1704,40 +1704,14 @@ h2 {
   gap: 12px;
 }
 /* 预览面板可折叠：默认收起，仅在浏览文件/资源或点击对话产物时展开 */
-.preview-expand-tab {
-  display: none;
-  grid-column: 5;
-  grid-row: 1;
-  border: 0;
-  border-left: 1px solid var(--line);
-  background: var(--panel);
-  color: var(--muted);
-  cursor: pointer;
-  font: inherit;
-  padding: 0;
-  align-items: center;
-  justify-content: center;
-}
-.preview-expand-tab:hover,
-.preview-expand-tab:focus-visible {
-  color: var(--accent);
-  background: var(--surface);
-  outline: none;
-}
-.preview-expand-tab .expand-icon {
-  font-size: 15px;
-}
 .workspace.preview-collapsed {
-  grid-template-columns: var(--filebar-width) 7px minmax(320px, 1fr) 0 20px;
+  grid-template-columns: var(--filebar-width) 7px minmax(320px, 1fr) 0 0;
 }
 .workspace.preview-collapsed #right-resizer {
   display: none;
 }
 .workspace.preview-collapsed .preview {
   display: none;
-}
-.workspace.preview-collapsed .preview-expand-tab {
-  display: flex;
 }
 .canvas {
   min-height: 440px;
@@ -2104,15 +2078,9 @@ pre {
   .preview {
     min-height: 560px;
   }
-  /* 窄屏为纵向堆叠，预览区保持常显，不做折叠 */
+  /* 窄屏纵向堆叠，仍由同一个顶部按钮控制预览。 */
   .workspace.preview-collapsed {
     grid-template-columns: 1fr;
-  }
-  .workspace.preview-collapsed .preview {
-    display: block;
-  }
-  .workspace.preview-collapsed .preview-expand-tab {
-    display: none;
   }
 }
 @media (prefers-reduced-motion: reduce) {

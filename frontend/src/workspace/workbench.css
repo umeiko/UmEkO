@@ -711,9 +711,6 @@ body {
   color: var(--ink);
   border-color: var(--line-strong);
 }
-.preview-expand-tab:hover {
-  background: var(--raised);
-}
 .file-context-menu button {
   display: block;
 }

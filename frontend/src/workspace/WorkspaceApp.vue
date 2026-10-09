@@ -2,6 +2,7 @@
 import { onMounted, onBeforeUnmount } from 'vue';
 import ThemeSwitch from '../shared/ThemeSwitch.vue';
 import BrandMark from '../shared/BrandMark.vue';
+import UiIcon from '../shared/UiIcon.vue';
 import SessionBar from './components/SessionBar.vue';
 import FileSidebar from './components/FileSidebar.vue';
 import ConversationPane from './components/ConversationPane.vue';
@@ -22,6 +23,19 @@ onBeforeUnmount(() => dispose?.());
         ><span class="workbench-label">工作台</span>
       </div>
       <div class="workbench-actions">
+        <button
+          id="toggle-preview"
+          class="preview-toggle"
+          type="button"
+          aria-controls="preview-panel"
+          aria-expanded="false"
+        >
+          <UiIcon name="panelRight" :size="18" /><span
+            id="preview-toggle-label"
+            class="preview-toggle-label"
+            >展开预览</span
+          >
+        </button>
         <ThemeSwitch localized />
       </div>
     </header>
@@ -47,18 +61,7 @@ onBeforeUnmount(() => dispose?.());
         aria-orientation="vertical"
         tabindex="0"
       ></div>
-      <PreviewPane /><button
-        id="expand-preview"
-        class="preview-expand-tab"
-        type="button"
-        data-i18n-title="preview.expandTitle"
-        data-i18n-aria="preview.expandTitle"
-        title="展开预览面板"
-        aria-label="展开预览面板"
-        aria-expanded="false"
-      >
-        <span class="expand-icon">‹</span>
-      </button>
+      <PreviewPane />
     </section>
   </main>
   <WorkspaceDialogs />

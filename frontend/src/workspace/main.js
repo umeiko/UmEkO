@@ -5,6 +5,7 @@ import './workspace.css';
 import './workbench.css';
 import 'highlight.js/styles/github-dark.css';
 import '../shared/highlight-light.css';
+import './markdown.css';
 createApp(WorkspaceApp).mount('#app');
 
 // Template HMR must remount the DOM controller along with its component nodes.

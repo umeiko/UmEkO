@@ -4,6 +4,7 @@ import hljs from 'highlight.js/lib/common';
 import { t, currentLocale, setLocale, applyI18n } from './i18n.js';
 import { deploymentPrefix } from '../shared/api.js';
 import { treeIcon } from './treeIcons.js';
+import { renderMarkdown as markdown, codeHtml } from './markdown.js';
 export function mountWorkspaceRuntime() {
   const lifecycle = new AbortController();
   function listen(target, type, callback, options = {}) {
@@ -48,10 +49,15 @@ export function mountWorkspaceRuntime() {
     treeFilterClear: document.querySelector('#tree-filter-clear'),
     previewKicker: document.querySelector('#preview-kicker'),
     previewTitle: document.querySelector('#preview-title'),
-    openFile: document.querySelector('#open-file'),
+    downloadFile: document.querySelector('#download-file'),
     markdownView: document.querySelector('#markdown-view'),
+    markdownToolbar: document.querySelector('#markdown-toolbar'),
+    markdownRendered: document.querySelector('#markdown-rendered'),
+    markdownSource: document.querySelector('#markdown-source'),
     csvView: document.querySelector('#csv-view'),
     codeView: document.querySelector('#code-view'),
+    codePanel: document.querySelector('#code-panel'),
+    codeLanguage: document.querySelector('#preview-code-language'),
     filebar: document.querySelector('.filebar'),
     sidebarTitle: document.querySelector('#sidebar-title'),
     sidebarTabs: [...document.querySelectorAll('.sidebar-tab')],
@@ -111,8 +117,8 @@ export function mountWorkspaceRuntime() {
     workspace: document.querySelector('.workspace'),
     conversation: document.querySelector('.conversation'),
     preview: document.querySelector('.preview'),
-    collapsePreview: document.querySelector('#collapse-preview'),
-    expandPreview: document.querySelector('#expand-preview'),
+    togglePreview: document.querySelector('#toggle-preview'),
+    previewToggleLabel: document.querySelector('#preview-toggle-label'),
     leftResizer: document.querySelector('#left-resizer'),
     rightResizer: document.querySelector('#right-resizer'),
     composerResizer: document.querySelector('#composer-resizer'),
@@ -260,7 +266,10 @@ export function mountWorkspaceRuntime() {
   function setPreviewCollapsed(collapsed) {
     previewCollapsed = collapsed;
     ui.workspace.classList.toggle('preview-collapsed', collapsed);
-    ui.expandPreview.setAttribute('aria-expanded', String(!collapsed));
+    ui.togglePreview.setAttribute('aria-expanded', String(!collapsed));
+    ui.togglePreview.title = t(collapsed ? 'preview.expandTitle' : 'preview.collapseTitle');
+    ui.togglePreview.setAttribute('aria-label', ui.togglePreview.title);
+    ui.previewToggleLabel.textContent = t(collapsed ? 'preview.show' : 'preview.hide');
     try {
       localStorage.setItem('umeko:preview-collapsed', collapsed ? '1' : '0');
     } catch (_) {}
@@ -272,8 +281,7 @@ export function mountWorkspaceRuntime() {
       stored = localStorage.getItem('umeko:preview-collapsed');
     } catch (_) {}
     setPreviewCollapsed(stored !== '0'); // 默认收起
-    ui.collapsePreview.addEventListener('click', () => setPreviewCollapsed(true));
-    ui.expandPreview.addEventListener('click', () => setPreviewCollapsed(false));
+    listen(ui.togglePreview, 'click', () => setPreviewCollapsed(!previewCollapsed));
   }
 
   initializeResizableLayout();
@@ -289,7 +297,7 @@ export function mountWorkspaceRuntime() {
     const node = document.createElement('div');
     node.className = `message ${role}`;
     const body = document.createElement('div');
-    body.className = 'message-body';
+    body.className = role === 'assistant' ? 'message-body markdown-body' : 'message-body';
     if (role === 'assistant') body.innerHTML = renderMarkdown(text);
     else body.textContent = text;
     node.append(body);
@@ -900,6 +908,7 @@ export function mountWorkspaceRuntime() {
 
   // 语言切换后重渲染动态文案（模型胶囊、上下文统计等由 JS 设置的文本）
   listen(document, 'localechange', () => {
+    setPreviewCollapsed(previewCollapsed);
     for (const history of toolHistories.values()) updateToolHistory(history);
     updateToolActivity();
     if (activeToolDetail) renderToolDetail(activeToolDetail);
@@ -1495,7 +1504,7 @@ export function mountWorkspaceRuntime() {
     ui.saveResource.classList.remove('hidden');
     ui.deleteResource.classList.toggle('hidden', resource.builtin);
     ui.attachWorkspaceFile.classList.add('hidden');
-    ui.openFile.classList.add('hidden');
+    ui.downloadFile.classList.add('hidden');
     resetPreviewViews();
     ui.resourceEditor.value = resource.content || '';
     ui.resourceEditor.classList.remove('hidden');
@@ -2080,73 +2089,65 @@ export function mountWorkspaceRuntime() {
     applyTreeSelection();
   }
 
-  function escapeHtml(text) {
-    return text.replace(
-      /[&<>"']/g,
-      (char) => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;' })[char],
-    );
+  function renderMarkdown(source, options = {}) {
+    return markdown(source, {
+      translate: t,
+      workspaceUrl: (path) =>
+        appUrl(
+          `/v1/sessions/${sessionId}/workspace/files/content?path=${encodeURIComponent(path)}`,
+        ),
+      ...options,
+    });
   }
 
-  function renderMarkdown(source) {
-    const escaped = escapeHtml(source);
-    const lines = escaped.split(/\r?\n/);
-    let html = '';
-    let inCode = false;
-    let inList = false;
-    for (const line of lines) {
-      if (line.startsWith('```')) {
-        if (inList) {
-          html += '</ul>';
-          inList = false;
+  async function copyText(text) {
+    try {
+      if (navigator.clipboard?.writeText) {
+        await navigator.clipboard.writeText(text);
+        return;
+      }
+    } catch {}
+    const focused = document.activeElement;
+    const input = document.createElement('textarea');
+    input.value = text;
+    input.style.cssText = 'position:fixed;left:-9999px;top:0';
+    document.body.append(input);
+    input.select();
+    const copied = document.execCommand('copy');
+    input.remove();
+    focused?.focus({ preventScroll: true });
+    if (!copied) throw new Error(t('code.copyFailed'));
+  }
+
+  const copyTimers = new Set();
+  listen(ui.workspace, 'click', async (event) => {
+    const button = event.target.closest('[data-code-copy]');
+    if (!button || button.disabled) return;
+    const label = button.querySelector('.copy-label');
+    const original = label.dataset.i18n;
+    const text =
+      button.id === 'copy-markdown' || button.id === 'copy-file-code'
+        ? (previewSource?.text ?? ui.codeView.textContent)
+        : button.closest('.markdown-code').querySelector('pre code').textContent;
+    button.disabled = true;
+    try {
+      await copyText(text);
+      label.textContent = t('code.copied');
+      button.classList.add('copied');
+    } catch {
+      label.textContent = t('code.copyFailed');
+    } finally {
+      button.disabled = false;
+      const timer = setTimeout(() => {
+        copyTimers.delete(timer);
+        if (button.isConnected) {
+          label.textContent = t(original);
+          button.classList.remove('copied');
         }
-        html += inCode ? '</code></pre>' : '<pre><code>';
-        inCode = !inCode;
-        continue;
-      }
-      if (inCode) {
-        html += `${line}\n`;
-        continue;
-      }
-      const heading = line.match(/^(#{1,4})\s+(.+)$/);
-      if (heading) {
-        if (inList) {
-          html += '</ul>';
-          inList = false;
-        }
-        const level = heading[1].length;
-        html += `<h${level}>${renderInlineMarkdown(heading[2])}</h${level}>`;
-        continue;
-      }
-      const item = line.match(/^[-*]\s+(.+)$/);
-      if (item) {
-        if (!inList) {
-          html += '<ul>';
-          inList = true;
-        }
-        html += `<li>${renderInlineMarkdown(item[1])}</li>`;
-        continue;
-      }
-      if (inList) {
-        html += '</ul>';
-        inList = false;
-      }
-      if (line.startsWith('&gt; '))
-        html += `<blockquote>${renderInlineMarkdown(line.slice(5))}</blockquote>`;
-      else if (line.trim()) html += `<p>${renderInlineMarkdown(line)}</p>`;
+      }, 1500);
+      copyTimers.add(timer);
     }
-    if (inList) html += '</ul>';
-    if (inCode) html += '</code></pre>';
-    return html;
-  }
-
-  function renderInlineMarkdown(source) {
-    return source
-      .replace(
-        /\[([^\]]+)\]\(workspace-file:([A-Za-z0-9%._~-]+)\)/g,
-        '<a href="#workspace-file" class="message-file-link" data-workspace-path="$2">$1</a>',
-      )
-      .replace(/`([^`]+)`/g, '<code>$1</code>');
-  }
+  });
 
   const CSV_PREVIEW_MAX_ROWS = 500;
   const CSV_PREVIEW_MAX_COLUMNS = 80;
@@ -2253,15 +2254,35 @@ export function mountWorkspaceRuntime() {
     ui.csvView.append(summary, wrap);
   }
 
+  let previewSource = null;
+  let previewRequest = 0;
+
   function resetPreviewViews() {
+    previewSource = null;
     ui.canvas.classList.add('hidden');
     ui.markdownView.classList.add('hidden');
+    ui.markdownToolbar.classList.add('hidden');
     ui.csvView.classList.add('hidden');
-    ui.codeView.classList.add('hidden');
+    ui.codePanel.classList.add('hidden');
     ui.resourceEditor.classList.add('hidden');
     // 清掉上一轮动态插入的截断提示条（class=preview-note 且非页面内置）
-    document.querySelectorAll('.canvas > .preview-note[data-trunc]').forEach((n) => n.remove());
+    ui.markdownView.parentElement
+      .querySelectorAll('.preview-note[data-trunc]')
+      .forEach((n) => n.remove());
+    return ++previewRequest;
   }
+
+  function setMarkdownMode(mode) {
+    if (!previewSource || !/\.(md|markdown)$/i.test(previewSource.path)) return;
+    const rendered = mode === 'rendered';
+    ui.markdownRendered.setAttribute('aria-pressed', String(rendered));
+    ui.markdownSource.setAttribute('aria-pressed', String(!rendered));
+    ui.markdownView.classList.toggle('hidden', !rendered);
+    ui.codePanel.classList.toggle('hidden', rendered);
+    if (!rendered) hljsHighlight(previewSource.text, 'markdown');
+  }
+  listen(ui.markdownRendered, 'click', () => setMarkdownMode('rendered'));
+  listen(ui.markdownSource, 'click', () => setMarkdownMode('source'));
 
   // 预览策略：可预览的文本/文档后缀；二进制一律不进预览（防炸页面）
   const BINARY_EXTS = new Set([
@@ -2327,27 +2348,27 @@ export function mountWorkspaceRuntime() {
   }
 
   function hljsHighlight(text, ext) {
+    ui.codePanel.parentElement
+      .querySelectorAll(':scope > .preview-note[data-trunc="code"]')
+      .forEach((node) => node.remove());
     const code = ui.codeView;
     let truncated = false;
     if (text.length > PREVIEW_DOM_MAX_CHARS) {
       text = text.slice(0, PREVIEW_DOM_MAX_CHARS);
       truncated = true;
     }
-    if (window.hljs && text.length <= PREVIEW_HLJS_MAX_CHARS) {
-      const language = hljs.getLanguage(ext) ? ext : undefined;
-      code.innerHTML = language
-        ? hljs.highlight(text, { language }).value
-        : hljs.highlightAuto(text).value;
-    } else {
-      code.textContent = text;
-    }
+    ui.codeLanguage.textContent = ext || 'text';
+    const content = document.createElement('code');
+    content.className = 'hljs';
+    content.innerHTML = codeHtml(text, ext, text.length <= PREVIEW_HLJS_MAX_CHARS);
+    code.replaceChildren(content);
     if (truncated) {
       const note = document.createElement('p');
       note.className = 'preview-note';
       note.style.marginTop = '10px';
-      note.dataset.trunc = '1';
+      note.dataset.trunc = 'code';
       note.textContent = t('preview.domTruncated');
-      code.parentElement.insertBefore(note, code.nextSibling);
+      ui.codePanel.after(note);
     }
   }
 
@@ -2371,9 +2392,11 @@ export function mountWorkspaceRuntime() {
     ui.deleteResource.classList.add('hidden');
     ui.attachWorkspaceFile.classList.remove('hidden');
     updateWorkspaceAttachButtons();
-    ui.openFile.href = url;
-    ui.openFile.classList.remove('hidden');
-    resetPreviewViews();
+    ui.downloadFile.href = appUrl(
+      `/v1/sessions/${sessionId}/workspace/files/download?path=${encodeURIComponent(path)}`,
+    );
+    ui.downloadFile.classList.remove('hidden');
+    const request = resetPreviewViews();
     setStatus(t('preview.reading', { name }));
     try {
       if (['png', 'jpg', 'jpeg', 'gif', 'webp', 'bmp', 'svg'].includes(ext)) {
@@ -2405,42 +2428,50 @@ export function mountWorkspaceRuntime() {
             })
             .catch(() => resolve(0));
         });
+        if (request !== previewRequest) return;
         // 探测失败（size=0）也照常走预览，但下面有 DOM 层截断兜底，不会卡死
         if (size > PREVIEW_MAX_BYTES) {
           ui.codeView.textContent = t('preview.tooLarge', {
             size: (size / 1024 / 1024).toFixed(1),
           });
-          ui.codeView.classList.remove('hidden');
+          ui.codePanel.classList.remove('hidden');
+          ui.codeLanguage.textContent = ext;
           setStatus(t('preview.tooLargeShort'), true);
           return;
         }
         const response = await fetch(url);
         if (!response.ok) throw new Error(t('error.readFailed', { status: response.status }));
         const text = await response.text();
+        if (request !== previewRequest) return;
+        previewSource = { text, path };
         if (['md', 'markdown'].includes(ext)) {
           const sliced =
             text.length > PREVIEW_MD_MAX_CHARS ? text.slice(0, PREVIEW_MD_MAX_CHARS) : text;
-          ui.markdownView.innerHTML = renderMarkdown(sliced);
+          ui.markdownView.innerHTML = renderMarkdown(sliced, { path });
           if (sliced.length < text.length) {
             const note = document.createElement('p');
             note.className = 'preview-note';
+            note.dataset.trunc = 'markdown';
             note.style.marginTop = '10px';
             note.textContent = t('preview.domTruncated');
-            ui.markdownView.parentElement.insertBefore(note, ui.markdownView.nextSibling);
+            ui.markdownView.append(note);
           }
-          ui.markdownView.classList.remove('hidden');
+          ui.markdownToolbar.classList.remove('hidden');
+          setMarkdownMode('rendered');
         } else if (ext === 'csv') {
           renderCsvPreview(text);
           ui.csvView.classList.remove('hidden');
         } else {
           hljsHighlight(text, ext);
-          ui.codeView.classList.remove('hidden');
+          ui.codePanel.classList.remove('hidden');
         }
       }
       setStatus(t('status.connected'), true);
     } catch (error) {
+      if (request !== previewRequest) return;
       ui.codeView.textContent = error.message;
-      ui.codeView.classList.remove('hidden');
+      ui.codeLanguage.textContent = ext;
+      ui.codePanel.classList.remove('hidden');
       setStatus(t('preview.readFailed'));
     }
   }
@@ -2461,7 +2492,7 @@ export function mountWorkspaceRuntime() {
     button.scrollIntoView({ block: 'nearest' });
   }
 
-  ui.messages.addEventListener('click', (event) => {
+  listen(ui.workspace, 'click', (event) => {
     const link = event.target.closest('.message-file-link');
     if (!link) return;
     event.preventDefault();
@@ -2739,6 +2770,7 @@ export function mountWorkspaceRuntime() {
     setStatus(t('run.running'));
     let assistant = null;
     let streamedText = '';
+    let streamRenderTimer = null;
     let generation = null;
     const pendingTools = new Map();
     const pendingSubagentTools = new Map();
@@ -2788,6 +2820,7 @@ export function mountWorkspaceRuntime() {
       clearInterval(workspaceFallback);
       clearTimeout(reconnectTimer);
       clearTimeout(pollTimer);
+      clearTimeout(streamRenderTimer);
       settlePendingActions();
       if (activeStream === stream) activeStream = null;
       if (activeRunCleanup === cleanup) activeRunCleanup = null;
@@ -2822,7 +2855,18 @@ export function mountWorkspaceRuntime() {
       usageChars += payload.data.text.length;
       finishReasoning();
       updateMetrics();
-      assistant.querySelector('.message-body').textContent = streamedText;
+      // Batch fast deltas and skip syntax highlighting until the answer settles.
+      if (streamRenderTimer === null) {
+        streamRenderTimer = setTimeout(() => {
+          streamRenderTimer = null;
+          if (disposed || sessionId !== runSessionId) return;
+          const follow = messagesNearBottom();
+          assistant.querySelector('.message-body').innerHTML = renderMarkdown(streamedText, {
+            highlight: false,
+          });
+          if (follow) ui.messages.scrollTop = ui.messages.scrollHeight;
+        }, 80);
+      }
     });
     stream.addEventListener('workspace.changed', (event) => {
       if (disposed || sessionId !== runSessionId) return;
@@ -3047,6 +3091,8 @@ export function mountWorkspaceRuntime() {
         if (!assistant || !streamedText.trim()) assistant = addMessage(reply, 'assistant');
         assistant.querySelector('.message-body').innerHTML = renderMarkdown(reply);
       } else {
+        if (assistant && streamedText)
+          assistant.querySelector('.message-body').innerHTML = renderMarkdown(streamedText);
         addMessage(
           status === 'failed'
             ? t('run.failedMessage', { error: data.error || t('run.failed') })
@@ -3152,7 +3198,7 @@ export function mountWorkspaceRuntime() {
     ui.saveResource.classList.add('hidden');
     ui.deleteResource.classList.add('hidden');
     ui.attachWorkspaceFile.classList.add('hidden');
-    ui.openFile.classList.add('hidden');
+    ui.downloadFile.classList.add('hidden');
     resetPreviewViews();
     ui.canvas.replaceChildren();
     ui.canvas.textContent = t('canvas.empty');
@@ -3331,6 +3377,8 @@ export function mountWorkspaceRuntime() {
 
   return () => {
     lifecycle.abort();
+    for (const timer of copyTimers) clearTimeout(timer);
+    copyTimers.clear();
     activeRunCleanup?.();
     activeStream?.close();
     clearTimeout(workspaceRefreshTimer);

@@ -11,6 +11,7 @@ const { chromium } = require(process.env.UMEKO_PLAYWRIGHT || 'playwright');
 const root = fileURLToPath(new URL('../../', import.meta.url));
 const python = process.env.UMEKO_TEST_PYTHON || 'python';
 const screenshotDir = process.env.UMEKO_UI_SCREENSHOTS;
+const normalizedText = (text) => text.replaceAll('\r\n', '\n');
 async function screenshot(page, name, prefix) {
   if (!screenshotDir) return;
   await mkdir(screenshotDir, { recursive: true });
@@ -334,7 +335,10 @@ try {
       assert.equal(await work.locator('#user-name').innerText(), 'ui-browser');
       assert.ok(
         assets.length >= 3 &&
-          assets.every((a) => a.status === 200 && a.path.startsWith(prefix + '/static/')),
+          assets.every(
+            (a) => [200, 304].includes(a.status) && a.path.startsWith(prefix + '/static/'),
+          ),
+        'Static assets: ' + JSON.stringify(assets),
       );
       assert.ok(
         !requests.some((p) => prefix && !p.startsWith(prefix + '/') && p !== '/favicon.ico'),
@@ -352,8 +356,14 @@ try {
       await work.locator('.tree-file').filter({ hasText: 'table.csv' }).click();
       await work.locator('#csv-view').filter({ hasText: 'alpha' }).waitFor();
       assert.ok(
-        (await work.locator('#open-file').getAttribute('href')).startsWith(prefix + '/v1/'),
+        (await work.locator('#download-file').getAttribute('href')).startsWith(prefix + '/v1/'),
       );
+      const [download] = await Promise.all([
+        work.waitForEvent('download'),
+        work.locator('#download-file').click(),
+      ]);
+      assert.equal(download.suggestedFilename(), 'table.csv');
+      assert.equal(await download.failure(), null);
       // Long labels, mixed file types and shrinking the composer reproduce the reported layout bugs.
       const session = (await (await context.request.get(publicBase + '/v1/sessions')).json())[0];
       const longTitle = '超长会话标题与文件布局回归验证 '.repeat(4);
@@ -460,7 +470,7 @@ try {
       await work.locator('#csv-view').filter({ hasText: 'alpha' }).waitFor();
       await screenshot(work, 'layout', prefix);
       await work.locator('#composer-resizer').dblclick();
-      await work.locator('#collapse-preview').click();
+      await work.locator('#toggle-preview').click();
       await work.locator('#prompt').fill('Stream fixture');
       await work.locator('#send').click();
       await work.locator('#tool-activity:not(.hidden)').waitFor();
@@ -468,7 +478,10 @@ try {
       await work.locator('#stop').waitFor({ state: 'hidden' });
       const deltas = await work.evaluate(() => window.uiDeltas);
       assert.equal(deltas.length, 3);
-      assert.ok(deltas[2].time - deltas[0].time >= 500);
+      assert.ok(
+        deltas[2].time - deltas[0].time >= 500,
+        `Live SSE deltas: ${JSON.stringify(deltas)}`,
+      );
       assert.ok(requests.some((p) => p.startsWith(prefix + '/v1/runs/') && p.endsWith('/events')));
       assert.equal(await work.locator('.tool-history').count(), 1);
       assert.equal(await work.locator('.tool-history').evaluate((el) => el.open), false);
@@ -482,11 +495,117 @@ try {
       await work.locator('.tree-file').filter({ hasText: 'table.csv' }).click();
       await work.locator('#csv-view').filter({ hasText: 'alpha' }).waitFor();
       await screenshot(work, 'workspace', prefix);
-      await work.locator('#collapse-preview').click();
+      await work.locator('#toggle-preview').click();
       await work.reload();
       await work.locator('#status-dot.ready').waitFor();
       assert.ok((await work.locator('#messages').innerText()).includes('STREAM_UI_OK'));
       assert.equal(await work.locator('.tool-history-list .agent-action').count(), 20);
+      // Markdown files and streamed replies share the renderer and copy controls.
+      await context.grantPermissions(['clipboard-read', 'clipboard-write'], { origin: base });
+      await work.locator('#file').setInputFiles({
+        name: 'report.md',
+        mimeType: 'text/markdown',
+        buffer: Buffer.from(state.markdown_sample),
+      });
+      await work.locator('.tree-file[data-path="attachments/report.md"]').click();
+      await work.locator('#markdown-view strong').filter({ hasText: '检查已完成' }).waitFor();
+      assert.equal(await work.locator('#markdown-view table tbody tr').count(), 2);
+      assert.ok(await work.locator('#markdown-view .hljs-keyword').count());
+      assert.equal(await work.locator('#markdown-rendered').getAttribute('aria-pressed'), 'true');
+      const toggle = work.locator('#toggle-preview');
+      const openBox = await toggle.boundingBox();
+      await toggle.click();
+      assert.ok(await work.locator('#preview-panel').isHidden());
+      assert.equal(await toggle.getAttribute('aria-expanded'), 'false');
+      const closedBox = await toggle.boundingBox();
+      assert.ok(
+        Math.abs(openBox.y - closedBox.y) < 1 &&
+          Math.abs(openBox.x + openBox.width - closedBox.x - closedBox.width) < 1,
+        'Preview toggle stays in the same header position',
+      );
+      await toggle.click();
+      assert.ok(
+        await work.locator('#markdown-view').isVisible(),
+        'Reopening preserves the selected file',
+      );
+      assert.equal(await toggle.getAttribute('aria-expanded'), 'true');
+      await work.locator('#markdown-source').click();
+      assert.ok(
+        await work.locator('#copy-file-code').isHidden(),
+        'Source mode has one copy control',
+      );
+      assert.equal(
+        normalizedText(await work.locator('#code-view').innerText()),
+        state.markdown_sample,
+      );
+      assert.ok(await work.locator('#markdown-view').isHidden());
+      await work.locator('#copy-markdown').click();
+      await work.locator('#copy-markdown.copied').waitFor();
+      assert.equal(
+        normalizedText(await work.evaluate(() => navigator.clipboard.readText())),
+        state.markdown_sample,
+      );
+      await screenshot(work, 'markdown-source', prefix);
+      await work.locator('#markdown-rendered').click();
+      const expectedCode = 'def greet(name):\n    print(f"Hello, {name}!")\n\ngreet("世界")\n';
+      await work.locator('#markdown-view [data-code-copy]').click();
+      await work.locator('#markdown-view .code-copy.copied').waitFor();
+      assert.equal(
+        normalizedText(await work.evaluate(() => navigator.clipboard.readText())),
+        expectedCode,
+      );
+      await work.locator('#markdown-view .message-file-link').click();
+      await work.locator('#csv-view').filter({ hasText: 'alpha' }).waitFor();
+      assert.ok(
+        await work.locator('#markdown-toolbar').isHidden(),
+        'Markdown controls disappear for other file types',
+      );
+      const expectedFileCode = 'def greet(name):\n    print(f"Hello, {name}!")\n\ngreet("世界")\n';
+      await work.locator('#file').setInputFiles({
+        name: 'example.py',
+        mimeType: 'text/plain',
+        buffer: Buffer.from(expectedFileCode),
+      });
+      await work.locator('.tree-file[data-path="attachments/example.py"]').click();
+      await work.locator('#code-panel .hljs-keyword').first().waitFor();
+      await work.locator('#copy-file-code').click();
+      await work.locator('#copy-file-code.copied').waitFor();
+      assert.equal(
+        normalizedText(await work.evaluate(() => navigator.clipboard.readText())),
+        expectedFileCode,
+      );
+      await work.locator('#prompt').fill('MARKDOWN_TEST');
+      await work.locator('#send').click();
+      await work.locator('#messages strong').filter({ hasText: '检查已完成' }).waitFor();
+      assert.ok(
+        await work.locator('#stop').isVisible(),
+        'Partial streamed Markdown renders before completion',
+      );
+      await work.locator('#stop').waitFor({ state: 'hidden' });
+      const answer = work.locator('.message.assistant').last();
+      assert.ok(await answer.locator('.hljs-keyword').count());
+      assert.equal(await answer.locator('table tbody tr').count(), 2);
+      await answer.locator('[data-code-copy]').click();
+      await answer.locator('.code-copy.copied').waitFor();
+      assert.equal(
+        normalizedText(await work.evaluate(() => navigator.clipboard.readText())),
+        expectedCode,
+      );
+      await work.locator('.tree-file[data-path="attachments/report.md"]').click();
+      await work.locator('#markdown-view table').waitFor();
+      await screenshot(work, 'markdown', prefix);
+      await work.reload();
+      await work.locator('#status-dot.ready').waitFor();
+      assert.equal(
+        await toggle.getAttribute('aria-expanded'),
+        'true',
+        'Preview open state survives refresh',
+      );
+      assert.ok(
+        await work.locator('#messages .hljs-keyword').count(),
+        'Persisted replies render with the same highlighting',
+      );
+      await toggle.click();
       // Hold the creation response to reproduce a fast click before the Run ID arrives.
       let releaseCreation;
       const creationGate = new Promise((resolve) => {
@@ -523,9 +642,15 @@ try {
       assert.ok(await work.evaluate(() => document.documentElement.scrollWidth <= innerWidth + 1));
       assert.ok(await work.locator('#prompt').isVisible());
       await composerButtonsFit(work);
+      await work.locator('.tree-file[data-path="attachments/report.md"]').click();
+      await work.locator('#markdown-view table').waitFor();
+      assert.equal(await toggle.getAttribute('aria-expanded'), 'true');
+      assert.ok(await work.evaluate(() => document.documentElement.scrollWidth <= innerWidth + 1));
+      await toggle.click();
+      assert.ok(await work.locator('#preview-panel').isHidden());
       assert.deepEqual(errors, []);
       console.log(
-        `Passed browser workflows: ${prefix || '/'} (${locale}, ${appearance}, long titles, aligned file tree, minimum composer, localized help, theme persistence, admin, files, streaming, 20 folded tools, cancellation, desktop/mobile)`,
+        `Passed browser workflows: ${prefix || '/'} (${locale}, ${appearance}, Markdown preview/source, live rendering, highlighted code and clipboard, consistent preview toggle, long titles, file tree, composer, admin, files, 20 folded tools, cancellation, desktop/mobile)`,
       );
     } catch (e) {
       if (diagnostics) console.error(diagnostics);

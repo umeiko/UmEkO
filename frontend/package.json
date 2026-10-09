@@ -7,12 +7,13 @@
     "dev": "vite --host 127.0.0.1",
     "build": "vite build",
     "preview": "vite preview --host 127.0.0.1",
-    "test:smoke": "node tests/smoke.mjs",
-    "format": "prettier --write src tests/smoke.mjs *.html *.js *.json",
-    "format:check": "prettier --check src tests/smoke.mjs *.html *.js *.json"
+    "test:smoke": "node --test tests/markdown.test.mjs && node tests/smoke.mjs",
+    "format": "prettier --write src tests/*.mjs *.html *.js *.json",
+    "format:check": "prettier --check src tests/*.mjs *.html *.js *.json"
   },
   "dependencies": {
     "highlight.js": "11.12.0",
+    "markdown-it": "15.0.2",
     "vue": "3.5.43"
   },
   "devDependencies": {
