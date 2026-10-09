@@ -1186,12 +1186,6 @@ h2 {
     background 0.15s ease,
     box-shadow 0.15s ease;
 }
-.agent-action.inspectable::after {
-  content: '查看';
-  margin-left: 4px;
-  color: var(--muted);
-  font-size: 13px;
-}
 .agent-action.inspectable:hover,
 .agent-action.inspectable:focus-visible {
   border-color: var(--line-strong);
