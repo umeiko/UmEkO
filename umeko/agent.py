@@ -170,6 +170,7 @@ class UmekoAgent:
         if readable_root is not None:
             system += _SERVER_SESSION_PATH_POLICY
         self._messages: list[dict] = [{"role": "system", "content": system}]
+        self._skill_results: dict[str, str] = {}
         # 上下文占用锚点：最近一次主循环请求返回的 usage.prompt_tokens
         # （供应商计费口径的精确值）+ 锚点时刻的本地估算，用于推算增量
         self._usage_anchor: int | None = None
@@ -246,11 +247,13 @@ class UmekoAgent:
             return
         self._usage_anchor = prompt_tokens
         self._usage_anchor_estimate = math.ceil(
-            self._estimate_tokens(self._messages)
+            self._estimate_tokens(self._request_messages(self._messages))
         ) + math.ceil(self._estimate_tokens(self._tools))
 
     def context_stats(self) -> dict:
-        message_tokens = math.ceil(self._estimate_tokens(self._messages))
+        message_tokens = math.ceil(
+            self._estimate_tokens(self._request_messages(self._messages))
+        )
         tool_tokens = math.ceil(self._estimate_tokens(self._tools))
         estimated = message_tokens + tool_tokens
         anchor = self._usage_anchor
@@ -274,6 +277,7 @@ class UmekoAgent:
 
     def restore_history(self, messages: list[dict], summary: str | None = None) -> None:
         """恢复持久化的用户/助手文本历史，不重放旧工具调用。"""
+        self._release_skill_context()
         system = self._messages[0]
         prefix = (
             [{"role": "system", "content": f"[已压缩的对话上下文]\n{summary}"}]
@@ -288,6 +292,7 @@ class UmekoAgent:
 
     def compact_context(self) -> dict:
         """Summarize old working context while retaining the most recent user turn."""
+        self._release_skill_context()
         before = self.context_stats()
         history = self._messages[1:]
         history_tokens = math.ceil(self._estimate_tokens(history))
@@ -354,13 +359,51 @@ class UmekoAgent:
 
     def clear_context(self) -> dict:
         """清空全部对话历史（仅保留 system 提示词），压缩不可行时的兜底。"""
+        self._release_skill_context()
         self._messages = [self._messages[0]]
         self._usage_anchor = None
         return {**self.context_stats(), "cleared": True}
 
     # ---------- 对话主循环 ----------
 
+    def _request_messages(self, messages: list[dict]) -> list[dict]:
+        catalog = self._session.skill_catalog_prompt()
+        if not catalog:
+            return messages
+        return [messages[0], {"role": "system", "content": catalog}, *messages[1:]]
+
+    def _release_skill_context(self) -> None:
+        """Keep tool-call pairing and logs, but retire task-scoped skill bodies."""
+        results = {text: name for name, text in self._skill_results.items()}
+        changed = False
+        for message in self._skill_tool_messages():
+            if isinstance(message.get("content"), str) and message["content"] in results:
+                name = results[message["content"]]
+                message["content"] = f"已在此前任务读取技能 {name}；正文已退出上下文，如需使用请重新调用 use_skill。"
+                changed = True
+        for name in self._skill_results:
+            self._session.unuse_skill(name.partition("/")[0])
+        self._skill_results.clear()
+        if changed:
+            self._usage_anchor = None
+
+    def _skill_tool_messages(self) -> list[dict]:
+        call_ids = {
+            call["id"]
+            for message in self._messages if message.get("role") == "assistant"
+            for call in message.get("tool_calls", [])
+            if call.get("function", {}).get("name") == "use_skill"
+        }
+        return [m for m in self._messages
+                if m.get("role") == "tool" and m.get("tool_call_id") in call_ids]
+
     def chat(self, user_input: str, images: list[Path] | None = None) -> str:
+        try:
+            return self._chat_turn(user_input, images)
+        finally:
+            self._release_skill_context()
+
+    def _chat_turn(self, user_input: str, images: list[Path] | None = None) -> str:
         # 主模型无视觉能力时，图片路径仍随消息进入对话，由 ocr_image 提取文字
         history_text = user_input
         if images:
@@ -388,6 +431,7 @@ class UmekoAgent:
             if override is not None:
                 messages = self._messages[:-1] + [override]
                 override = None
+            messages = self._request_messages(messages)
             try:
                 if self._cb_delta is not None:
                     msg = self._llm.chat_with_tools_stream(
@@ -486,7 +530,22 @@ class UmekoAgent:
         except json.JSONDecodeError:
             return f"错误：工具参数不是合法 JSON：{arguments_json[:100]}"
         try:
-            return skill.handler(**args)
+            result = skill.handler(**args)
+            if name == "use_skill" and not result.startswith("错误："):
+                pack, sep, member = args["name"].strip().partition("/")
+                key = pack.lower() + (sep + member if sep else "")
+                previous = self._skill_results.get(key)
+                loaded = [m for m in self._skill_tool_messages()
+                          if previous and m.get("content") == previous]
+                present = bool(loaded)
+                if previous == result and present:
+                    return f"技能 {key} 的当前版本已在本任务上下文中，请直接遵照已读取的完整指引。"
+                if previous and present:
+                    for m in loaded:
+                        m["content"] = f"技能 {key} 的旧版指引已替换，请使用最新 use_skill 返回的内容。"
+                    self._usage_anchor = None
+                self._skill_results[key] = result
+            return result
         except OperationCancelled:
             raise
         except Exception as e:  # 工具失败不应中断对话，把错误交还给模型处理

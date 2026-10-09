@@ -163,6 +163,11 @@ def test_queued_tasks_keep_definition_and_skill_snapshot(machine_client, monkeyp
     def chat(agent, prompt, images=None):
         session = agent._session
         observed.append({"instructions": agent._messages[0]["content"], "skills": session.list_skill_packs()})
+        catalog = session.skill_catalog_prompt()
+        assert "alpha public description" in catalog and "beta public description" not in catalog
+        assert "PRIVATE alpha instructions" not in catalog and "PRIVATE alpha instructions" not in prompt
+        assert "未配置" in session.use_skill("beta")
+        assert "PRIVATE alpha instructions" in session.use_skill("alpha")
         assert "未配置" in agent._skills["read_pack_file"].handler(pack="beta", member="anything.md")
         assert "未配置" in agent._skills["run_skill_script"].handler(pack="beta", script="anything.py")
         assert "read_pack_file" not in agent._subagent._skills

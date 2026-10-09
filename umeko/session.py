@@ -7,6 +7,7 @@
 
 from __future__ import annotations
 
+import json
 import logging
 from pathlib import Path
 
@@ -37,6 +38,9 @@ class Session:
         self._output_dir = Path(output_dir).resolve()
         self._skill_dir = Path(skill_dir).resolve() if skill_dir is not None else None
         self._active_skill_names: set[str] = set()
+        # None: CLI / machine Agent catalogues all permitted packs. Web sessions
+        # select which packs appear in the catalogue using the existing mount UI.
+        self.catalog_skill_names: set[str] | None = None
         self.allowed_skill_packs = allowed_skill_packs
 
     def authorize_skill_pack(self, pack: str) -> None:
@@ -80,9 +84,33 @@ class Session:
 
     # ---------- Skill 挂载 ----------
 
+    def skill_catalog_prompt(self) -> str:
+        """Request-only metadata; never append pack bodies to user history."""
+        packs = load_skill_packs(self._skill_dir)
+        entries = [
+            {"name": p.name, "description": " ".join(p.description.split())[:600]}
+            for p in packs.values()
+            if (self.allowed_skill_packs is None or p.name in self.allowed_skill_packs)
+            and (self.catalog_skill_names is None or p.name in self.catalog_skill_names)
+        ]
+        if not entries:
+            return ""
+        return (
+            "[当前可按需使用的技能目录]\n"
+            "以下只有技能简介，不代表已加载正文或要求每轮执行。"
+            "本轮任务匹配适用场景，或用户明确指定技能时，先调用 use_skill 读取当前完整指引；"
+            "同一任务中已有完整指引时无需重复加载。明显无关的技能直接跳过，"
+            "无需点名提醒或要求用户取消启用。正文仅在当前任务上下文中保留，"
+            "下一轮如需使用必须重新读取，不能凭历史摘要猜测流程。\n"
+            + json.dumps(entries, ensure_ascii=False)
+        )
+
     def list_skill_packs(self) -> str:
         """列出 skills/ 目录下所有技能包（list_skill_packs 工具的 handler）。"""
-        packs = load_skill_packs(self._skill_dir)
+        packs = {
+            name: pack for name, pack in load_skill_packs(self._skill_dir).items()
+            if self.allowed_skill_packs is None or name in self.allowed_skill_packs
+        }
         if not packs:
             return "skills 目录下没有可用的技能包。"
         lines = []
@@ -106,20 +134,18 @@ class Session:
         if "/" in name:
             pack_name, _, member = name.partition("/")
             try:
+                self.authorize_skill_pack(pack_name.strip().lower())
                 pack = get_skill_pack(pack_name, self._skill_dir)
             except ValueError as e:
                 return f"错误：{e}"
             from .skills.pack_reader import read_pack_file
-            try:
-                self.authorize_skill_pack(pack_name)
-            except ValueError as e:
-                return f"错误：{e}"
-            result = read_pack_file(pack_name, member)
+            result = read_pack_file(pack.name, member)
             if result.startswith("错误："):
                 return result
             self._active_skill_names.add(pack.name)
             return result
         try:
+            self.authorize_skill_pack(name.strip().lower())
             pack = get_skill_pack(name, self._skill_dir)
         except ValueError as e:
             return f"错误：{e}"

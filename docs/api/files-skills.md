@@ -57,7 +57,7 @@
 
 | 方法 | 路径 | 说明 |
 | --- | --- | --- |
-| GET | `/v1/sessions/{sid}/client/{kind}` | 列表，含挂载和内置标记 |
+| GET | `/v1/sessions/{sid}/client/{kind}` | 列表，含按需启用和内置标记 |
 | GET | `/v1/sessions/{sid}/client/{kind}/{name}` | 读取内容 |
 | POST | `/v1/sessions/{sid}/client/{kind}?filename=sample.md` | UTF-8 原始文本，`201` |
 | POST | `/v1/sessions/{sid}/client/{kind}/generate` | JSON `{name, description}`，调用模型生成，`201` |
@@ -67,3 +67,7 @@
 技能内容须符合项目技能包格式，不能把普通任意 Markdown 当作有效技能。运行中的会话修改技能返回 `409`。
 
 `ClientResourceView` 为 `kind`、`name`、`mounted`、`builtin`、可空 `content`。详细字段见[数据结构](schemas.md)，完整参数见[用户参考](reference-user.md)。
+
+`mounted: true` 表示**启用按需使用**：名称与简介进入当前会话的技能目录，相关任务才读取完整指引。它不强制每轮执行、不自动把全文追加到用户消息。设为 `false` 会从自动目录中移除，文件仍保留，可通过工具发现和明确指定使用；这不是权限开关。
+
+同一 Run 中重复 `use_skill` 复用相同版本的正文；结束后工作上下文只留下短引用，完整工具日志仍可查看。REST / MCP / A2A 的机器任务无需调用这个会话开关，它们自动提供对应 Agent 所选技能的简介，使用相同的[按需加载机制](../architecture/index.md#skill-loading)。

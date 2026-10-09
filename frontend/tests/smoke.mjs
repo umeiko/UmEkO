@@ -675,6 +675,36 @@ try {
       });
       const clientSkill = work.locator('.resource-open').filter({ hasText: clientSkillName });
       await clientSkill.click();
+      const skillSwitch = work
+        .locator('.resource-item')
+        .filter({ has: clientSkill })
+        .locator('.resource-mount');
+      assert.equal(
+        await skillSwitch.getAttribute('title'),
+        prefix ? 'Enable on demand' : '启用按需使用',
+      );
+      await skillSwitch.click();
+      await work.locator('.resource-mount.attached').waitFor();
+      assert.equal(
+        (
+          await (
+            await context.request.get(
+              publicBase + `/v1/sessions/${session.id}/client/skills/${clientSkillName}`,
+            )
+          ).json()
+        ).mounted,
+        true,
+      );
+      await work.reload();
+      await work.locator('#status-dot.ready').waitFor();
+      await work.locator('.sidebar-tab[data-section="skills"]').click();
+      await clientSkill.click();
+      assert.equal(
+        await skillSwitch.getAttribute('title'),
+        prefix ? 'Disable on demand' : '停用按需使用',
+      );
+      await skillSwitch.click();
+      await work.locator('.resource-mount.attached').waitFor({ state: 'hidden' });
       await work.locator('#markdown-view strong').filter({ hasText: '检查已完成' }).waitFor();
       assert.equal(
         await work.locator('#markdown-view .skill-metadata').evaluate((el) => el.open),

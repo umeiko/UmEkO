@@ -110,7 +110,12 @@ Python scripts. Agents read supporting files with `read_pack_file` and execute
 scripts with `run_skill_script`, which supports timeouts and cancellation.
 
 Administrators edit, distribute, enable and disable packs in the admin console.
-Users mount packs in individual sessions.
+Users enable packs for on-demand use in individual sessions. Only names and
+descriptions enter the skill catalogue; relevant tasks load full instructions with
+`use_skill`. Within a task, unchanged instructions are reused. After the turn ends,
+the engine replaces skill bodies with short references while preserving tool logs.
+CLI and REST / MCP / A2A tasks share this behavior. See
+[skill loading](https://umeiko.github.io/UmEkO/architecture/#skill-loading).
 
 ## Configuration
 

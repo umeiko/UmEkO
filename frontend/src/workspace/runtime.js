@@ -2928,17 +2928,6 @@ export function mountWorkspaceRuntime() {
       action.liveOutput = (action.liveOutput + (payload.data.output_delta || '')).slice(-12000);
       if (activeToolDetail === action) renderToolDetail(action);
     });
-    stream.addEventListener('resource.activated', (event) => {
-      if (disposed || sessionId !== runSessionId) return;
-      const payload = JSON.parse(event.data);
-      const action = addRunAction('use_skill', 'main', { name: payload.data.name });
-      completeToolAction(
-        action,
-        '',
-        'completed',
-        t('run.skillLoaded', { name: payload.data.name }),
-      );
-    });
     stream.addEventListener('tool.completed', (event) => {
       if (disposed || sessionId !== runSessionId) return;
       const payload = JSON.parse(event.data);

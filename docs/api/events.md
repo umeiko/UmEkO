@@ -35,7 +35,6 @@ data: {"id":3,"run_id":"run_example","session_id":"session_example","type":"assi
 | `tool.completed` | `name`、`result` | 工具结果 |
 | `progress.updated` | `message` | 阶段说明 |
 | `workspace.changed` | `reason` | 提醒客户端刷新文件树 |
-| `resource.activated` | `kind`、`name` 等 | 本轮激活的资源 |
 | `usage.delta` | `chars`、`kind` | 字符量统计，非供应商计费 token |
 | `subagent.started` | `task` | 子 Agent 开始 |
 | `subagent.delta` | `text` | 子 Agent 文字增量 |
@@ -45,6 +44,8 @@ data: {"id":3,"run_id":"run_example","session_id":"session_example","type":"assi
 | `subagent.completed` / `.failed` / `.cancelled` | `result` 或 `error` | 子 Agent 结束信息 |
 
 增量事件是正文片段，需要按顺序追加；终态中的 `reply` 是最终答案，不能再次简单追加导致重复。工具参数和结果可包含字符串或结构化值，应按实际类型处理。未知事件类型可忽略，新增字段不应使客户端崩溃。
+
+启用技能只影响目录，不再发送 `resource.activated` 或生成虚假的加载记录。实际读取技能通过 `tool.started` / `tool.completed` 的 `name: use_skill` 展示。
 
 ## 生命周期与故障判断
 

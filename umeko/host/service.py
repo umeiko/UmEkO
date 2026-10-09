@@ -465,6 +465,8 @@ class AgentService:
             skill_dir=root / "client" / "skills",
             allowed_skill_packs={Path(item["name"]).stem for item in dispatched} if agent_snapshot else None,
         )
+        if agent_snapshot is None:
+            session.catalog_skill_names = set()
         holder: dict[str, Run | None] = {"run": None}
 
         tool_event_ids = {"main": [], "subagent": []}  # started→completed 关联队列
@@ -572,7 +574,7 @@ class AgentService:
             self.sessions[session_id] = state
         if _restore_id:
             state.mounted_resources = self.store.resource_mounts(session_id)
-            self._activate_mounted_resources(state)
+            self._sync_mounted_resources(state)
             summary, messages = self.store.context_messages(session_id)
             agent.restore_history(messages, summary)
             # 恢复附件映射：上次会话上传的 file_id → 磁盘文件（失效路径自动剔除）
@@ -651,12 +653,7 @@ class AgentService:
                 documents = [path for path in paths if path not in images]
                 prompt = user_input
                 session.mounted_resources = self.store.resource_mounts(session.id)
-                activated = self._activate_mounted_resources(session)
-                for item in activated:
-                    run.emit("resource.activated", **item)
-                mounted = self.mounted_prompt(session)
-                if mounted:
-                    prompt += mounted
+                self._sync_mounted_resources(session)
                 if documents:
                     prompt += (
                         "\n\n[系统提供的本轮用户附件]\n"
@@ -1034,8 +1031,8 @@ class AgentService:
             raise ValueError("系统默认资源不能删除")
         session.mounted_resources[kind].discard(path.name)
         self.store.set_resource_mount(session_id, kind, path.name, False)
-        self._deactivate_resource(session, path)
         path.unlink()
+        self._sync_mounted_resources(session)
 
     def update_client_resource(
         self,
@@ -1050,8 +1047,6 @@ class AgentService:
         path, current_mounted = self.client_resource(session_id, kind, name)
         if content is not None:
             self._validate_resource(content)
-            if current_mounted:
-                self._deactivate_resource(session, path)
             path.write_text(content, encoding="utf-8")
         if mounted is not None:
             if mounted:
@@ -1060,10 +1055,7 @@ class AgentService:
                 session.mounted_resources[kind].discard(path.name)
             self.store.set_resource_mount(session_id, kind, path.name, mounted)
             current_mounted = mounted
-        if current_mounted:
-            self._activate_resource(session, path)
-        elif mounted is False:
-            self._deactivate_resource(session, path)
+        self._sync_mounted_resources(session)
         return {
             "kind": kind,
             "name": path.name,
@@ -1072,63 +1064,25 @@ class AgentService:
             "content": path.read_text(encoding="utf-8"),
         }
 
-    def mounted_prompt(self, session: SessionState) -> str:
-        sections = []
-        for name in sorted(session.mounted_resources["skills"]):
-            path = session.root / "client" / "skills" / name
-            if path.is_file():
-                content = path.read_text(encoding="utf-8")
-                parsed = parse_skill_pack_text(content)
-                resource_name = parsed.name if parsed is not None else path.stem
-                sections.append(
-                    f"\n### 用户明确要求加载 Skill：{resource_name}\n"
-                    f"执行本轮任务前，必须先调用 use_skill(name={resource_name!r})"
-                    f"并严格遵循其指引；不得只在回复中声称已使用。\n\n{content}"
-                )
-        if not sections:
-            return ""
-        return (
-            "\n\n[系统提供的当前客户端挂载资源]"
-            "\n以下 Skill 已由用户明确勾选挂载，本轮必须视为用户明确要求使用。"
-            "先判断每个挂载的 Skill 与本轮任务是否相关；明显无关的，点名该 Skill "
-            "并请用户先取消挂载，不得静默忽略；若与用户本轮明确要求冲突，"
-            "以用户本轮要求为准。\n"
-            + "\n".join(sections)
-        )
-
-    def _activate_resource(self, session: SessionState, path: Path) -> None:
-        pack = parse_skill_pack_text(path.read_text(encoding="utf-8"))
-        if pack is not None:
-            session.session.use_skill(pack.name)
-
-    def _deactivate_resource(self, session: SessionState, path: Path) -> None:
-        try:
-            content = path.read_text(encoding="utf-8")
-        except OSError:
-            return
-        pack = parse_skill_pack_text(content)
-        if pack is not None:
-            session.session.unuse_skill(pack.name)
-
-    def _activate_mounted_resources(self, session: SessionState) -> list[dict]:
-        activated = []
+    def _sync_mounted_resources(self, session: SessionState) -> None:
+        """The persisted mount flag selects catalogue entries, never loads bodies."""
+        names = set()
         missing = []
         for name in sorted(session.mounted_resources["skills"]):
             path = session.root / "client" / "skills" / name
             if not path.is_file():
                 missing.append(name)
                 continue
-            self._activate_resource(session, path)
             parsed = parse_skill_pack_text(path.read_text(encoding="utf-8"))
-            activated.append({
-                "kind": "skills",
-                "name": parsed.name if parsed is not None else path.stem,
-                "filename": path.name,
-            })
+            if parsed is not None:
+                names.add(parsed.name)
         for name in missing:
             session.mounted_resources["skills"].discard(name)
             self.store.set_resource_mount(session.id, "skills", name, False)
-        return activated
+        # Machine tasks expose their Agent's permitted skills automatically;
+        # ordinary Web sessions expose only explicitly enabled entries.
+        if session.agent_snapshot is None:
+            session.session.catalog_skill_names = names
 
     # ---------- 附件与产物 ----------
 
