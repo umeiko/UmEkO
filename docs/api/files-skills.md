@@ -31,6 +31,8 @@
 
 工作区路径带虚拟根，例如 `workspace/data.csv`、`attachments/sample.png`、`generate/report.html`。文件树可能标记 `truncated`，不能据一个已截断列表判断整个目录没有其他文件。
 
+上传接口的 `path` 是已经存在的目标目录，可为 `workspace`、`attachments`、`generate` 或其子目录；省略时保存到 `workspace`。上传同名文件会自动追加 `_1`、`_2` 等后缀，返回实际 `path` 和 `filename`，不会覆盖原文件。空文件和无效目录返回 `400`。允许向顶层目录上传文件，但顶层目录本身仍不能移动或删除。
+
 新建：
 
 ```json

@@ -328,12 +328,12 @@ class AgentService:
         clean_name = Path(filename).name.strip()
         if not clean_name:
             raise ValueError("文件名不能为空")
-        # relative_dir：workspace 内的目标子目录（拖拽到具体目录时传入），
-        # 经 _workspace_path 校验，防越界；为空 = workspace 根
+        # Uploads may target any workspace root or its subdirectories. This
+        # writes a child file, unlike moving/deleting the protected root itself.
         workspace = self.session_workspace(session_id)
         if relative_dir:
             target_dir = self._workspace_path(
-                session_id, relative_dir, must_exist=True, allow_root=False
+                session_id, relative_dir, must_exist=True, allow_root=True
             )
             if not target_dir.is_dir():
                 raise ValueError(f"目标目录不存在：{relative_dir}")

@@ -46,6 +46,194 @@ async function centered(page, id) {
   assert.ok(Math.abs(box.y + box.height / 2 - size.height / 2) < 2);
   assert.ok(box.width <= size.width - 31);
 }
+async function dropFiles(page, selector, files, { folder = false, hover = null } = {}) {
+  const transfer = await page.evaluateHandle(
+    ({ files }) => {
+      const data = new DataTransfer();
+      for (const { name, content } of files) data.items.add(new File([content], name));
+      return data;
+    },
+    { files, folder },
+  );
+  try {
+    await page.locator(selector).dispatchEvent('dragenter', { dataTransfer: transfer });
+    await page.locator(selector).dispatchEvent('dragover', { dataTransfer: transfer });
+    if (hover) await hover();
+    if (folder) {
+      // OS folder entries cannot be created by File(); simulate their directory metadata.
+      await page.locator(selector).evaluate((node, data) => {
+        const event = new DragEvent('drop', { bubbles: true, cancelable: true });
+        Object.defineProperty(event, 'dataTransfer', {
+          value: {
+            types: ['Files'],
+            files: data.files,
+            items: [{ webkitGetAsEntry: () => ({ isDirectory: true }) }],
+          },
+        });
+        node.dispatchEvent(event);
+      }, transfer);
+    } else await page.locator(selector).dispatchEvent('drop', { dataTransfer: transfer });
+  } finally {
+    await transfer.dispose();
+  }
+}
+
+async function workspaceDrops(page, context, publicBase, sid, prefix) {
+  const base = publicBase + `/v1/sessions/${sid}/workspace`;
+  const feedback = page.locator('#workspace-upload-feedback');
+  const row = (filePath) => `.tree-file[data-path="${filePath}"]`;
+  const folder = (dir) => `summary[data-path="${dir}"]`;
+  const completed = () => page.locator('#workspace-upload-feedback[data-state=success]').waitFor();
+  for (const dir of ['workspace', 'attachments', 'generate']) {
+    const name = `desktop-${dir}.txt`,
+      content = `Windows drag to ${dir}\nSecond line`;
+    await dropFiles(page, folder(dir), [{ name, content }], {
+      hover: async () => {
+        assert.ok(await page.locator(folder(dir) + '.drag-target').isVisible());
+        assert.match(await page.locator('.drop-hint').innerText(), new RegExp(dir));
+        assert.ok(await page.locator('.drop-hint').isVisible());
+      },
+    });
+    await completed();
+    await page.locator(row(`${dir}/${name}`)).waitFor();
+    assert.equal(
+      await (await context.request.get(base + `/files/raw/${dir}/${name}`)).text(),
+      content,
+    );
+    assert.equal(await page.locator('.drag-target, .drag-over').count(), 0);
+    assert.match(await page.locator('#workspace-upload-summary').innerText(), new RegExp(dir));
+  }
+  // The parent directory also handles drops on its existing file rows.
+  await dropFiles(page, row('attachments/desktop-attachments.txt'), [
+    { name: 'desktop-attachments.txt', content: 'second version' },
+  ]);
+  await completed();
+  await page.locator(row('attachments/desktop-attachments_1.txt')).waitFor();
+  assert.match(
+    await page.locator('#workspace-upload-details').innerText(),
+    /desktop-attachments_1.txt/,
+  );
+  assert.match(
+    await (
+      await context.request.get(base + '/files/raw/attachments/desktop-attachments.txt')
+    ).text(),
+    /Windows drag/,
+  );
+  await page.locator(folder('generate/reports')).evaluate((node) => {
+    node.parentElement.open = false;
+  });
+  await dropFiles(page, folder('generate/reports'), [
+    { name: 'nested-desktop.txt', content: 'nested content' },
+  ]);
+  await completed();
+  await page.locator(row('generate/reports/nested-desktop.txt')).waitFor();
+  assert.ok(
+    await page.locator(folder('generate/reports')).evaluate((node) => node.parentElement.open),
+  );
+  await dropFiles(page, '#file-tree', [{ name: 'blank-area.txt', content: 'default workspace' }]);
+  await completed();
+  await page.locator(row('workspace/blank-area.txt')).waitFor();
+  await screenshot(page, 'workspace-upload-success', prefix);
+  // Empty files are rejected by the real API. Other files in the batch must still save.
+  await dropFiles(page, folder('generate'), [
+    { name: 'empty.txt', content: '' },
+    { name: 'valid.txt', content: 'keep going' },
+  ]);
+  await page.locator('#workspace-upload-feedback[data-state=error]').waitFor();
+  await page.locator(row('generate/valid.txt')).waitFor();
+  assert.match(await page.locator('#workspace-upload-summary').innerText(), /1.*1/);
+  assert.match(
+    await page.locator('#workspace-upload-details').innerText(),
+    /empty.txt.*文件内容不能为空/,
+  );
+  assert.equal(
+    await page
+      .locator('#workspace-upload-details')
+      .evaluate((node) => getComputedStyle(node).fontSize),
+    '14px',
+  );
+  await screenshot(page, 'workspace-upload-error', prefix);
+  await dropFiles(page, folder('attachments'), [{ name: 'folder', content: '' }], { folder: true });
+  assert.match(
+    await page.locator('#workspace-upload-details').innerText(),
+    prefix ? /Folder drops/ : /整个文件夹/,
+  );
+  // A browser drag whose protected file list is empty must produce visible feedback.
+  await page.locator(folder('attachments')).evaluate((node) => {
+    const event = new DragEvent('drop', { bubbles: true, cancelable: true });
+    Object.defineProperty(event, 'dataTransfer', {
+      value: { types: ['Files'], files: [], items: [] },
+    });
+    node.dispatchEvent(event);
+  });
+  assert.match(
+    await page.locator('#workspace-upload-details').innerText(),
+    prefix ? /No files received/ : /没有读取到文件/,
+  );
+  await page.locator('#workspace-upload-dismiss').click();
+  assert.ok(await feedback.isHidden());
+  // Keep internal moves working with the same directory drop handlers.
+  const internal = await page.evaluateHandle(() => {
+    const data = new DataTransfer();
+    data.setData('application/x-flowchart-path', 'workspace/blank-area.txt');
+    return data;
+  });
+  await page.locator(folder('generate')).dispatchEvent('drop', { dataTransfer: internal });
+  await internal.dispose();
+  await page.locator(row('generate/blank-area.txt')).waitFor();
+  assert.equal(await page.locator(row('workspace/blank-area.txt')).count(), 0);
+  // A held request checks progress and prevents a session switch from redirecting the batch.
+  const originalTitle = await page.locator('.session-tab.active').getAttribute('title');
+  let release, started;
+  const gate = new Promise((resolve) => {
+    release = resolve;
+  });
+  const ready = new Promise((resolve) => {
+    started = resolve;
+  });
+  const uploadsUrl = publicBase + '/v1/sessions/*/workspace/files?*';
+  const destinations = [];
+  await page.route(uploadsUrl, async (route) => {
+    destinations.push(route.request().url());
+    if (destinations.length === 1) {
+      started();
+      await gate;
+    }
+    await route.continue();
+  });
+  try {
+    await dropFiles(page, folder('attachments'), [
+      { name: 'batch-first.txt', content: 'first' },
+      { name: 'batch-second.txt', content: 'second' },
+    ]);
+    await ready;
+    await page.locator('#workspace-upload-feedback[data-state=uploading]').waitFor();
+    assert.ok(await page.locator('#workspace-upload-progress').isVisible());
+    await screenshot(page, 'workspace-upload-progress', prefix);
+    await page.locator('#new-session').click();
+    await page.waitForFunction((id) => localStorage.getItem('umeko:last-session') !== id, sid);
+    await page.locator('#new-session:enabled').waitFor();
+    assert.ok(await feedback.isHidden());
+    const otherSid = await page.evaluate(() => localStorage.getItem('umeko:last-session'));
+    release();
+    // Returning to the original chat restores its feedback and uploaded files.
+    await page
+      .locator('.session-tab')
+      .filter({ has: page.locator('.session-label', { hasText: originalTitle }) })
+      .click();
+    await completed();
+    await page.locator(row('attachments/batch-second.txt')).waitFor();
+    assert.equal(destinations.length, 2);
+    assert.ok(destinations.every((url) => url.includes(`/sessions/${sid}/workspace/files?`)));
+    const other = await context.request.get(
+      publicBase + `/v1/sessions/${otherSid}/workspace/files/raw/attachments/batch-second.txt`,
+    );
+    assert.equal(other.status(), 404);
+  } finally {
+    release();
+    await page.unroute(uploadsUrl);
+  }
+}
 async function confirm(page, yes = true) {
   await page
     .locator('dialog[open]')
@@ -813,6 +1001,7 @@ try {
       }
       assert.match(await work.locator('#messages').innerText(), /任务已停止/);
       assert.ok(requests.some((p) => p.startsWith(prefix + '/v1/runs/') && p.endsWith('/cancel')));
+      await workspaceDrops(work, context, publicBase, session.id, prefix);
       await work.setViewportSize({ width: 390, height: 844 });
       await work.locator('.workbench-title [data-theme-toggle]').click();
       assert.equal(
@@ -838,7 +1027,7 @@ try {
       await work.locator('#tool-detail-close').click();
       assert.deepEqual(errors, []);
       console.log(
-        `Passed browser workflows: ${prefix || '/'} (${locale}, ${appearance}, Markdown preview/source, live rendering, highlighted code and clipboard, consistent preview toggle, skill tree/Markdown/edit/save/member files, long titles, file tree, composer, admin, files, 20 folded tools, cancellation, desktop/mobile)`,
+        `Passed browser workflows: ${prefix || '/'} (${locale}, ${appearance}, Markdown preview/source, live rendering, highlighted code and clipboard, consistent preview toggle, skill tree/Markdown/edit/save/member files, long titles, file tree, composer, admin, files, external file drops/root/nested/blank/duplicates/partial failure/progress/session switching/internal move, 20 folded tools, cancellation, desktop/mobile)`,
       );
     } catch (e) {
       if (diagnostics) console.error(diagnostics);

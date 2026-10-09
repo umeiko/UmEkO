@@ -274,7 +274,7 @@ body {
 }
 .drop-hint {
   display: none;
-  font-size: 13px;
+  font-size: 14px;
   padding: 10px;
   color: var(--placeholder);
   border-color: var(--line-strong);

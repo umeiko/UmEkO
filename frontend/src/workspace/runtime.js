@@ -49,6 +49,12 @@ export function mountWorkspaceRuntime() {
     refreshTree: document.querySelector('#refresh-tree'),
     treeFilter: document.querySelector('#tree-filter'),
     treeFilterClear: document.querySelector('#tree-filter-clear'),
+    fileDropHint: document.querySelector('.drop-hint'),
+    uploadFeedback: document.querySelector('#workspace-upload-feedback'),
+    uploadSummary: document.querySelector('#workspace-upload-summary'),
+    uploadProgress: document.querySelector('#workspace-upload-progress'),
+    uploadDetails: document.querySelector('#workspace-upload-details'),
+    uploadDismiss: document.querySelector('#workspace-upload-dismiss'),
     previewKicker: document.querySelector('#preview-kicker'),
     previewTitle: document.querySelector('#preview-title'),
     downloadFile: document.querySelector('#download-file'),
@@ -169,6 +175,7 @@ export function mountWorkspaceRuntime() {
   let renderedTreeSignature = null;
   let activeToolDetail = null;
   const toolHistories = new Map();
+  const workspaceUploadFeedback = new Map();
 
   const layoutDefaults = { filebar: 280, preview: 610, composer: 210 };
   const layoutState = { ...layoutDefaults };
@@ -908,6 +915,7 @@ export function mountWorkspaceRuntime() {
   // 语言切换后重渲染动态文案（模型胶囊、上下文统计等由 JS 设置的文本）
   listen(document, 'localechange', () => {
     setPreviewCollapsed(previewCollapsed);
+    renderWorkspaceUploadFeedback();
     for (const history of toolHistories.values()) updateToolHistory(history);
     updateToolActivity();
     if (activeToolDetail) renderToolDetail(activeToolDetail);
@@ -1035,6 +1043,7 @@ export function mountWorkspaceRuntime() {
     setRunControls(false);
     resetToolPresentation();
     sessionId = id;
+    renderWorkspaceUploadFeedback();
     localStorage.setItem('umeko:last-session', id);
     clearPreview();
     const [sessionView, messages] = await Promise.all([
@@ -1903,7 +1912,7 @@ export function mountWorkspaceRuntime() {
 
   // ---------- 多选结束 ----------
 
-  function bindTreeEntry(element, node, { dropDirectory = false } = {}) {
+  function bindTreeEntry(element, node) {
     const root = isWorkspaceRoot(node.path);
     element.dataset.path = node.path;
     element.addEventListener('contextmenu', (event) => {
@@ -1920,48 +1929,49 @@ export function mountWorkspaceRuntime() {
         event.dataTransfer.setData('text/plain', node.path);
       });
     }
-    if (dropDirectory) {
-      element.addEventListener('dragover', (event) => {
+  }
+
+  function bindDirectoryDrop(element, path, highlight) {
+    for (const eventName of ['dragenter', 'dragover'])
+      element.addEventListener(eventName, (event) => {
         const hasFiles = event.dataTransfer?.types.includes('Files');
         const hasMove = event.dataTransfer?.types.includes('application/x-flowchart-path');
         if (!hasFiles && !hasMove) return;
         event.preventDefault();
         event.stopPropagation();
-        element.classList.add('drag-target');
+        document
+          .querySelectorAll('.drag-target')
+          .forEach((node) => node.classList.remove('drag-target'));
+        highlight.classList.add('drag-target');
+        if (hasFiles) showWorkspaceDropTarget(path);
         event.dataTransfer.dropEffect = hasFiles ? 'copy' : 'move';
       });
-      element.addEventListener('dragleave', () => {
-        element.classList.remove('drag-target');
-        // 兜底：拖拽目标移出整棵树时清掉外层 dropzone 高亮（子元素 drop 会 stopPropagation，
-        // 外层 dragleave 计数可能残留 drag-over）
-        if (!element.matches(':hover') && ui.filebar?.classList.contains('drag-over')) {
-          setTimeout(() => {
-            if (!ui.filebar.matches(':hover')) ui.filebar.classList.remove('drag-over');
-          }, 120);
+    element.addEventListener('dragleave', (event) => {
+      if (event.relatedTarget && element.contains(event.relatedTarget)) return;
+      highlight.classList.remove('drag-target');
+    });
+    element.addEventListener('drop', (event) => {
+      event.preventDefault();
+      event.stopPropagation();
+      clearDropHighlights();
+      // 外部文件拖入具体目录 → 上传到该目录
+      if (event.dataTransfer?.types.includes('Files')) {
+        try {
+          uploadWorkspaceFiles(readDroppedFiles(event.dataTransfer), path).catch(
+            reportWorkspaceUploadError,
+          );
+        } catch (error) {
+          reportWorkspaceUploadError(error);
         }
-      });
-      element.addEventListener('drop', (event) => {
-        event.preventDefault();
-        event.stopPropagation();
-        element.classList.remove('drag-target');
-        // 目录 drop 拦截了冒泡，外层 filebar 的 drop 收不到 → 主动清它的拖放高亮
-        ui.filebar?.classList.remove('drag-over');
-        // 外部文件拖入具体目录 → 上传到该目录
-        if (event.dataTransfer?.types.includes('Files')) {
-          const files = [...(event.dataTransfer.files || [])];
-          if (files.length) {
-            uploadWorkspaceFiles(files, node.path).catch((error) => setStatus(error.message));
-          }
-          return;
-        }
-        // 内部拖拽 → 移动
-        const source = event.dataTransfer.getData('application/x-flowchart-path');
-        if (!source) return;
-        transferWorkspace(source, entryJoin(node.path, entryName(source)), 'move').catch((error) =>
-          setStatus(error.message),
-        );
-      });
-    }
+        return;
+      }
+      // 内部拖拽 → 移动
+      const source = event.dataTransfer.getData('application/x-flowchart-path');
+      if (!source) return;
+      transferWorkspace(source, entryJoin(path, entryName(source)), 'move').catch((error) =>
+        setStatus(error.message),
+      );
+    });
   }
 
   function renderTreeNodes(nodes, parent) {
@@ -1983,13 +1993,14 @@ export function mountWorkspaceRuntime() {
         name.textContent = node.name;
         summary.append(treeIcon(node.name, true), name);
         summary.title = node.path;
-        bindTreeEntry(summary, node, { dropDirectory: true });
+        bindTreeEntry(summary, node);
         if (fileClipboard?.operation === 'move' && fileClipboard.path === node.path)
           summary.classList.add('clipboard-cut');
         const children = document.createElement('div');
         children.className = 'tree-children';
         renderTreeNodes(node.children, children);
         details.append(summary, children);
+        bindDirectoryDrop(details, node.path, summary);
         parent.append(details);
       } else {
         const row = document.createElement('div');
@@ -2673,24 +2684,144 @@ export function mountWorkspaceRuntime() {
     await refreshTree();
   }
 
-  async function uploadWorkspaceFiles(files, targetDir = '') {
-    const dirQuery = targetDir ? `&path=${encodeURIComponent(targetDir)}` : '';
-    for (const file of files) {
-      setStatus(t('upload.saving', { name: file.name }));
-      await api(
-        `/v1/sessions/${sessionId}/workspace/files?filename=${encodeURIComponent(file.name)}${dirQuery}`,
-        {
-          method: 'POST',
-          headers: { 'Content-Type': file.type || 'application/octet-stream' },
-          body: file,
-        },
+  function renderWorkspaceUploadFeedback() {
+    const state = workspaceUploadFeedback.get(sessionId);
+    ui.uploadFeedback.classList.toggle('hidden', !state || Boolean(state.dismissed));
+    if (!state || state.dismissed) return;
+    ui.uploadFeedback.dataset.state = state.running
+      ? 'uploading'
+      : state.errors.length || state.notices.some(([, failed]) => failed)
+        ? 'error'
+        : 'success';
+    ui.uploadSummary.textContent = t(state.key, state.vars);
+    ui.uploadProgress.classList.toggle('hidden', !state.running);
+    ui.uploadProgress.max = state.total || 1;
+    ui.uploadProgress.value = state.processed || 0;
+    ui.uploadProgress.setAttribute('aria-label', ui.uploadSummary.textContent);
+    ui.uploadDetails.replaceChildren();
+    for (const [text, failed] of [...state.errors.map((text) => [text, true]), ...state.notices]) {
+      const item = document.createElement('li');
+      item.textContent = text;
+      item.classList.toggle('upload-error', failed);
+      ui.uploadDetails.append(item);
+    }
+    ui.uploadDetails.classList.toggle('hidden', !ui.uploadDetails.children.length);
+  }
+
+  ui.uploadDismiss.addEventListener('click', () => {
+    const state = workspaceUploadFeedback.get(sessionId);
+    if (state) state.dismissed = true;
+    renderWorkspaceUploadFeedback();
+  });
+
+  function reportWorkspaceUploadError(error) {
+    const message = error.message || String(error);
+    const state = workspaceUploadFeedback.get(sessionId);
+    if (state?.running) {
+      state.notices.push([message, true]);
+      state.dismissed = false;
+    } else {
+      workspaceUploadFeedback.set(sessionId, {
+        key: 'upload.failed',
+        errors: [message],
+        notices: [],
+        running: false,
+      });
+    }
+    renderWorkspaceUploadFeedback();
+    setStatus(t('upload.failed'));
+  }
+
+  function readDroppedFiles(transfer) {
+    // Folder entries are not regular files; accepting them silently loses their contents.
+    const items = Array.from(transfer?.items || []);
+    if (items.some((item) => item.webkitGetAsEntry?.()?.isDirectory)) {
+      throw new Error(t('upload.folderUnsupported'));
+    }
+    const files = Array.from(transfer?.files || []);
+    if (!files.length) throw new Error(t('upload.noFiles'));
+    return files;
+  }
+
+  function showWorkspaceDropTarget(path = 'workspace') {
+    ui.filebar.classList.add('drag-over');
+    ui.fileDropHint.textContent = t('upload.dropToDir', { dir: path });
+    ui.fileDropHint.title = path;
+  }
+
+  function clearDropHighlights() {
+    document.querySelectorAll('.drag-over, .drag-target').forEach((node) => {
+      node.classList.remove('drag-over', 'drag-target');
+    });
+    ui.fileDropHint.textContent = t('drop.hint');
+    ui.fileDropHint.removeAttribute('title');
+  }
+
+  async function uploadWorkspaceFiles(files, targetDir = 'workspace') {
+    // Pin the entire batch to the original session, even if the user switches chats.
+    const uploadSessionId = sessionId;
+    if (!uploadSessionId) throw new Error(t('upload.noSession'));
+    if (!files.length) throw new Error(t('upload.noFiles'));
+    if (workspaceUploadFeedback.get(uploadSessionId)?.running) {
+      throw new Error(t('upload.busy'));
+    }
+    const state = { total: files.length, processed: 0, running: true, errors: [], notices: [] };
+    workspaceUploadFeedback.set(uploadSessionId, state);
+    let saved = 0;
+    for (const [index, file] of files.entries()) {
+      state.key = 'upload.progress';
+      state.vars = { index: index + 1, total: files.length, name: file.name };
+      if (sessionId === uploadSessionId) {
+        renderWorkspaceUploadFeedback();
+        setStatus(t(state.key, state.vars));
+      }
+      try {
+        const uploaded = await api(
+          `/v1/sessions/${uploadSessionId}/workspace/files?filename=${encodeURIComponent(file.name)}&path=${encodeURIComponent(targetDir)}`,
+          {
+            method: 'POST',
+            headers: { 'Content-Type': file.type || 'application/octet-stream' },
+            body: file,
+          },
+        );
+        saved += 1;
+        if (uploaded.filename !== file.name) {
+          state.notices.push([
+            t('upload.renamed', { name: file.name, saved: uploaded.filename }),
+            false,
+          ]);
+        }
+      } catch (error) {
+        state.errors.push(`${file.name}: ${error.message}`);
+      }
+      state.processed += 1;
+    }
+    try {
+      await refreshTree(uploadSessionId);
+      if (saved && sessionId === uploadSessionId) {
+        const parts = targetDir.split('/');
+        const paths = new Set(parts.map((_, index) => parts.slice(0, index + 1).join('/')));
+        ui.tree.querySelectorAll('summary[data-path]').forEach((summary) => {
+          if (paths.has(summary.dataset.path)) summary.parentElement.open = true;
+        });
+      }
+    } catch (error) {
+      state.notices.push([t('upload.refreshFailed', { error: error.message }), true]);
+    }
+    state.running = false;
+    state.key = saved
+      ? state.errors.length
+        ? 'upload.partial'
+        : 'upload.complete'
+      : 'upload.allFailed';
+    state.vars = { dir: targetDir, count: saved, failed: state.errors.length };
+    if (sessionId === uploadSessionId) {
+      renderWorkspaceUploadFeedback();
+      setStatus(
+        t(state.key, state.vars),
+        !state.errors.length && !state.notices.some(([, failed]) => failed),
       );
     }
-    await refreshTree();
-    setStatus(
-      targetDir ? t('upload.savedToDir', { dir: targetDir }) : t('upload.savedToOutput'),
-      true,
-    );
   }
 
   ui.file.addEventListener('change', async () => {
@@ -2699,37 +2830,37 @@ export function mountWorkspaceRuntime() {
   });
 
   function bindDropZone(element, onFiles) {
-    let dragDepth = 0;
-    element.addEventListener('dragenter', (event) => {
+    const highlight = (event) => {
       if (!event.dataTransfer?.types.includes('Files')) return;
       event.preventDefault();
-      dragDepth += 1;
       element.classList.add('drag-over');
-    });
-    element.addEventListener('dragover', (event) => {
-      if (!event.dataTransfer?.types.includes('Files')) return;
-      event.preventDefault();
-      if (event.dataTransfer) event.dataTransfer.dropEffect = 'copy';
-    });
-    element.addEventListener('dragleave', () => {
-      dragDepth -= 1;
-      if (dragDepth <= 0) {
-        dragDepth = 0;
-        element.classList.remove('drag-over');
+      event.dataTransfer.dropEffect = 'copy';
+      if (element === ui.filebar && activeSection === 'workspace') {
+        document
+          .querySelectorAll('.drag-target')
+          .forEach((node) => node.classList.remove('drag-target'));
+        showWorkspaceDropTarget();
       }
+    };
+    element.addEventListener('dragenter', highlight);
+    element.addEventListener('dragover', highlight);
+    element.addEventListener('dragleave', (event) => {
+      if (event.relatedTarget && element.contains(event.relatedTarget)) return;
+      element.classList.remove('drag-over');
     });
     element.addEventListener('drop', async (event) => {
+      if (!event.dataTransfer?.types.includes('Files')) return;
       event.preventDefault();
       event.stopPropagation();
-      dragDepth = 0;
-      element.classList.remove('drag-over');
-      const files = [...(event.dataTransfer?.files || [])];
-      if (!files.length) return;
+      clearDropHighlights();
       try {
-        await onFiles(files);
+        await onFiles(readDroppedFiles(event.dataTransfer));
       } catch (error) {
-        addMessage(t('upload.failedMessage', { error: error.message }), 'assistant');
-        setStatus(t('upload.failed'));
+        if (element === ui.filebar) reportWorkspaceUploadError(error);
+        else {
+          addMessage(t('upload.failedMessage', { error: error.message }), 'assistant');
+          setStatus(t('upload.failed'));
+        }
       }
     });
   }
@@ -2738,19 +2869,7 @@ export function mountWorkspaceRuntime() {
   bindDropZone(ui.composer, uploadAttachmentFiles);
   // 全局兜底：拖拽结束/取消（含 OS 层取消、Esc）后清掉所有 dropzone 高亮
   for (const eventName of ['dragend', 'drop']) {
-    listen(
-      window,
-      eventName,
-      () => {
-        document
-          .querySelectorAll('.drag-over')
-          .forEach((node) => node.classList.remove('drag-over'));
-        document
-          .querySelectorAll('.drag-target')
-          .forEach((node) => node.classList.remove('drag-target'));
-      },
-      true,
-    ); // capture：在 stopPropagation 的子 handler 之前也能收到
+    listen(window, eventName, clearDropHighlights, true); // capture：在 stopPropagation 的子 handler 之前也能收到
   }
 
   function setRunControls(running, stopping = false) {

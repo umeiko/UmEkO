@@ -66,6 +66,27 @@ import WorkspaceHelp from './WorkspaceHelp.vue';
           ×
         </button>
       </div>
+      <div
+        id="workspace-upload-feedback"
+        class="workspace-upload-feedback hidden"
+        role="status"
+        aria-live="polite"
+      >
+        <div class="workspace-upload-head">
+          <p id="workspace-upload-summary"></p>
+          <button
+            id="workspace-upload-dismiss"
+            type="button"
+            class="icon-button"
+            data-i18n-aria="upload.dismiss"
+            aria-label="关闭上传提示"
+          >
+            <UiIcon name="close" :size="17" />
+          </button>
+        </div>
+        <progress id="workspace-upload-progress" max="1" value="0" class="hidden"></progress>
+        <ul id="workspace-upload-details"></ul>
+      </div>
       <div id="file-tree" class="file-tree">
         <p class="tree-empty" data-i18n="tree.loading">正在读取文件…</p>
       </div>

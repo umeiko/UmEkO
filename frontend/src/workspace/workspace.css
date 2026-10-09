@@ -600,13 +600,65 @@ h2 {
   border: 1px dashed var(--line-strong);
   border-radius: 7px;
   color: var(--muted);
-  font-size: 11px;
+  font-size: 14px;
+  line-height: 1.5;
+  overflow-wrap: anywhere;
   text-align: center;
 }
 .filebar.drag-over .drop-hint {
   border-color: var(--accent);
   color: var(--accent-dark);
   background: var(--surface);
+}
+.workspace-upload-feedback {
+  flex: 0 0 auto;
+  margin: 4px 10px 6px;
+  padding: 10px;
+  border: 1px solid var(--accent);
+  border-radius: 9px;
+  background: var(--accent-soft);
+  color: var(--ink);
+  font-size: 14px;
+  line-height: 1.5;
+  overflow-wrap: anywhere;
+}
+.workspace-upload-feedback[data-state='error'] {
+  border-color: var(--danger);
+  background: var(--danger-bg);
+}
+.workspace-upload-head {
+  display: flex;
+  align-items: flex-start;
+  gap: 4px;
+}
+.workspace-upload-head p {
+  flex: 1;
+  min-width: 0;
+  margin: 2px 0;
+}
+.workspace-upload-head .icon-button {
+  flex: 0 0 26px;
+  width: 26px;
+  height: 26px;
+  color: var(--muted);
+}
+.workspace-upload-feedback progress {
+  width: 100%;
+  height: 6px;
+  margin-top: 8px;
+  accent-color: var(--accent);
+}
+.workspace-upload-feedback ul {
+  max-height: min(140px, 20vh);
+  overflow: auto;
+  padding: 0 0 0 18px;
+  margin: 8px 0 0;
+}
+.workspace-upload-feedback li + li {
+  margin-top: 6px;
+}
+.workspace-upload-feedback .upload-error {
+  color: var(--danger);
 }
 .tree-empty {
   padding: 8px;
