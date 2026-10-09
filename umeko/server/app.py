@@ -19,6 +19,7 @@ from ..host.storage import Store
 from ..host.identities import IdentityStore, SCOPES
 from ..host.tasks import TaskService
 from ..host.agents import AgentRegistry
+from ..host.builtin_agents import install_builtin_agents
 from .monitor import ResourceMonitor
 from .body_limit import MachineBodyLimitMiddleware
 from .agent_card import AgentCards
@@ -133,6 +134,7 @@ def create_app(
     identities = IdentityStore(store)
     service.identity_store = identities
     service.agent_registry = AgentRegistry(store)
+    install_builtin_agents(service.agent_registry, service._skills_library_dir())
     service.agent_card = AgentCards(store)
     service.task_service = TaskService(service, settings)
     service.resource_monitor = ResourceMonitor(service, service.task_service)

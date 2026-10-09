@@ -1,6 +1,7 @@
 """Isolated browser-test server. Never loads .env or calls a model provider."""
 
 import argparse
+import os
 import json
 from pathlib import Path
 import secrets
@@ -10,7 +11,6 @@ import time
 import uvicorn
 
 from umeko.config import ModelConfig, Settings
-from umeko.host import service as service_module
 from umeko.server import admin as admin_module
 from umeko.server.app import create_app
 from umeko.skills import script_runner
@@ -57,8 +57,7 @@ def main():
     args = parser.parse_args()
     directory = args.directory.resolve()
     # Skill source writes stay in the test directory, including Python scripts.
-    admin_module.app_dir = lambda: directory
-    service_module.app_dir = lambda: directory
+    os.environ["UMEKO_SKILL_DIR"] = str(directory / "skills")
     script_runner.skill_packs_dir = lambda: directory / "skills"
     settings = Settings(ModelConfig("fixture-text", "fixture-only", "https://example.invalid/v1"),
                         base_path=args.prefix)

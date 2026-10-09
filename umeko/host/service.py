@@ -27,12 +27,11 @@ from ..agent import UmekoAgent
 from ..cancellation import OperationCancelled
 from ..config import Settings
 from ..prompts.system import DEFAULT_SYSTEM
-from ..runtime import app_dir
 from ..runner import Run, RunManager, TERMINAL_STATUSES
 from ..session import Session
 from ..tree import TreeNode, TreeBudget, build_tree, compile_filter
 from .profile import CLOUD_PROFILE, Profile
-from ..skillpacks import parse_skill_pack_text
+from ..skillpacks import parse_skill_pack_text, skill_packs_dir
 from .storage import Store
 from .configuration import deployment_defaults, model_from_row, resolve_provider_settings
 
@@ -418,13 +417,7 @@ class AgentService:
 
     def _skills_library_dir(self) -> Path:
         """服务器技能库目录（与 run_skill_script / 管理面同源）。"""
-        import os as _os
-
-        from .. import runtime as _runtime
-        env = _os.getenv("UMEKO_SKILL_DIR")
-        if env:
-            return Path(env)
-        return _runtime.app_dir() / "skills"
+        return skill_packs_dir()
 
     def create_session(
         self,

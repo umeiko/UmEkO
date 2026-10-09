@@ -35,6 +35,7 @@ Screenshots use isolated offline test data.
 - **Web interface**: a Vue workbench with dark and white/cyan themes, streaming chat, tool details and folded call history, file filtering and previews, with seven interface languages.
 - **Agent delegation**: the main agent delegates file tasks through `delegate_task`. Sub-agent context is released after it returns a result.
 - **Image analysis**: `image_reasoning` supports image analysis and text extraction, with progress displayed in the tool details.
+- **Built-in image QC agent**: `/agent/image-qc` comes with an image inspection skill, check list and HTML/JSON/ZIP report generator. Configure your text and vision models, then customize it under Service Access.
 - **Model configuration**: multiple providers and models, vision flags, JSON import and per-model concurrency limits.
 - **Administration**: a separate port for users, sessions, models, skill packs, service credentials and resource monitoring.
 - **Machine integrations**: MCP Streamable HTTP and A2A 1.0 JSON-RPC, with scoped service credentials, durable tasks, bounded queues and automatic expiry.

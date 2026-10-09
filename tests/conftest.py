@@ -15,6 +15,12 @@ from umeko.host.identities import SCOPES
 from umeko.server.app import create_app
 
 
+@pytest.fixture(autouse=True)
+def isolated_skill_library(tmp_path, monkeypatch):
+    # Server bootstrap and admin edits must never touch the developer's skill library.
+    monkeypatch.setenv("UMEKO_SKILL_DIR", str(tmp_path / "skills"))
+
+
 @pytest.fixture
 def machine_app(tmp_path, monkeypatch, request):
     def chat(agent, prompt, images=None):

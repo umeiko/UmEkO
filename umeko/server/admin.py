@@ -23,7 +23,6 @@ from ..host.identities import SCOPES
 from ..config import Settings
 from ..host.service import AgentService
 from ..host.storage import Store
-from ..runtime import app_dir
 from ..skillpacks import parse_skill_pack_text
 
 ADMIN_COOKIE = "umeko_admin"
@@ -494,7 +493,7 @@ def create_admin_app(settings: Settings, service: AgentService, store: Store, pu
         # 另标 stale：源文件与 DB 拷贝内容不一致，可重新导入覆盖。
         db_skills = {item["name"]: item for item in store.default_skills()}
         library = []
-        lib_dir = app_dir() / "skills"
+        lib_dir = service._skills_library_dir()
         if lib_dir.is_dir():
             for f in sorted(lib_dir.glob("*.md")):
                 try:
@@ -539,7 +538,7 @@ def create_admin_app(settings: Settings, service: AgentService, store: Store, pu
         clean = Path(name).name
         if clean != name or not clean.endswith(".md"):
             raise HTTPException(400, "名称必须是 xxx.md 形式（不带路径）")
-        source = app_dir() / "skills" / clean
+        source = service._skills_library_dir() / clean
         if not source.is_file():
             raise HTTPException(404, f"技能库中不存在：{clean}")
         content = source.read_text(encoding="utf-8")
@@ -578,7 +577,7 @@ def create_admin_app(settings: Settings, service: AgentService, store: Store, pu
 
     @app.get("/admin/v1/skill-scripts/{pack}")
     def list_skill_scripts(pack: str) -> dict:
-        base = app_dir() / "skills"
+        base = service._skills_library_dir()
         pack_dir = (base / pack).resolve()
         try:
             pack_dir.relative_to(base.resolve())
@@ -596,7 +595,7 @@ def create_admin_app(settings: Settings, service: AgentService, store: Store, pu
 
     @app.get("/admin/v1/skill-scripts/{pack}/{script_name}")
     def get_skill_script(pack: str, script_name: str) -> dict:
-        base = app_dir() / "skills"
+        base = service._skills_library_dir()
         target = (base / pack / script_name).resolve()
         try:
             target.relative_to(base.resolve())
@@ -609,7 +608,7 @@ def create_admin_app(settings: Settings, service: AgentService, store: Store, pu
     @app.put("/admin/v1/skill-scripts/{pack}/{script_name}", status_code=201)
     def put_skill_script(pack: str, script_name: str, payload: _DefaultSkillIn) -> dict:
         """新建/覆盖技能包脚本。内容须可编译（语法检查），防低级错误上线。"""
-        base = app_dir() / "skills"
+        base = service._skills_library_dir()
         if "/" in pack or "\\" in pack or ".." in pack:
             raise HTTPException(400, "非法包名")
         clean = Path(script_name).name
@@ -627,7 +626,7 @@ def create_admin_app(settings: Settings, service: AgentService, store: Store, pu
 
     @app.delete("/admin/v1/skill-scripts/{pack}/{script_name}", status_code=204)
     def delete_skill_script(pack: str, script_name: str) -> None:
-        base = app_dir() / "skills"
+        base = service._skills_library_dir()
         target = (base / pack / script_name).resolve()
         try:
             target.relative_to(base.resolve())
@@ -648,14 +647,14 @@ def create_admin_app(settings: Settings, service: AgentService, store: Store, pu
         clean = Path(member_name).name
         if clean != member_name or Path(clean).suffix.lower() not in _MEMBER_EXTS:
             raise HTTPException(400, "成员文件须为 .md/.json/.yaml/.txt/.csv（不带路径）")
-        pack_dir = app_dir() / "skills" / pack
+        pack_dir = service._skills_library_dir() / pack
         pack_dir.mkdir(parents=True, exist_ok=True)
         (pack_dir / clean).write_text(payload.content, encoding="utf-8")
         return {"name": clean, "size": len(payload.content)}
 
     @app.delete("/admin/v1/skill-members/{pack}/{member_name}", status_code=204)
     def delete_skill_member(pack: str, member_name: str) -> None:
-        base = app_dir() / "skills"
+        base = service._skills_library_dir()
         target = (base / pack / member_name).resolve()
         try:
             target.relative_to(base.resolve())
@@ -700,9 +699,9 @@ def create_admin_app(settings: Settings, service: AgentService, store: Store, pu
 
     @app.get("/admin/v1/skill-source/{name}")
     def get_skill_source(name: str) -> dict:
-        target = (app_dir() / "skills" / name).resolve()
+        target = (service._skills_library_dir() / name).resolve()
         try:
-            target.relative_to((app_dir() / "skills").resolve())
+            target.relative_to(service._skills_library_dir().resolve())
         except ValueError:
             raise HTTPException(400, "非法路径")
         if not target.is_file():
@@ -719,16 +718,16 @@ def create_admin_app(settings: Settings, service: AgentService, store: Store, pu
             service._validate_resource(payload.content)
         except ValueError as exc:
             raise HTTPException(400, str(exc)) from exc
-        base = app_dir() / "skills"
+        base = service._skills_library_dir()
         base.mkdir(parents=True, exist_ok=True)
         (base / clean).write_text(payload.content, encoding="utf-8")
         return {"name": clean, "saved": True}
 
     @app.delete("/admin/v1/skill-source/{name}", status_code=204)
     def delete_skill_source(name: str) -> None:
-        target = (app_dir() / "skills" / name).resolve()
+        target = (service._skills_library_dir() / name).resolve()
         try:
-            target.relative_to((app_dir() / "skills").resolve())
+            target.relative_to(service._skills_library_dir().resolve())
         except ValueError:
             raise HTTPException(400, "非法路径")
         if target.is_file():
@@ -740,7 +739,7 @@ def create_admin_app(settings: Settings, service: AgentService, store: Store, pu
 
         成员文件（checks.md 等）是 read_pack_file 的运行时输入，与脚本一同列出并带修改时间。
         """
-        base = app_dir() / "skills"
+        base = service._skills_library_dir()
 
         def dir_entries(pack_dir):
             scripts, members = [], []
@@ -798,7 +797,7 @@ def create_admin_app(settings: Settings, service: AgentService, store: Store, pu
         """在隔离环境测试脚本：临时 workdir，超时强杀，返回结果与进度。"""
         import tempfile
         from ..skills.script_runner import run_skill_script
-        base = app_dir() / "skills"
+        base = service._skills_library_dir()
         if not (base / pack / script_name).is_file():
             raise HTTPException(404, "脚本不存在")
         with tempfile.TemporaryDirectory() as tmp:

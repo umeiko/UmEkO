@@ -19,6 +19,7 @@
 from __future__ import annotations
 
 import json
+import os
 import subprocess
 import sys
 import threading
@@ -82,10 +83,14 @@ def run_skill_script(
     cancelled = {"flag": False}
 
     try:
+        command = ([sys.executable, "--run-skill-script", pack, script]
+                   if getattr(sys, "frozen", False) else [sys.executable, str(target)])
         proc = subprocess.Popen(
-            [sys.executable, str(target)],
+            command,
             stdin=subprocess.PIPE, stdout=subprocess.PIPE, stderr=subprocess.PIPE,
             text=True, encoding="utf-8", errors="replace",
+            # Match the UTF-8 JSON contract on Windows as well as Unix.
+            env={**os.environ, "PYTHONIOENCODING": "utf-8"},
             creationflags=getattr(subprocess, "CREATE_NO_WINDOW", 0),
         )
     except OSError as e:

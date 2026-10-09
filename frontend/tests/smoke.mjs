@@ -346,6 +346,16 @@ try {
       await page.getByRole('button', { name: '登录', exact: true }).click();
       await page.locator('#page-access').waitFor();
       // Account validation, one-off secret, a cancelled deletion and a blocked deletion.
+      const builtins = await (await context.request.get(adminBase + '/admin/v1/agents')).json();
+      const imageQc = builtins.agents.find((agent) => agent.slug === 'image-qc');
+      assert.ok(imageQc, 'First startup includes the image QC agent');
+      assert.equal(imageQc.name, '图像质检');
+      assert.deepEqual(imageQc.skill_names, ['doc-image-qc.md']);
+      const imageQcRow = page.locator('#agent-definitions tr').filter({ hasText: '图像质检' });
+      await imageQcRow.waitFor();
+      const imageQcCard = await (await context.request.get(imageQc.endpoints.agent_card)).json();
+      assert.equal(imageQcCard.skills[0].id, 'doc-image-qc.md');
+      assert.ok(imageQcCard.supportedInterfaces[0].url.startsWith(publicBase + '/agent/image-qc/'));
       await page.locator('#sa-create').click();
       assert.match(await page.locator('#sa-feedback').innerText(), /请输入服务账号名称/);
       const accounts = (

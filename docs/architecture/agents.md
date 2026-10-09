@@ -23,6 +23,12 @@ flowchart TB
 
 `AgentRegistry` 位于宿主层，不依赖 HTTP。接入层解析 URL，找到启用的配置，然后复用现有协议适配器和任务服务。没有为每个 Agent 启动一份 MCP 服务、Worker 池或模型队列。
 
+## 内置智能体的初始化
+
+服务装配时，在 `AgentRegistry` 创建后初始化 `image-qc` 图像质检智能体。发布包内的 `umeko/builtin_skills/` 包含主技能文档、检查清单和报告脚本，首次初始化将缺失文件复制到可编辑技能库，并把主文档导入默认 Skill。库路径与管理面、技能读取和脚本工具共用 `skill_packs_dir()`：`UMEKO_SKILL_DIR` 优先，源码 / Python 安装默认使用启动目录的 `skills/`，exe 使用其旁边的 `skills/`。
+
+`app_config` 中的 `BUILTIN_IMAGE_QC_INSTALLED` 记录初始化完成。重启不重复写入，也不恢复管理员删除的配置或文件。已有同名配置和库文件优先，不覆盖定制内容；初始主模型和视觉模型引用留空，跟随平台配置。安装资源只提供初始版本，升级不会静默替换已安装技能。内置智能体复用普通 Agent 的快照、技能范围限制和模型选择链路，没有新增专用 HTTP 协议或密钥配置。
+
 | 内容 | 保存位置 / 行为 |
 | --- | --- |
 | 名称、介绍、版本、可选链接与提供方 | `agent_definitions`，用于生成公开 Card |
