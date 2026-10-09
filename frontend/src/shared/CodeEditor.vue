@@ -106,10 +106,10 @@ onBeforeUnmount(() => observer?.disconnect());
   box-shadow: none;
 }
 .source-input::selection {
-  background: #66d9bf35;
+  background: var(--accent-border);
 }
 .source-input:focus {
-  box-shadow: inset 0 0 0 1px #66d9bf45;
+  box-shadow: inset 0 0 0 1px var(--accent-border);
 }
 .source-paint .hljs {
   display: inline;

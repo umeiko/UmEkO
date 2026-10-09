@@ -32,7 +32,7 @@ Screenshots use isolated offline test data.
 
 ## Features
 
-- **Web interface**: a dark Vue workbench with streaming chat, tool details and folded call history, file filtering and previews, with seven interface languages.
+- **Web interface**: a Vue workbench with dark and white/cyan themes, streaming chat, tool details and folded call history, file filtering and previews, with seven interface languages.
 - **Agent delegation**: the main agent delegates file tasks through `delegate_task`. Sub-agent context is released after it returns a result.
 - **Image analysis**: `image_reasoning` supports image analysis and text extraction, with progress displayed in the tool details.
 - **Model configuration**: multiple providers and models, vision flags, JSON import and per-model concurrency limits.

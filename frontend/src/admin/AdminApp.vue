@@ -1,6 +1,8 @@
 <script setup>
 import { ref, onMounted } from 'vue';
 import UiIcon from '../shared/UiIcon.vue';
+import BrandMark from '../shared/BrandMark.vue';
+import ThemeSwitch from '../shared/ThemeSwitch.vue';
 import UiModal from '../shared/UiModal.vue';
 import HelpTip from '../shared/HelpTip.vue';
 import { admin, api, notify, run, settleConfirm, settleFields } from './state.js';
@@ -10,7 +12,6 @@ import UsersView from './views/UsersView.vue';
 import SessionsView from './views/SessionsView.vue';
 import ResourcesView from './views/ResourcesView.vue';
 import SkillsView from './views/SkillsView.vue';
-const logo = new URL('../../../docs/assets/brand/icon-light.svg', import.meta.url).href;
 const tabs = [
   ['access', '服务接入', 'access', '接入方式、智能体与服务账号'],
   ['providers', '模型与供应商', 'providers', '供应商、模型能力与并发控制'],
@@ -68,11 +69,12 @@ function select(id) {
 }
 </script>
 <template>
+  <div v-if="!admin.user" class="login-theme"><ThemeSwitch /></div>
   <div v-if="!admin.ready" class="admin-login muted">正在连接管理服务…</div>
   <div v-else-if="!admin.user" class="admin-login">
     <section class="login-card">
       <div class="brand">
-        <img :src="logo" alt="" />
+        <BrandMark />
         <div>UMEKO<small>ADMIN CONSOLE</small></div>
       </div>
       <h1>登录管理控制台</h1>
@@ -100,7 +102,7 @@ function select(id) {
     <div v-if="nav" class="nav-scrim" @click="nav = false"></div>
     <aside class="admin-sidebar" :class="{ open: nav }">
       <div class="brand">
-        <img :src="logo" alt="" />
+        <BrandMark />
         <div>UMEKO<small>ADMIN CONSOLE</small></div>
       </div>
       <p class="nav-kicker">WORKSPACE / 管理</p>
@@ -137,7 +139,10 @@ function select(id) {
           ><span>控制台</span><span>/</span
           ><span>{{ tabs.find((t) => t[0] === admin.tab)?.[1] }}</span>
         </div>
-        <div class="row"><span class="connection-dot"></span>管理服务已连接</div>
+        <div class="row">
+          <span class="admin-connection"><span class="connection-dot"></span>管理服务已连接</span
+          ><ThemeSwitch />
+        </div>
       </header>
       <div class="page-title">
         <h1>{{ tabs.find((t) => t[0] === admin.tab)?.[1] }}</h1>

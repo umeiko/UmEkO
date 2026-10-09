@@ -51,6 +51,22 @@ async function confirm(page, yes = true) {
     .getByRole('button', { name: yes ? '确认' : '取消', exact: true })
     .click();
 }
+async function checkThemes(page, toggle, wanted) {
+  assert.equal(await page.locator('html').getAttribute('data-theme'), 'dark');
+  await page.locator(toggle).click();
+  assert.equal(await page.locator('html').getAttribute('data-theme'), 'light');
+  await page.reload();
+  assert.equal(await page.locator('html').getAttribute('data-theme'), 'light');
+  if (wanted === 'dark') {
+    await page.locator(toggle).click();
+    await page.reload();
+  }
+  assert.equal(await page.locator('html').getAttribute('data-theme'), wanted);
+  assert.equal(
+    await page.evaluate(() => getComputedStyle(document.documentElement).colorScheme),
+    wanted,
+  );
+}
 const browser = await chromium.launch({ headless: true });
 try {
   for (const prefix of ['', '/doc-master/consistency/image-text']) {
@@ -88,11 +104,26 @@ try {
       const state = JSON.parse(await readFile(path.join(directory, 'state.json'), 'utf8'));
       // Keep host OS language from changing selectors, and exercise both UI locales.
       const locale = prefix ? 'en-US' : 'zh-CN';
+      const appearance = prefix ? 'dark' : 'light';
       context = await browser.newContext({ viewport: { width: 1440, height: 1000 }, locale });
       const page = await context.newPage(),
         errors = [];
       page.on('pageerror', (e) => errors.push(e.message));
       await page.goto(adminBase + '/');
+      await checkThemes(page, '[data-theme-toggle]', appearance);
+      const otherTab = await context.newPage();
+      await otherTab.goto(adminBase + '/');
+      await otherTab.locator('[data-theme-toggle]').click();
+      await page.waitForFunction(
+        (value) => document.documentElement.dataset.theme === value,
+        appearance === 'light' ? 'dark' : 'light',
+      );
+      await otherTab.locator('[data-theme-toggle]').click();
+      await page.waitForFunction(
+        (value) => document.documentElement.dataset.theme === value,
+        appearance,
+      );
+      await otherTab.close();
       await page.locator('#l-user').fill(state.username);
       await page.locator('#l-pass').fill(state.password);
       await page.getByRole('button', { name: '登录', exact: true }).click();
@@ -266,6 +297,7 @@ try {
         };
       });
       await work.goto(publicBase + '/');
+      await checkThemes(work, '#auth-dialog[open] [data-theme-toggle]', appearance);
       await work.locator('#auth-username').fill('ui-browser');
       await work.locator('#auth-password').fill('fixture-browser-only');
       await work.locator('#register').click();
@@ -348,11 +380,17 @@ try {
       assert.match(await work.locator('#messages').innerText(), /任务已停止/);
       assert.ok(requests.some((p) => p.startsWith(prefix + '/v1/runs/') && p.endsWith('/cancel')));
       await work.setViewportSize({ width: 390, height: 844 });
+      await work.locator('.workbench-title [data-theme-toggle]').click();
+      assert.equal(
+        await work.locator('html').getAttribute('data-theme'),
+        appearance === 'light' ? 'dark' : 'light',
+      );
+      await work.locator('.workbench-title [data-theme-toggle]').click();
       assert.ok(await work.evaluate(() => document.documentElement.scrollWidth <= innerWidth + 1));
       assert.ok(await work.locator('#prompt').isVisible());
       assert.deepEqual(errors, []);
       console.log(
-        `Passed browser workflows: ${prefix || '/'} (${locale}, admin, files, streaming, 20 folded tools, cancellation, desktop/mobile)`,
+        `Passed browser workflows: ${prefix || '/'} (${locale}, ${appearance}, theme persistence, admin, files, streaming, 20 folded tools, cancellation, desktop/mobile)`,
       );
     } catch (e) {
       if (diagnostics) console.error(diagnostics);

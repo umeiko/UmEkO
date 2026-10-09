@@ -5,10 +5,18 @@
     <meta name="viewport" content="width=device-width, initial-scale=1" />
     <meta name="umeko-base-path" content="__UMEKO_BASE_PATH__" />
     <title>UMEKO · 管理控制台</title>
-    <script type="module" crossorigin src="./assets/admin-KuqHIwiQ.js"></script>
-    <link rel="modulepreload" crossorigin href="./assets/github-dark-CIS4zmK4.js">
-    <link rel="stylesheet" crossorigin href="./assets/github-dark-BVeJbOAy.css">
-    <link rel="stylesheet" crossorigin href="./assets/admin-2EVishA6.css">
+    <script>
+      try {
+        document.documentElement.dataset.theme =
+          localStorage.getItem('umeko:theme') === 'light' ? 'light' : 'dark';
+      } catch {
+        document.documentElement.dataset.theme = 'dark';
+      }
+    </script>
+    <script type="module" crossorigin src="./assets/admin-DytT7_uH.js"></script>
+    <link rel="modulepreload" crossorigin href="./assets/highlight-light-CUAl8EWT.js">
+    <link rel="stylesheet" crossorigin href="./assets/highlight-light-3fzCg7dn.css">
+    <link rel="stylesheet" crossorigin href="./assets/admin-C75XdCh2.css">
   </head>
   <body>
     <div id="app"></div>

@@ -1,13 +1,14 @@
 <script setup>
 import { onMounted, onBeforeUnmount } from 'vue';
 import UiIcon from '../shared/UiIcon.vue';
+import ThemeSwitch from '../shared/ThemeSwitch.vue';
+import BrandMark from '../shared/BrandMark.vue';
 import SessionBar from './components/SessionBar.vue';
 import FileSidebar from './components/FileSidebar.vue';
 import ConversationPane from './components/ConversationPane.vue';
 import PreviewPane from './components/PreviewPane.vue';
 import WorkspaceDialogs from './components/WorkspaceDialogs.vue';
 import { mountWorkspaceRuntime } from './runtime.js';
-const logo = new URL('../../../docs/assets/brand/icon-light.svg', import.meta.url).href;
 let dispose;
 onMounted(() => {
   dispose = mountWorkspaceRuntime();
@@ -18,10 +19,13 @@ onBeforeUnmount(() => dispose?.());
   <main class="shell">
     <header class="workbench-title">
       <div class="brand">
-        <img :src="logo" alt="" /><strong>UMEKO</strong><span class="workbench-divider"></span
+        <BrandMark /><strong>UMEKO</strong><span class="workbench-divider"></span
         ><span class="workbench-label">工作台</span>
       </div>
-      <span class="workbench-kicker"><UiIcon name="terminal" :size="13" />AGENT WORKSPACE</span>
+      <div class="workbench-actions">
+        <span class="workbench-kicker"><UiIcon name="terminal" :size="13" />AGENT WORKSPACE</span
+        ><ThemeSwitch localized />
+      </div>
     </header>
     <SessionBar />
     <section class="workspace">

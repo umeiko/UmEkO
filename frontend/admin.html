@@ -5,6 +5,14 @@
     <meta name="viewport" content="width=device-width, initial-scale=1" />
     <meta name="umeko-base-path" content="__UMEKO_BASE_PATH__" />
     <title>UMEKO · 管理控制台</title>
+    <script>
+      try {
+        document.documentElement.dataset.theme =
+          localStorage.getItem('umeko:theme') === 'light' ? 'light' : 'dark';
+      } catch {
+        document.documentElement.dataset.theme = 'dark';
+      }
+    </script>
   </head>
   <body>
     <div id="app"></div>
