@@ -722,7 +722,16 @@ function manageSkills() {
         </details>
         <div class="full">
           <hr style="margin: 4px 0 18px" />
-          <h3>{{ tr('调用入口') }}</h3>
+          <div class="heading-line">
+            <h3>{{ tr('调用入口') }}</h3>
+            <HelpTip
+              v-if="data.public_url_configured === false"
+              id="public-url-warning"
+              warning
+              :label="tr('公开地址未配置')"
+              :text="tr('未配置 UMEKO_PUBLIC_URL，是否已上线？')"
+            />
+          </div>
           <div id="agent-definition-endpoints" class="endpoint-list">
             <div v-for="(url, key) in endpoints" :key="key" class="endpoint">
               <span>{{ key === 'agent_card' ? 'Agent Card' : key.toUpperCase() }}</span

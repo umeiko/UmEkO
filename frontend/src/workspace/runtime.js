@@ -148,6 +148,8 @@ export function mountWorkspaceRuntime() {
 
   let sessionId = null;
   let pendingFiles = [];
+  const attachmentDrafts = new Map();
+  const attachmentUploads = new Map();
   let selectedFile = null;
   let selectedResource = null;
   let activeSection = 'workspace';
@@ -1043,6 +1045,8 @@ export function mountWorkspaceRuntime() {
     setRunControls(false);
     resetToolPresentation();
     sessionId = id;
+    pendingFiles = attachmentDrafts.get(id) || [];
+    renderPendingAttachments();
     renderWorkspaceUploadFeedback();
     localStorage.setItem('umeko:last-session', id);
     clearPreview();
@@ -1053,8 +1057,6 @@ export function mountWorkspaceRuntime() {
     sessionModelOverride = sessionView?.model_override_id || null;
     renderModelPicker();
     if (loadToken !== sessionLoadToken || sessionId !== id) return;
-    pendingFiles = [];
-    ui.attachments.replaceChildren();
     selectedFile = null;
     selectedResource = null;
     ui.messages.replaceChildren();
@@ -1262,6 +1264,8 @@ export function mountWorkspaceRuntime() {
     const deletingId = managingSession.id;
     try {
       await api(`/v1/sessions/${deletingId}`, { method: 'DELETE' });
+      attachmentDrafts.delete(deletingId);
+      attachmentUploads.delete(deletingId);
       ui.deleteSessionDialog.close();
       const sessions = await refreshSessionTabs();
       if (deletingId === sessionId) {
@@ -2565,8 +2569,16 @@ export function mountWorkspaceRuntime() {
     }
   });
 
-  function addAttachmentChip(uploaded) {
-    pendingFiles.push(uploaded);
+  function addAttachmentChip(uploaded, targetSessionId = sessionId) {
+    const files = attachmentDrafts.get(targetSessionId) || [];
+    files.push(uploaded);
+    attachmentDrafts.set(targetSessionId, files);
+    if (targetSessionId !== sessionId) return;
+    pendingFiles = files;
+    renderAttachmentChip(uploaded);
+  }
+
+  function renderAttachmentChip(uploaded) {
     const chip = document.createElement('span');
     chip.className = 'chip';
     chip.title = uploaded.filename;
@@ -2586,16 +2598,44 @@ export function mountWorkspaceRuntime() {
 
   function removePendingAttachment(uploaded) {
     pendingFiles = pendingFiles.filter((file) => file !== uploaded && file.id !== uploaded.id);
+    attachmentDrafts.set(sessionId, pendingFiles);
     renderPendingAttachments();
     updateWorkspaceAttachButtons();
     setStatus(t('attachment.removed', { name: uploaded.filename }), true);
   }
 
   function renderPendingAttachments() {
-    const files = [...pendingFiles];
     ui.attachments.replaceChildren();
-    pendingFiles = [];
-    files.forEach(addAttachmentChip);
+    pendingFiles.forEach(renderAttachmentChip);
+    renderAttachmentUploadStatus();
+  }
+
+  function renderAttachmentUploadStatus() {
+    ui.attachments.querySelector('.attachment-upload-status')?.remove();
+    const state = attachmentUploads.get(sessionId);
+    ui.send.disabled = Boolean(state?.pending);
+    if (!state?.pending && !state?.errors.length) return;
+    const status = document.createElement('span');
+    status.className = 'chip attachment-upload-status';
+    status.classList.toggle('error', !state.pending);
+    status.setAttribute('role', 'status');
+    status.textContent = state.pending
+      ? t('upload.uploading', { name: state.name })
+      : t('upload.failedMessage', { error: state.errors.join('; ') });
+    status.title = status.textContent;
+    if (!state.pending) {
+      const dismiss = document.createElement('button');
+      dismiss.type = 'button';
+      dismiss.className = 'chip-remove';
+      dismiss.textContent = '×';
+      dismiss.setAttribute('aria-label', t('upload.dismiss'));
+      dismiss.addEventListener('click', () => {
+        state.errors = [];
+        renderAttachmentUploadStatus();
+      });
+      status.append(dismiss);
+    }
+    ui.attachments.append(status);
   }
 
   function workspaceAttachment(path) {
@@ -2634,15 +2674,17 @@ export function mountWorkspaceRuntime() {
 
   async function attachWorkspacePath(path, button = null) {
     if (!path || !sessionId || workspaceAttachment(path)) return;
+    const attachmentSessionId = sessionId;
     if (button) button.disabled = true;
     try {
-      const uploaded = await api(`/v1/sessions/${sessionId}/files/from-workspace`, {
+      const uploaded = await api(`/v1/sessions/${attachmentSessionId}/files/from-workspace`, {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({ path }),
       });
       uploaded.workspacePath = path;
-      addAttachmentChip(uploaded);
+      addAttachmentChip(uploaded, attachmentSessionId);
+      if (sessionId !== attachmentSessionId) return;
       updateWorkspaceAttachButtons();
       setStatus(t('attachment.added', { name: uploaded.filename }), true);
       ui.prompt.focus();
@@ -2663,25 +2705,61 @@ export function mountWorkspaceRuntime() {
   });
 
   async function uploadAttachmentFiles(files) {
-    if (!sessionId) return;
-    for (const file of files) {
-      setStatus(t('upload.uploading', { name: file.name }));
-      try {
-        const uploaded = await api(
-          `/v1/sessions/${sessionId}/files?filename=${encodeURIComponent(file.name)}`,
-          {
-            method: 'POST',
-            headers: { 'Content-Type': file.type || 'application/octet-stream' },
-            body: file,
-          },
-        );
-        addAttachmentChip(uploaded);
-      } catch (error) {
-        addMessage(error.message, 'assistant');
-      }
+    const uploadSessionId = sessionId;
+    if (!uploadSessionId) {
+      setStatus(t('upload.noSession'));
+      return;
     }
-    setStatus(t('status.connected'), true);
-    await refreshTree();
+    if (!files.length) return;
+    let state = attachmentUploads.get(uploadSessionId);
+    if (!state?.pending) {
+      state = { pending: 0, errors: [], name: files[0].name, queue: Promise.resolve() };
+      attachmentUploads.set(uploadSessionId, state);
+    }
+    const previous = state.queue;
+    let complete;
+    state.queue = new Promise((resolve) => {
+      complete = resolve;
+    });
+    state.pending += files.length;
+    renderAttachmentUploadStatus();
+    await previous; // Serialize repeated pastes so equal names cannot overwrite each other.
+    try {
+      for (const file of files) {
+        state.name = file.name;
+        if (sessionId === uploadSessionId) renderAttachmentUploadStatus();
+        try {
+          const uploaded = await api(
+            `/v1/sessions/${uploadSessionId}/files?filename=${encodeURIComponent(file.name)}`,
+            {
+              method: 'POST',
+              headers: { 'Content-Type': file.type || 'application/octet-stream' },
+              body: file,
+            },
+          );
+          addAttachmentChip(uploaded, uploadSessionId);
+        } catch (error) {
+          state.errors.push(`${file.name}: ${error.message}`);
+        } finally {
+          state.pending--;
+          if (sessionId === uploadSessionId) renderAttachmentUploadStatus();
+        }
+      }
+    } finally {
+      complete();
+    }
+    if (sessionId === uploadSessionId && !state.pending) {
+      setStatus(
+        t(state.errors.length ? 'upload.failed' : 'status.connected'),
+        !state.errors.length,
+      );
+    }
+    try {
+      await refreshTree(uploadSessionId);
+    } catch (error) {
+      if (sessionId === uploadSessionId)
+        setStatus(t('upload.refreshFailed', { error: error.message }));
+    }
   }
 
   function renderWorkspaceUploadFeedback() {
@@ -2825,8 +2903,29 @@ export function mountWorkspaceRuntime() {
   }
 
   ui.file.addEventListener('change', async () => {
-    await uploadAttachmentFiles([...ui.file.files]);
+    const files = [...ui.file.files];
     ui.file.value = '';
+    await uploadAttachmentFiles(files);
+  });
+
+  listen(ui.prompt, 'paste', (event) => {
+    const clipboard = event.clipboardData;
+    // Read synchronously: the browser protects clipboard data after the event returns.
+    let files = Array.from(clipboard?.files || []);
+    if (!files.length) {
+      files = Array.from(clipboard?.items || [])
+        .filter((item) => item.kind === 'file')
+        .map((item) => item.getAsFile())
+        .filter(Boolean);
+    }
+    if (!files.length) return; // Leave ordinary text paste to the browser.
+    event.preventDefault();
+    const text = clipboard.getData('text/plain');
+    if (text) {
+      ui.prompt.setRangeText(text, ui.prompt.selectionStart, ui.prompt.selectionEnd, 'end');
+      ui.prompt.dispatchEvent(new Event('input', { bubbles: true }));
+    }
+    void uploadAttachmentFiles(files);
   });
 
   function bindDropZone(element, onFiles) {
@@ -3320,12 +3419,15 @@ export function mountWorkspaceRuntime() {
 
   ui.composer.addEventListener('submit', async (event) => {
     event.preventDefault();
+    if (ui.send.disabled || !ui.stop.classList.contains('hidden')) return;
     const input = ui.prompt.value.trim();
     if (!input || !sessionId) return;
+    const runSessionId = sessionId;
     if (pendingResourceMutations.size) {
       setStatus(t('run.confirmingMounts'));
       await Promise.allSettled([...pendingResourceMutations]);
     }
+    if (sessionId !== runSessionId || ui.send.disabled) return;
     const attachmentsForRun = [...pendingFiles];
     addMessage(input, 'user', attachmentsForRun);
     // 用户主动发消息：强制滚到底部（后续流式自动跟随由此解锁）
@@ -3334,16 +3436,23 @@ export function mountWorkspaceRuntime() {
     setRunControls(true);
     setStatus(t('run.submitted'));
     try {
-      const run = await api(`/v1/sessions/${sessionId}/runs`, {
+      const run = await api(`/v1/sessions/${runSessionId}/runs`, {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({ input, attachments: attachmentsForRun.map((file) => file.id) }),
       });
-      pendingFiles = [];
-      ui.attachments.replaceChildren();
+      const used = new Set(attachmentsForRun.map((file) => file.id));
+      const remaining = (attachmentDrafts.get(runSessionId) || []).filter(
+        (file) => !used.has(file.id),
+      );
+      attachmentDrafts.set(runSessionId, remaining);
+      if (sessionId !== runSessionId) return;
+      pendingFiles = remaining;
+      renderPendingAttachments();
       updateWorkspaceAttachButtons();
-      followRun(run.id, sessionId);
+      followRun(run.id, runSessionId);
     } catch (error) {
+      if (sessionId !== runSessionId) return;
       addMessage(error.message, 'assistant');
       setRunControls(false);
       setStatus(t('run.submitFailed'));
@@ -3354,7 +3463,7 @@ export function mountWorkspaceRuntime() {
     if (event.key !== 'Enter' || event.shiftKey || event.isComposing || event.keyCode === 229)
       return;
     event.preventDefault();
-    if (!activeRunId && ui.prompt.value.trim()) {
+    if (!activeRunId && !ui.send.disabled && ui.prompt.value.trim()) {
       ui.composer.requestSubmit();
     }
   });

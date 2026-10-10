@@ -90,6 +90,22 @@ def test_agent_routes_cards_and_task_ownership(machine_client):
     assert {agent["slug"] for agent in client.get(prefix + "/agent").json()["agents"]} == {"image-qc", "fixture", "beta"}
 
 
+@pytest.mark.parametrize("prefix", ["", "/doc-master/consistency/image-text"])
+@pytest.mark.parametrize("configured", [False, True])
+def test_admin_reports_explicit_public_url_configuration(machine_app, prefix, configured):
+    app, _, _, settings = machine_app
+    service, store = app.state.agent_service, app.state.store
+    # A fallback is useful for local links, but must not hide missing deployment configuration.
+    fallback = "http://127.0.0.1:8000" + prefix
+    settings = replace(settings, base_path=prefix, public_url=fallback if configured else "")
+    user = store.create_user("url-admin", "fixture-pass", "admin")
+    with TestClient(create_admin_app(settings, service, store, public_url=fallback)) as admin:
+        admin.cookies.set("umeko_admin", store.issue_token(user["id"]))
+        listed = admin.get("/admin/v1/agents").json()
+        assert listed["public_url_configured"] is configured
+        assert all(agent["endpoints"]["a2a"].startswith(fallback + "/agent/") for agent in listed["agents"])
+
+
 def test_admin_definitions_and_public_base_url(machine_app, tmp_path):
     _, _, _, settings = machine_app
     settings = replace(settings, public_url="https://company.internal/doc-master/consistency/image-text", base_path="/doc-master/consistency/image-text")
@@ -103,6 +119,7 @@ def test_admin_definitions_and_public_base_url(machine_app, tmp_path):
         assert admin.post("/admin/v1/agents", json=a).status_code == 401
         admin.cookies.set("umeko_admin", store.issue_token(user["id"]))
         listed = admin.get("/admin/v1/agents").json()
+        assert listed["public_url_configured"] is True
         assert {agent["slug"] for agent in listed["agents"]} == {"image-qc", "alpha", "beta"}
         assert {s["filename"] for s in listed["skills"]} == {"doc-image-qc.md", "alpha.md", "beta.md"}
         value = {"slug": "new-agent", "name": "New", "description": "New delivery", "skill_names": ["alpha.md"]}

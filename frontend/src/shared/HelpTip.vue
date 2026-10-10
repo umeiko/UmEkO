@@ -2,7 +2,7 @@
 import { ref, computed, onMounted, onBeforeUnmount, nextTick, useId } from 'vue';
 import { useAdminI18n } from './adminI18n.js';
 const { tr } = useAdminI18n();
-const props = defineProps({ text: String, label: String });
+const props = defineProps({ text: String, label: String, warning: Boolean });
 const label = computed(() => props.label || tr('查看说明'));
 const trigger = ref(),
   tip = ref();
@@ -74,6 +74,7 @@ onBeforeUnmount(() => {
       ref="trigger"
       type="button"
       class="help-trigger"
+      :class="{ 'help-trigger-warning': warning }"
       :aria-label="label"
       :aria-describedby="tipId"
       @mouseenter="open"
@@ -82,7 +83,7 @@ onBeforeUnmount(() => {
       @blur="later"
       @click="open"
     >
-      ?</button
+      {{ warning ? '!' : '?' }}</button
     ><span
       ref="tip"
       :id="tipId"

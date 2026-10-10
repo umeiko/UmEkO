@@ -424,6 +424,14 @@ body {
   flex-wrap: nowrap;
   overflow: auto;
 }
+.attachment-upload-status {
+  flex-shrink: 0;
+  font-size: 14px;
+}
+.attachment-upload-status.error {
+  color: var(--danger);
+  border-color: var(--danger);
+}
 .model-menu-wrap {
   min-width: 0;
   flex: 1;

@@ -352,5 +352,7 @@
   "仍有执行任务，请在资源监控中停止": "Tasks are still running. Stop them in Resources first.",
   "{count} 个供应商": "Providers: {count}",
   "{count} 个模型": "Models: {count}",
-  "{count} 个文件": "Files: {count}"
+  "{count} 个文件": "Files: {count}",
+  "公开地址未配置": "Public URL is not configured",
+  "未配置 UMEKO_PUBLIC_URL，是否已上线？": "UMEKO_PUBLIC_URL is not configured. Has this service been deployed?"
 }

@@ -448,6 +448,12 @@ td button {
   border-color: var(--accent);
   background: transparent;
 }
+.help-trigger-warning,
+.help-trigger-warning:hover {
+  color: var(--danger);
+  border-color: var(--danger);
+  font-weight: 700;
+}
 .help-popover {
   position: fixed;
   margin: 0;

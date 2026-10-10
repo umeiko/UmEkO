@@ -243,6 +243,7 @@ def create_admin_app(settings: Settings, service: AgentService, store: Store, pu
                 skills.append({"filename": item["name"], "name": pack.name,
                                "description": pack.description, "enabled": bool(item["enabled"])})
         return {"agents": [agent_view(item) for item in service.agent_registry.list()], "skills": skills, "default_version": __version__,
+                "public_url_configured": bool(settings.public_url),
                 "models": [{"id": model["id"], "name": model["name"], "provider": provider["name"], "vision": bool(model["vision"])}
                            for provider in store.list_providers() for model in provider["models"]]}
 

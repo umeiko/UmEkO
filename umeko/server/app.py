@@ -825,7 +825,7 @@ def create_app(
             file_id, path = service.save_file(session_id, filename, content)
         except ValueError as exc:
             raise HTTPException(400, str(exc)) from exc
-        return FileView(id=file_id, filename=Path(filename).name, size=path.stat().st_size)
+        return FileView(id=file_id, filename=path.name, size=path.stat().st_size)
 
     @app.post(
         "/v1/sessions/{session_id}/files/from-workspace",

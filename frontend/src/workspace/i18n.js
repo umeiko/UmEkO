@@ -23,7 +23,7 @@ const I18N_LOCALES = {
     'canvas.empty': '暂无预览',
     'composer.placeholder': '输入任务或问题…',
     'composer.help':
-      'Enter 发送，Shift+Enter 换行。可添加或拖入文件作为附件；拖动输入区上沿调整高度。',
+      'Enter 发送，Shift+Enter 换行。可添加、拖入或在输入框中粘贴图片与文件作为附件；上传完成后再发送。拖动输入区上沿调整高度。',
     'sidebar.help':
       '拖入文件可保存到当前会话。文件支持预览、右键管理和双击加入附件。技能启用后只提供名称与简介，相关任务才读取完整指引；无关对话自动跳过。',
     'sidebar.skills': '技能',
@@ -353,7 +353,7 @@ const I18N_LOCALES = {
     'canvas.empty': 'No preview',
     'composer.placeholder': 'Enter a task or question…',
     'composer.help':
-      'Enter to send, Shift+Enter for a new line. Add or drop attachments; drag the top edge to resize the input area.',
+      'Enter to send, Shift+Enter for a new line. Add, drop, or paste images and files into the input as attachments; send after uploads finish. Drag the top edge to resize.',
     'sidebar.help':
       'Drop files to save them to this session. Preview, right-click to manage, or double-click to attach. Enabled skills supply only names and descriptions; full instructions are loaded for relevant tasks and skipped for unrelated chats.',
     'sidebar.skills': 'Skills',
@@ -691,7 +691,8 @@ const I18N_LOCALES = {
     'preview.help': '點選左側檔案或對話中的產物查看預覽。',
     'canvas.empty': '尚無預覽',
     'composer.placeholder': '輸入任務或問題…',
-    'composer.help': 'Enter 傳送，Shift+Enter 換行。可加入或拖入附件；拖曳輸入區上緣調整高度。',
+    'composer.help':
+      'Enter 傳送，Shift+Enter 換行。可加入、拖入或在輸入框中貼上圖片與檔案作為附件；上傳完成後再傳送。拖曳輸入區上緣調整高度。',
     'sidebar.help':
       '拖入檔案可儲存到目前會話。檔案支援預覽、右鍵管理和雙擊加入附件。技能啟用後只提供名稱與簡介，相關任務才讀取完整指引；無關對話自動跳過。',
     'sidebar.skills': '技能',
@@ -1022,7 +1023,7 @@ const I18N_LOCALES = {
     'canvas.empty': '미리보기 없음',
     'composer.placeholder': '작업이나 질문을 입력하세요…',
     'composer.help':
-      'Enter로 전송, Shift+Enter로 줄바꿈. 첨부 파일을 추가하거나 끌어 놓고 위쪽 경계로 입력 높이를 조절하세요.',
+      'Enter로 전송, Shift+Enter로 줄바꿈. 이미지와 파일을 추가, 끌어 놓기 또는 입력란에 붙여넣기로 첨부하세요. 업로드가 끝나면 전송할 수 있습니다. 위쪽 경계로 입력 높이를 조절하세요.',
     'sidebar.help':
       '파일을 끌어 놓아 세션에 저장하세요. 미리 보기, 우클릭 관리, 더블 클릭 첨부가 가능합니다. 활성화된 스킬은 이름과 설명만 제공하며 관련 작업에서만 전체 지침을 읽습니다.',
     'sidebar.skills': '스킬',
@@ -1361,7 +1362,7 @@ const I18N_LOCALES = {
     'canvas.empty': 'Aucun aperçu',
     'composer.placeholder': 'Saisissez une tâche ou une question…',
     'composer.help':
-      'Entrée pour envoyer, Maj+Entrée pour une nouvelle ligne. Ajoutez des pièces jointes ; faites glisser le bord supérieur pour redimensionner.',
+      'Entrée pour envoyer, Maj+Entrée pour une nouvelle ligne. Ajoutez, déposez ou collez des images et fichiers dans la zone de saisie ; attendez la fin du téléversement pour envoyer. Faites glisser le bord supérieur pour redimensionner.',
     'sidebar.help':
       'Déposez les fichiers dans cette session. Aperçu, clic droit pour gérer, double clic pour joindre. Les skills activés fournissent leur nom et description ; les instructions complètes sont lues pour les tâches pertinentes uniquement.',
     'sidebar.skills': 'Skills',
@@ -1711,7 +1712,7 @@ const I18N_LOCALES = {
     'canvas.empty': 'Keine Vorschau',
     'composer.placeholder': 'Aufgabe oder Frage eingeben…',
     'composer.help':
-      'Enter zum Senden, Umschalt+Enter für einen Zeilenumbruch. Dateien anhängen; am oberen Rand die Eingabehöhe ändern.',
+      'Enter zum Senden, Umschalt+Enter für einen Zeilenumbruch. Bilder und Dateien hinzufügen, ablegen oder ins Eingabefeld einfügen; nach dem Upload senden. Am oberen Rand die Eingabehöhe ändern.',
     'sidebar.help':
       'Dateien in dieser Sitzung ablegen, ansehen, per Rechtsklick verwalten oder per Doppelklick anhängen. Aktivierte Skills liefern Namen und Beschreibung; vollständige Anleitungen werden nur für passende Aufgaben geladen.',
     'sidebar.skills': 'Skills',
@@ -2058,7 +2059,7 @@ const I18N_LOCALES = {
     'canvas.empty': 'Nessuna anteprima',
     'composer.placeholder': 'Inserisci un’attività o una domanda…',
     'composer.help':
-      'Invio per inviare, Maiusc+Invio per andare a capo. Aggiungi allegati; trascina il bordo superiore per ridimensionare.',
+      'Invio per inviare, Maiusc+Invio per andare a capo. Aggiungi, trascina o incolla immagini e file nel campo di testo; invia al termine del caricamento. Trascina il bordo superiore per ridimensionare.',
     'sidebar.help':
       'Trascina i file nella sessione. Anteprima, clic destro per gestire, doppio clic per allegare. Gli skill abilitati forniscono nome e descrizione; le istruzioni complete vengono lette solo per le attività pertinenti.',
     'sidebar.skills': 'Skills',

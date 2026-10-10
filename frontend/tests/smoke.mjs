@@ -129,10 +129,45 @@ async function checkAdminLanguages(page, context, adminBase) {
     await page.locator('label[for=agent-definition-vision-model]').innerText(),
     'Default vision model',
   );
+  const warning = page.locator('#public-url-warning .help-trigger');
+  assert.equal(await warning.innerText(), '!');
+  await warning.hover();
+  await page
+    .locator('.help-popover:popover-open')
+    .filter({ hasText: 'UMEKO_PUBLIC_URL is not configured' })
+    .waitFor();
+  await page.keyboard.press('Escape');
+  await language.selectOption('zh-CN');
+  await warning.focus();
+  await page
+    .locator('.help-popover:popover-open')
+    .filter({ hasText: '未配置 UMEKO_PUBLIC_URL，是否已上线？' })
+    .waitFor();
+  await page.keyboard.press('Escape');
+  await language.selectOption('en');
   await page
     .locator('#agent-definition-editor .modal-header')
     .getByRole('button', { name: 'Close', exact: true })
     .click();
+  // Display logic follows the explicit server flag, including behind a proxy prefix.
+  const agentsUrl = adminBase + '/admin/v1/agents';
+  await page.route(agentsUrl, async (route) => {
+    const response = await route.fetch();
+    const data = await response.json();
+    await route.fulfill({ response, json: { ...data, public_url_configured: true } });
+  });
+  try {
+    await page.reload();
+    await page.locator('#agent-new').click();
+    await page.locator('#agent-definition-editor[open]').waitFor();
+    assert.equal(await page.locator('#public-url-warning').count(), 0);
+    await page
+      .locator('#agent-definition-editor .modal-header')
+      .getByRole('button', { name: 'Close', exact: true })
+      .click();
+  } finally {
+    await page.unroute(agentsUrl);
+  }
   await page.locator('#tab-dskills').click();
   const pack = page
     .locator('.skill-pack')
@@ -366,6 +401,235 @@ async function checkThemes(page, toggle, wanted) {
     wanted,
   );
 }
+async function pasteFiles(page, files, text = '') {
+  return page.locator('#prompt').evaluate(
+    (node, { files, text }) => {
+      const clipboard = new DataTransfer();
+      for (const file of files) {
+        clipboard.items.add(
+          new File([file.content], file.name, { type: file.type || 'text/plain' }),
+        );
+      }
+      if (text) clipboard.setData('text/plain', text);
+      const event = new ClipboardEvent('paste', {
+        clipboardData: clipboard,
+        bubbles: true,
+        cancelable: true,
+      });
+      node.dispatchEvent(event);
+      return event.defaultPrevented;
+    },
+    { files, text },
+  );
+}
+
+async function clipboardAttachments(page, context, publicBase, originalSid) {
+  const originalTitle = await page.locator('.session-tab.active').getAttribute('title');
+  await page.locator('#new-session').click();
+  await page.locator('#new-session:enabled').waitFor();
+  await page.locator('#status-dot.ready').waitFor();
+  const sid = await page.evaluate(() => localStorage.getItem('umeko:last-session'));
+  assert.notEqual(sid, originalSid);
+  const uploadUrl = publicBase + `/v1/sessions/${sid}/files?*`;
+  const uploaded = [];
+  const onResponse = async (response) => {
+    if (
+      response.url().startsWith(publicBase + `/v1/sessions/${sid}/files?`) &&
+      response.status() === 201
+    ) {
+      uploaded.push(await response.json());
+    }
+  };
+  page.on('response', onResponse);
+  try {
+    const prompt = page.locator('#prompt');
+    await page.evaluate(() => navigator.clipboard.writeText('第一行\nSecond line'));
+    await prompt.fill('left|right');
+    await prompt.evaluate((node) => node.setSelectionRange(4, 5));
+    await page.keyboard.press('Control+V');
+    await page.waitForFunction(
+      () => document.querySelector('#prompt').value === 'left第一行\nSecond lineright',
+    );
+    assert.equal(await page.locator('#attachments .chip-name').count(), 0);
+
+    // Actual browser clipboard + keyboard paste, rather than only dispatching a synthetic image event.
+    await page.evaluate(async () => {
+      const canvas = document.createElement('canvas');
+      canvas.width = canvas.height = 2;
+      const ctx = canvas.getContext('2d');
+      ctx.fillStyle = '#13b8a6';
+      ctx.fillRect(0, 0, 2, 2);
+      const blob = await new Promise((resolve) => canvas.toBlob(resolve, 'image/png'));
+      await navigator.clipboard.write([new ClipboardItem({ 'image/png': blob })]);
+    });
+    await prompt.focus();
+    await page.keyboard.press('Control+V');
+    await page
+      .locator('#attachments .chip-name')
+      .filter({ hasText: /\.png$/ })
+      .waitFor();
+    await page.locator('#send:enabled').waitFor();
+    const image = await page.locator('#attachments .chip-name').first().innerText();
+    const imageResponse = await context.request.get(
+      publicBase + `/v1/sessions/${sid}/workspace/files/raw/attachments/${image}`,
+    );
+    assert.equal(imageResponse.status(), 200);
+    const imageBytes = await imageResponse.body();
+    assert.deepEqual(imageBytes.subarray(0, 8), Buffer.from([137, 80, 78, 71, 13, 10, 26, 10]));
+    assert.equal(imageBytes.readUInt32BE(16), 2);
+    assert.equal(imageBytes.readUInt32BE(20), 2);
+
+    await prompt.fill('left|right');
+    await prompt.evaluate((node) => node.setSelectionRange(4, 5));
+    assert.equal(
+      await pasteFiles(
+        page,
+        [{ name: 'clipboard.txt', content: 'From clipboard\nSecond line' }],
+        ' plus ',
+      ),
+      true,
+    );
+    assert.equal(await prompt.inputValue(), 'left plus right');
+    await page
+      .locator('#attachments .chip-name')
+      .getByText('clipboard.txt', { exact: true })
+      .waitFor();
+    await page.locator('#send:enabled').waitFor();
+    assert.equal(
+      await (
+        await context.request.get(
+          publicBase + `/v1/sessions/${sid}/workspace/files/raw/attachments/clipboard.txt`,
+        )
+      ).text(),
+      'From clipboard\nSecond line',
+    );
+
+    // One failed file must not discard the valid files, nor leave sending disabled.
+    await pasteFiles(page, [
+      { name: 'empty.txt', content: '' },
+      { name: 'valid.txt', content: 'Still uploaded' },
+    ]);
+    await page.locator('#attachments .chip-name').getByText('valid.txt', { exact: true }).waitFor();
+    await page
+      .locator('.attachment-upload-status.error')
+      .filter({ hasText: 'empty.txt' })
+      .waitFor();
+    await page.locator('#send:enabled').waitFor();
+    assert.equal(await page.locator('#attachments .chip-name').count(), 3);
+
+    await prompt.fill('CLIPBOARD_ATTACHMENTS');
+    const submitted = page.waitForRequest(
+      (request) =>
+        request.url() === publicBase + `/v1/sessions/${sid}/runs` && request.method() === 'POST',
+    );
+    await page.locator('#send').click();
+    const body = (await submitted).postDataJSON();
+    assert.equal(body.input, 'CLIPBOARD_ATTACHMENTS');
+    assert.deepEqual(body.attachments.sort(), uploaded.map((file) => file.id).sort());
+    assert.equal(body.attachments.length, 3);
+    await page.locator('#stop').waitFor({ state: 'hidden' });
+    assert.equal(await page.locator('#attachments .chip-name').count(), 0);
+
+    let release, started;
+    const gate = new Promise((resolve) => {
+      release = resolve;
+    });
+    const ready = new Promise((resolve) => {
+      started = resolve;
+    });
+    const destinations = [];
+    await page.route(uploadUrl, async (route) => {
+      destinations.push(route.request().url());
+      if (destinations.length === 1) {
+        started();
+        await gate;
+      }
+      await route.continue();
+    });
+    try {
+      await prompt.fill('Wait for attachments');
+      await pasteFiles(page, [
+        { name: 'switch-first.txt', content: 'first' },
+        { name: 'switch-second.txt', content: 'second' },
+      ]);
+      await ready;
+      await pasteFiles(page, [{ name: 'switch-first.txt', content: 'another paste' }]);
+      assert.equal(destinations.length, 1, 'Repeated pastes queue behind the ongoing upload');
+      assert.ok(await page.locator('#send').isDisabled());
+      const runsBefore = await (
+        await context.request.get(publicBase + `/v1/sessions/${sid}/messages`)
+      ).json();
+      await prompt.press('Enter');
+      const runsAfter = await (
+        await context.request.get(publicBase + `/v1/sessions/${sid}/messages`)
+      ).json();
+      assert.equal(runsAfter.length, runsBefore.length);
+      await page
+        .locator('.session-tab')
+        .filter({ has: page.locator('.session-label', { hasText: originalTitle }) })
+        .click();
+      await page.waitForFunction(
+        (id) => localStorage.getItem('umeko:last-session') === id,
+        originalSid,
+      );
+      await page.locator('#status-dot.ready').waitFor();
+      // Wait for the final queued paste while viewing another session.
+      const batchFinished = page.waitForResponse(
+        async (response) =>
+          response.url().includes('filename=switch-first.txt') &&
+          response.status() === 201 &&
+          (await response.json()).filename === 'switch-first_1.txt',
+      );
+      release();
+      await batchFinished;
+      assert.equal(await page.locator('#attachments .chip-name').count(), 0);
+      assert.equal(await page.locator('.attachment-upload-status').count(), 0);
+      assert.equal(destinations.length, 3);
+      assert.ok(destinations.every((url) => url.includes(`/sessions/${sid}/files?`)));
+      assert.equal(
+        (
+          await context.request.get(
+            publicBase +
+              `/v1/sessions/${originalSid}/workspace/files/raw/attachments/switch-second.txt`,
+          )
+        ).status(),
+        404,
+      );
+      const sessions = await (await context.request.get(publicBase + '/v1/sessions')).json();
+      const clipboardSession = sessions.find((session) => session.id === sid);
+      await page
+        .locator('.session-tab')
+        .filter({ has: page.locator('.session-label', { hasText: clipboardSession.title }) })
+        .click();
+      await page
+        .locator('#attachments .chip-name')
+        .getByText('switch-second.txt', { exact: true })
+        .waitFor();
+      await page
+        .locator('#attachments .chip-name')
+        .getByText('switch-first_1.txt', { exact: true })
+        .waitFor();
+      assert.equal(await page.locator('#attachments .chip-name').count(), 3);
+      const raw = publicBase + `/v1/sessions/${sid}/workspace/files/raw/attachments/`;
+      assert.equal(await (await context.request.get(raw + 'switch-first.txt')).text(), 'first');
+      assert.equal(
+        await (await context.request.get(raw + 'switch-first_1.txt')).text(),
+        'another paste',
+      );
+      await page
+        .locator('.session-tab')
+        .filter({ has: page.locator('.session-label', { hasText: originalTitle }) })
+        .click();
+      await page.locator('#status-dot.ready').waitFor();
+    } finally {
+      release();
+      await page.unroute(uploadUrl);
+    }
+  } finally {
+    page.off('response', onResponse);
+  }
+}
+
 async function composerButtonsFit(page) {
   const boxes = await page.evaluate(() => {
     const rect = (selector) => {
@@ -1166,6 +1430,7 @@ try {
       assert.match(await work.locator('#messages').innerText(), /任务已停止/);
       assert.ok(requests.some((p) => p.startsWith(prefix + '/v1/runs/') && p.endsWith('/cancel')));
       await workspaceDrops(work, context, publicBase, session.id, prefix);
+      await clipboardAttachments(work, context, publicBase, session.id);
       await work.setViewportSize({ width: 390, height: 844 });
       await work.locator('.workbench-title [data-theme-toggle]').click();
       assert.equal(
