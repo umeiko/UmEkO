@@ -136,6 +136,8 @@ python -m umeko.cli
 
 ## 开发
 
+开发约定见 [AGENTS.md](AGENTS.md)，包括 Web、管理面、MCP 与 A2A 的运行时前缀处理和验收要求。
+
 仓库包含已构建的 Vue 前端，普通 Python 部署无需 Node。修改前端后使用 Node 24 构建并提交资源：
 
 ```sh

@@ -31,6 +31,9 @@ def test_mcp_official_client(machine_server, mode):
                     await asyncio.sleep(.05)
                 assert task["status"] == "completed", task
                 artifact = task["artifacts"][0]
+                assert artifact["download_url"].startswith(base + "/v1/tasks/")
+                info = await client.call_tool("get_agent_info", {})
+                assert info.structured_content["supportedInterfaces"][0]["url"] == base + "/a2a"
                 result = await client.call_tool("read_artifact", {"task_id":task["id"],"artifact_id":artifact["id"]})
                 assert "SDK attachment" in result.structured_content["text"]
                 resource = await client.read_resource(artifact["resource_uri"])
@@ -39,6 +42,8 @@ def test_mcp_official_client(machine_server, mode):
                 await client.call_tool("cancel_task", {"task_id":hold.structured_content["id"]})
         async with httpx.AsyncClient(headers={"Authorization":"Bearer " + b["token"]},trust_env=False) as other:
             assert (await other.get(base+'/v1/tasks/'+task['id'])).status_code == 404
+        async with httpx.AsyncClient(headers={"Authorization":"Bearer " + a["token"]},trust_env=False) as http:
+            assert (await http.get(artifact["download_url"])).status_code == 200
     asyncio.run(check())
 
 
@@ -61,6 +66,7 @@ def test_a2a_official_client(machine_server, streaming):
             again = [e async for e in client.send_message(request)]
             assert next(e.task.id for e in again if e.HasField("task")) == task_id
             assert len(app.state.task_service.list({**app.state.identity_store.authenticate(a["token"]), "agent_id": app.state.fixture_agent["id"]})["tasks"]) == 1
+            assert task.artifacts[1].parts[0].url.startswith(base + "/v1/tasks/")
             assert (await http.get(task.artifacts[1].parts[0].url)).status_code == 200
             listing = await client.list_tasks(a2a.ListTasksRequest(status=a2a.TaskState.TASK_STATE_COMPLETED, history_length=0))
             assert listing.total_size == 1 and not listing.tasks[0].history

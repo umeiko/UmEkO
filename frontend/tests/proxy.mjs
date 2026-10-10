@@ -60,6 +60,9 @@ http {
   client_max_body_size 64m;
   client_body_temp_path ${quote(path.join(folder, 'body'))};
   proxy_temp_path ${quote(path.join(folder, 'proxy'))};
+  fastcgi_temp_path ${quote(path.join(folder, 'fastcgi'))};
+  uwsgi_temp_path ${quote(path.join(folder, 'uwsgi'))};
+  scgi_temp_path ${quote(path.join(folder, 'scgi'))};
   server {
     listen 127.0.0.1:${port};
     ${routes

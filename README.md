@@ -165,6 +165,8 @@ private model CAs and the [Red Hat Docker verification lab](scripts/proxy_lab/RE
 
 ## Development
 
+Read [AGENTS.md](AGENTS.md) for development rules, including runtime prefixes for Web, admin, MCP and A2A.
+
 The repository includes the bundled UI, so Python deployments do not need Node.
 After changing frontend source, use Node 24 to rebuild and commit the bundle:
 

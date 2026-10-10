@@ -27,6 +27,6 @@ flowchart LR
 
 生产配置 `UMEKO_PUBLIC_URL`，确保外部 Host 被 MCP 的 DNS 重绑定保护接受，资源 metadata 和下载链接使用正确的域名与前缀。NGINX 保留 Authorization、允许足够请求大小、关闭协议流的缓冲；详情见 [部署指南](../deployment.md)。
 
-验证使用官方 `mcp.client.Client`，覆盖现代与 legacy 客户端、根路径与公司路径前缀、附件、结果、资源和取消；业务身份隔离、容量限制、轮换与过期清理由共享 TaskService 测试覆盖。测试使用受控 Agent 回复，不调用真实模型。
+验证使用官方 `mcp.client.Client`，覆盖现代与 legacy 客户端、根路径与公司路径前缀、附件、结果、资源和取消；业务身份隔离、容量限制、轮换与过期清理由共享 TaskService 测试覆盖。CI 使用真实 NGINX 移除部署前缀后转发，检查 Agent 信息与下载链接包含用户前缀和 Agent 路径，并实际下载产物。OAuth metadata、鉴权提示与令牌 resource 另有根路径/多级前缀、显式外部地址/请求推导的测试。测试使用受控 Agent 回复，不调用真实模型。
 
 接入步骤、工具参数和客户端示例见 [MCP API](../api/mcp.md)。规范参考：[MCP 2026-07-28](https://modelcontextprotocol.io/specification/2026-07-28)、[官方 Python SDK](https://github.com/modelcontextprotocol/python-sdk)、[客户端凭据扩展](https://modelcontextprotocol.io/extensions/auth/oauth-client-credentials)。

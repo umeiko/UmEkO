@@ -3,10 +3,52 @@ import json
 import pytest
 from fastapi.testclient import TestClient
 
+from umeko.config import ModelConfig, Settings
 from umeko.server.admin import create_admin_app
 from umeko.server.agent_card import AgentCards
+from umeko.server.app import create_app
 
 SKILL = "---\nname: image-qc\ndescription: 检查图片内容并生成报告\n---\nPRIVATE: internal instructions\n"
+
+
+@pytest.mark.parametrize("prefix", ["", "/doc-master/consistency/image-text"])
+@pytest.mark.parametrize("explicit_public_url", [False, True])
+def test_protocol_discovery_and_oauth_preserve_service_and_agent_prefixes(tmp_path, prefix, explicit_public_url):
+    public_url = "https://company.internal" + prefix if explicit_public_url else ""
+    settings = Settings(ModelConfig("fixture", "key", "https://unused.invalid"), base_path=prefix,
+                        admin_base_path="/operations/umeko", public_url=public_url)
+    app = create_app(settings, data_root=tmp_path / "data", workspace_root=tmp_path / "output")
+    service = app.state.agent_service
+    definition = service.agent_registry.save({"slug": "prefix-test", "name": "Prefix test",
+                                              "description": "Protocol deployment test", "skill_names": []})
+    route = prefix + "/agent/" + definition["slug"]
+    base = (public_url or "http://127.0.0.1" + prefix) + "/agent/" + definition["slug"]
+    account = service.identity_store.create("test-client", ["tasks:read", "tasks:create", "tasks:cancel"])
+    with TestClient(app, base_url="http://127.0.0.1") as client:
+        discovery = client.get(route + "/").json()
+        assert {key: discovery[key] for key in ("agent_card", "a2a", "mcp", "tasks")} == {
+            "agent_card": base + "/.well-known/agent-card.json", "a2a": base + "/a2a",
+            "mcp": base + "/mcp", "tasks": base + "/v1/tasks"}
+        assert client.get(route + "/.well-known/agent-card.json").json()["supportedInterfaces"][0]["url"] == base + "/a2a"
+        unauthorized = client.post(route + "/mcp", json={})
+        assert unauthorized.status_code == 401
+        assert unauthorized.headers["www-authenticate"] == (
+            'Bearer resource_metadata="' + base + '/.well-known/oauth-protected-resource/mcp"')
+        resource = client.get(route + "/.well-known/oauth-protected-resource/mcp").json()
+        assert resource["resource"] == base + "/mcp" and resource["authorization_servers"] == [base]
+        authorization = client.get(route + "/.well-known/oauth-authorization-server").json()
+        assert authorization["issuer"] == base and authorization["token_endpoint"] == base + "/oauth/token"
+        for target in ("/mcp", "/a2a", "/v1/tasks"):
+            token = client.post(route + "/oauth/token", data={"grant_type": "client_credentials",
+                                "client_id": account["id"], "client_secret": account["token"], "resource": base + target})
+            assert token.status_code == 200
+            bearer = {"Authorization": "Bearer " + token.json()["access_token"]}
+            assert client.get(route + "/v1/tasks", headers=bearer).status_code == (200 if target == "/v1/tasks" else 401)
+        if prefix:
+            missing_prefix = client.post(route + "/oauth/token", data={"grant_type": "client_credentials",
+                                         "client_id": account["id"], "client_secret": account["token"],
+                                         "resource": base.replace(prefix, "", 1) + "/mcp"})
+            assert missing_prefix.status_code == 400 and missing_prefix.json()["error"] == "invalid_target"
 
 
 @pytest.mark.parametrize("machine_app", ["", "/doc-master/consistency/image-text"], indirect=True)

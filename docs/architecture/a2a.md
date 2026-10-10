@@ -49,6 +49,6 @@ Card 由 `AgentCards` 从 `AgentRegistry` 配置生成。管理员在“服务�
 
 `GetTask` 可指定 `historyLength`；`ListTasks` 支持分页、context、状态、更新时间过滤及产物选项。产物下载遵循当前接入方式：需要凭据时检查服务账号权限，免鉴权时可直接读取共享身份的产物。取消和业务连接断开的行为与共享 TaskService 一致。
 
-测试使用官方 ClientFactory 在真实 HTTP 服务上发现 Card、发送附件、接收流式 / 非流式结果、查询、列表和下载，并验证部署前缀与跨调用者隔离。模型业务效果需要配置真实 Provider 后另行验证。
+测试使用官方 ClientFactory 在真实 HTTP 服务上发现 Card、发送附件、接收流式 / 非流式结果、查询、列表和下载，并验证部署前缀与跨调用者隔离。CI 的前缀场景经过真实 NGINX，移除前缀后转到 Uvicorn；检查 Card 与产物链接包含完整用户前缀和 Agent 路径，域名根下遗漏前缀的请求返回 404。模型业务效果需要配置真实 Provider 后另行验证。
 
 请求示例见 [A2A API](../api/a2a.md)。规范参考：[A2A 1.0.1](https://a2a-protocol.org/v1.0.1/specification/)、[官方 Python SDK](https://github.com/a2aproject/a2a-python)。
