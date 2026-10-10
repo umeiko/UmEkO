@@ -1,6 +1,6 @@
 ---
 name: doc-image-qc
-description: 图文 Markdown 大文档的图片质检流水线。触发场景：用户要求检查文档中的图片、图文一致性核对、图片合规审查、生成质检报告，且文档大（数百 KB 或上百图）超出主 Agent 上下文时。核心约束：主 Agent 只做编排调度，永不读原文全文；子 Agent 逐图即焚；结论以 JSON 增量落盘支持断点续跑；最终 HTML 报告由确定性工具 render_qc_report 渲染。
+description: 检查单张或多张图片、Markdown 图文文档及文档压缩包中的图片质量、图文一致性与可见问题，生成质检报告。只在图片检查或报告任务中使用；问候、代码编写和其他无关任务不适用。大文档分批提取清单、逐图检查，结论落盘支持断点续跑。
 ---
 
 # 图文文档图片质检流水线
@@ -13,9 +13,9 @@ description: 图文 Markdown 大文档的图片质检流水线。触发场景：
 
 | 角色 | 职责 | 上下文预算 |
 |---|---|---|
-| 主 Agent（你） | 编排、派发、读结论行、调 render_qc_report | 每图只保留 1 行结论 |
+| 主 Agent（你） | 编排、派发、读结论行、调 run_skill_script | 每图只保留 1 行结论 |
 | 子 Agent（delegate_task） | 读清单 / 质检图片 / 追加 JSON 结论 | 用完即焚，随便烧 |
-| render_qc_report 工具 | JSON 数据 → HTML 报告（确定性模板） | 零推理消耗 |
+| render_report.py 脚本 | JSON 数据 → HTML / JSON / ZIP 报告 | 零推理消耗 |
 
 ## 阶段 0：准备（主 Agent 直接做）
 
@@ -26,6 +26,13 @@ description: 图文 Markdown 大文档的图片质检流水线。触发场景：
    `archive_tool`（operation=`list`）查看包内结构，再 `archive_tool`（operation=`extract`）
    解压到 workspace，然后从解压出的 Markdown 文档开始质检；包内若有多份文档，
    逐份跑完整流水线，报告按文档分别生成。图片已在压缩包目录里的直接用相对路径引用，不要移动文件。
+
+### 只有图片，没有 Markdown 文档
+
+不要求用户额外制作 Markdown。列出上传的图片，直接建立 `generate/qc-manifest.md`，记录文件路径、用户给出的检查要求和描述；之后继续阶段 2 和阶段 3。
+多张图片来自不同目录时，JSON 的 `image` 使用 Session 相对路径（如 `attachments/sample.png`），报告的 `doc_dir` 留空，`document` 可写 `image-inspection`。
+没有配套正文的图文一致性项、没有参考产品资料的“与真实界面一致”项，应记 `NA` 并说明缺少参照，不能编造文字或把未检查记为通过。
+图片类型不确定时先做通用检查，只对有依据的专用检查项下结论。
 
 ## 阶段 1：提取图片清单（子 Agent #1）
 
@@ -40,6 +47,8 @@ description: 图文 Markdown 大文档的图片质检流水线。触发场景：
 >    如 `images/p0014_003.png`）、所在行号、关联描述原文。不写质检结论。
 > 4. 按 `checks.md`（read_pack_file 可读）的分组（通用/原理图/组网图/界面截图）给每张图
 >    标注适用检查项（依据 alt 文本与上下文判断图片类型，可多选）。
+>    用户本轮另外上传或粘贴并要求检查的图片也加入清单，即使未被 Markdown 引用；
+>    这些图片使用 `attachments/<实际文件名>` 等 Session 相对路径，不要省略目录。
 > 5. 汇报：图片总数、清单路径、本地/外链/缺失分类。
 
 外链图（http/https）在清单里标注 `外链`，后续不检。
@@ -55,6 +64,7 @@ description: 图文 Markdown 大文档的图片质检流水线。触发场景：
 >    原理图类加 S1-S3，组网图类加 N1-N2，界面截图类加 U 组全部（当前 U1-U5，含 U5 界面术语一致性）——按清单阶段 1
 >    标注的分组选取。每项独立给 PASS/WARN/FAIL 结论与一句话依据，不要泛泛而谈；
 >    事实性不一致（含术语与正文不符）一律 FAIL，遵守 checks.md 的判定级别纪律。
+>    缺少必要参照的检查项用 NA，说明缺少的材料；对看不清或无法确认的内容不要猜测。
 > 3. 把该图的结论**追加**到 `generate/qc-report.json`（先 `read_document` 读现有
 >    JSON，把新条目加入 items 数组后 `write_file` 整体写回；文件不存在则新建骨架：
 >    `{"document":"<文档路径>","checked_at":"<时间>","vision_model":"<模型名>","items":[]}`）。
@@ -66,7 +76,9 @@ description: 图文 Markdown 大文档的图片质检流水线。触发场景：
 >                {"id": "N1", "name": "组网图正确性", "status": "WARN", "note": "…"}],
 >     "detail": "建议（可选）"}
 >    ```
->    注意 image 字段用**文档内的原始引用路径**（渲染时直接作为相对 src）。
+>    文档配图的 image 使用**文档内的原始引用路径**，按 doc_dir 解析；直接上传、粘贴的
+>    图片使用 `attachments/<实际文件名>` 等 Session 相对路径，不拼到文档目录下。
+>    不要只写附件文件名，也不要移动图片来凑相对路径。
 > 4. 用 `write_file` 覆盖 `generate/qc-progress.md`（读旧内容 + 追加本图一行
 >    `图名|状态` 整体写回）。
 > 5. 汇报只回一行：`<图片名> | PASS/FAIL/WARN | 一句话最关键问题`。
@@ -86,9 +98,12 @@ description: 图文 Markdown 大文档的图片质检流水线。触发场景：
 - script: `render_report.py`
 - args: `{"data_path": "generate/qc-report.json", "doc_dir": "<被检 Markdown 所在的 Session 相对目录，如 workspace/md>"}`
 
-脚本产物**只写 generate/**（不污染被检文档目录）：
+单图 / 多图检查无文档目录时，`doc_dir` 使用空字符串。脚本产物**只写 generate/**（不污染被检文档目录）：
 1. **generate/** `qc-report-<文档名>.html` + `.json`；
-2. **generate/** `qc-report-<文档名>.zip`（自包含：HTML + JSON + 全部图片按相对结构打包，下载解压后双击 HTML 即可阅读，图片正常显示）。
+2. **generate/** `qc-report-<文档名>.zip`（自包含：HTML + JSON + 本报告引用的文档配图及直接上传/粘贴附件，按 Session 目录结构打包，下载解压后双击 HTML 即可阅读）。
+
+脚本会规范报告中的图片路径并附上检查项说明。如果返回“图片未打包”提示，先检查清单、
+JSON 路径和文件是否存在，修正后重新渲染；不要把缺图的 ZIP 当作完整交付。不需要重新调用视觉模型。
 
 文档目录只读（图片从那里读取打包），任何情况下不要把产物写到文档目录。然后向用户交付：**generate/ 的 zip 路径（主交付物，提示下载解压查看）** + 统计数字（PASS/WARN/FAIL 各多少）+ 最严重的 3 个问题（每条一句话）。不要引导用户在应用内预览 HTML。
 

@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 import json
+import hashlib
 import os
 from pathlib import Path
 import subprocess
@@ -112,6 +113,69 @@ def test_upgrade_reuses_custom_skill_and_preserves_existing_agent(tmp_path, exis
     assert not install_builtin_agents(registry, library)
 
 
+@pytest.mark.parametrize("initialized", [False, True])
+@pytest.mark.parametrize("newline", ["\n", "\r\n"])
+def test_upgrade_replaces_only_recognized_stock_report(tmp_path, monkeypatch, initialized, newline):
+    from umeko.host import builtin_agents
+
+    store = Store(tmp_path / "db.sqlite")
+    registry = AgentRegistry(store)
+    library = Path(os.environ["UMEKO_SKILL_DIR"])
+    script = library / "doc-image-qc/render_report.py"
+    script.parent.mkdir(parents=True)
+    # Register a controlled old stock version; real stock digests are fixed in the installer.
+    stock = "# Stock report v1\nprint('old report')\n"
+    script.write_bytes(stock.replace("\n", newline).encode("utf-8"))
+    monkeypatch.setattr(builtin_agents, "_STOCK_REPORT_DIGESTS", {hashlib.sha256(stock.encode()).hexdigest()})
+    checks = script.with_name("checks.md")
+    checks.write_text("Custom checklist", encoding="utf-8")
+    if initialized:
+        store.set_config({INSTALL_KEY: "1"})
+    assert install_builtin_agents(registry, library)
+    assert script.read_bytes() == (ASSETS / "doc-image-qc/render_report.py").read_bytes()
+    assert checks.read_text(encoding="utf-8") == "Custom checklist"
+    assert not install_builtin_agents(registry, library)
+    script.write_text("# Customized report", encoding="utf-8")
+    assert not install_builtin_agents(registry, library)
+    assert script.read_text(encoding="utf-8") == "# Customized report"
+    script.unlink()
+    assert not install_builtin_agents(registry, library)
+    assert not script.exists()
+
+
+def test_stock_skill_upgrade_preserves_customizations_and_disabling(tmp_path, monkeypatch):
+    from umeko.host import builtin_agents
+
+    store = Store(tmp_path / "db.sqlite")
+    registry = AgentRegistry(store)
+    library = Path(os.environ["UMEKO_SKILL_DIR"])
+    library.mkdir()
+    source = library / "doc-image-qc.md"
+    stock = "---\nname: doc-image-qc\ndescription: Old stock QC\n---\nOLD STOCK STEPS"
+    monkeypatch.setattr(builtin_agents, "_STOCK_SKILL_DIGESTS", {hashlib.sha256(stock.encode()).hexdigest()})
+    source.write_text(stock, encoding="utf-8")
+    store.upsert_default_skill("doc-image-qc.md", stock)
+    store.set_default_skill_enabled("doc-image-qc.md", False)
+    store.set_config({INSTALL_KEY: "1"})
+    assert install_builtin_agents(registry, library)
+    latest = (ASSETS / "doc-image-qc.md").read_text(encoding="utf-8")
+    assert source.read_text(encoding="utf-8") == store.default_skill("doc-image-qc.md") == latest
+    assert not store.default_skills()[0]["enabled"]
+    assert not install_builtin_agents(registry, library)
+    store.upsert_default_skill("doc-image-qc.md", "Custom DB skill")
+    assert not install_builtin_agents(registry, library)
+    assert store.default_skill("doc-image-qc.md") == "Custom DB skill"
+    source.write_text("Custom library skill", encoding="utf-8")
+    store.upsert_default_skill("doc-image-qc.md", stock)
+    assert not install_builtin_agents(registry, library)
+    assert source.read_text(encoding="utf-8") == "Custom library skill"
+    assert store.default_skill("doc-image-qc.md") == stock
+    source.unlink()
+    store.delete_default_skill("doc-image-qc.md")
+    assert not install_builtin_agents(registry, library)
+    assert not source.exists() and store.default_skill("doc-image-qc.md") is None
+
+
 @pytest.mark.parametrize("doc_dir", ["", "workspace/docs"])
 @pytest.mark.parametrize("frozen", [False, True])
 def test_bundled_report_renders_and_packages_images(tmp_path, doc_dir, frozen, monkeypatch):
@@ -149,9 +213,13 @@ def test_bundled_report_renders_and_packages_images(tmp_path, doc_dir, frozen, m
     html = (generate / "qc-report-image-inspection.html").read_text(encoding="utf-8")
     expected_src = "../" + (doc_dir + "/" if doc_dir else "") + relative_image
     assert f'src="{expected_src}"' in html
+    assert '<span class="check-name">Consistency</span>' in html
+    assert "图片内容与文中临近描述是否一致" in html
     with zipfile.ZipFile(generate / "qc-report-image-inspection.zip") as archive:
-        assert archive.read(relative_image) == b"image fixture bytes"
+        archive_image = (Path(doc_dir) / relative_image).as_posix()
+        assert archive.read(archive_image) == b"image fixture bytes"
         assert "No reference document" in archive.read("qc-report.html").decode()
+        assert "检查项说明" in archive.read("qc-report.html").decode()
     assert not (image.parent / "qc-report.html").exists()
     assert service._skills_library_dir().joinpath("doc-image-qc/render_report.py").is_file()
 

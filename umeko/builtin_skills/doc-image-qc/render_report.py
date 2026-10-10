@@ -17,6 +17,7 @@ args: {"data_path": "<qc-report.json 的 Session 相对路径>",
 人类可读性要点：
 - 逐项 checks[] 渲染：每个检查项独立徽章按自身 PASS/WARN/FAIL 着色（不做文本猜测）
 - 逐图 × 检查项 verdict 矩阵总览
+- 矩阵直接展示编号与名称，检查范围从同包 checks.md 读取并写入离线报告
 - 缩略图点击放大（lightbox）
 - meta 容错：checked_at 缺失/异常显示"未记录"；vision_model 为工具名时显示"未记录"；
   footer 生成时间取脚本本地运行时刻
@@ -31,6 +32,7 @@ import re
 import sys
 import zipfile
 from pathlib import Path
+from urllib.parse import quote
 
 
 # ---------- 模板（与平台米纸绿墨风格一致） ----------
@@ -78,12 +80,31 @@ _TEMPLATE = """<!DOCTYPE html>
     border-radius: 10px; margin-top: 2px; }}
   .sev.high {{ color: var(--fail); background: var(--fail-bg); }}
   .sev.mid {{ color: var(--warn); background: var(--warn-bg); }}
+  .matrix-scroll {{ overflow-x: auto; margin-bottom: 12px; }}
   table.matrix {{ width: 100%; border-collapse: collapse; background: var(--panel);
     border: 1px solid var(--line); border-radius: 10px; overflow: hidden; font-size: 12.5px; }}
   table.matrix th, table.matrix td {{ border: 1px solid var(--line); padding: 7px 10px;
     text-align: center; }}
   table.matrix th {{ background: #efece2; font-weight: 600; }}
+  table.matrix th .check-id {{ display: block; color: var(--accent); }}
+  table.matrix th .check-name {{ display: block; min-width: 7em; }}
   table.matrix td.img {{ text-align: left; font: 600 12px ui-monospace, monospace; }}
+  .matrix-note {{ color: #4a5a52; margin-bottom: 10px; }}
+  .check-legend {{ background: var(--panel); border: 1px solid var(--line);
+    border-radius: 10px; padding: 14px 16px; }}
+  .check-legend > summary {{ cursor: pointer; font-weight: 600; }}
+  .check-legend dl {{ display: grid; grid-template-columns: repeat(2, minmax(0, 1fr));
+    gap: 14px 24px; margin-top: 14px; }}
+  .check-legend dt {{ font-weight: 600; }}
+  .check-legend dt code {{ color: var(--accent); margin-right: 6px; }}
+  .check-legend .group {{ color: var(--muted); font-size: 12px; margin-left: 8px;
+    font-weight: 400; }}
+  .check-legend dd {{ color: #4a5a52; margin-top: 3px; overflow-wrap: anywhere; }}
+  .asset-warning {{ background: var(--warn-bg); border: 1px solid #b8860b55;
+    border-radius: 10px; padding: 14px 16px; margin-bottom: 22px; }}
+  .asset-warning h2 {{ font-size: 16px; }}
+  .asset-warning ul {{ padding-left: 22px; overflow-wrap: anywhere; }}
+  @media (max-width: 720px) {{ .check-legend dl {{ grid-template-columns: 1fr; }} }}
   .cell {{ display: inline-block; min-width: 34px; padding: 1px 6px; border-radius: 8px;
     font-size: 11px; font-weight: 700; }}
   .cell.PASS {{ color: var(--pass); background: var(--pass-bg); }}
@@ -170,12 +191,13 @@ _TEMPLATE = """<!DOCTYPE html>
   </header>
   {stats_html}
   {filters_html}
+  {assets_html}
   {actions_html}
   {matrix_html}
   {items_html}
   <p id="no-match" hidden style="text-align:center;color:var(--muted);padding:40px 0;">当前筛选条件下没有图片。</p>
   <footer>
-    <span>UMEKO · doc-image-qc · 报告与源文档同级存放，图片为相对路径引用（点击缩略图放大）</span>
+    <span>UMEKO · doc-image-qc · ZIP 解压后打开 HTML，图片按会话目录结构随报告打包（点击缩略图放大）</span>
     <span>报告生成于 {generated_at} · 详尽数据见 qc-report.json</span>
   </footer>
 </div>
@@ -211,9 +233,8 @@ _TEMPLATE = """<!DOCTYPE html>
     document.getElementById('no-match').hidden = visible > 0;
     document.getElementById('filter-count').textContent = visible + ' / ' + items.length;
     // 矩阵行同步隐藏（若有矩阵）
-    document.querySelectorAll('table.matrix tbody tr').forEach(function(tr) {{
-      var img = tr.getAttribute('data-img') || '';
-      var el = items.filter(function(x) {{ return x.dataset.img === img; }})[0];
+    document.querySelectorAll('table.matrix tbody tr').forEach(function(tr, index) {{
+      var el = items[index];
       tr.hidden = el ? el.hidden : false;
     }});
   }}
@@ -257,6 +278,54 @@ def _esc(value):
     return html.escape(str(value or ""))
 
 
+def _plain(value):
+    """清单表格中的少量 Markdown 标记转为纯文本，输出时再统一 HTML 转义。"""
+    return value.replace("\\|", "|").replace("**", "").replace("`", "").strip()
+
+
+def _check_catalog():
+    """与执行检查共用技能包清单，不在渲染器中另写一套编号定义。"""
+    try:
+        text = Path(__file__).with_name("checks.md").read_text(encoding="utf-8-sig")
+    except (OSError, UnicodeError):
+        return {}
+    catalog = {}
+    group = ""
+    for line in text.splitlines():
+        if line.startswith("## "):
+            group = _plain(line[3:])
+        if not line.strip().startswith("|"):
+            continue
+        cells = [_plain(cell) for cell in re.split(r"(?<!\\)\|", line.strip().strip("|"))]
+        if len(cells) < 3 or not re.fullmatch(r"[A-Za-z]+\d+", cells[0]):
+            continue
+        catalog[cells[0]] = {
+            "name": cells[1], "description": cells[2], "group": group,
+            "remark": cells[3] if len(cells) > 3 else "",
+        }
+    return catalog
+
+
+def _check_definitions(items):
+    """只解释本报告出现的编号，保留报告中的名称及自定义检查说明。"""
+    catalog = _check_catalog()
+    definitions = {}
+    for item in items:
+        for check in item.get("checks") or []:
+            cid = str(check.get("id") or "").strip()
+            if not cid:
+                continue
+            definition = definitions.setdefault(cid, {"name": "", "description": "", **catalog.get(cid, {})})
+            for field in ("name", "description"):
+                value = str(check.get(field) or "").strip()
+                if value:
+                    definition[field] = value
+    for definition in definitions.values():
+        definition["name"] = definition["name"] or "未命名检查项"
+        definition["description"] = definition["description"] or "未提供检查范围，请参阅下方该项的检查依据。"
+    return definitions
+
+
 def _stats_html(counts):
     total = sum(counts.values())
     cells = [
@@ -275,22 +344,13 @@ def _stats_html(counts):
     return '<div class="stats">{}</div>'.format("".join(cells))
 
 
-def _filters_html(counts, items):
+def _filters_html(counts, items, definitions):
     """筛选条：状态按钮组（按图级状态）+ 检查项下拉（按逐项 check_id）+ 重置 + 计数"""
     def st_count(k):
         return counts.get(k, 0)
     other = sum(v for k, v in counts.items()
                 if k not in ("PASS", "WARN", "FAIL"))
-    # 检查项选项（从 checks[] 收集，保持出现顺序）
-    check_ids = []
-    check_names = {}
-    for item in items:
-        for c in item.get("checks") or []:
-            cid = str(c.get("id", ""))
-            if cid and cid not in check_ids:
-                check_ids.append(cid)
-                check_names[cid] = str(c.get("name", ""))
-    has_checks = bool(check_ids)
+    has_checks = bool(definitions)
     buttons = [
         ('<button type="button" class="fbtn on" data-st="all">全部<span class="cnt">{}</span></button>'
          .format(sum(counts.values()))),
@@ -308,9 +368,9 @@ def _filters_html(counts, items):
     check_dd = ""
     if has_checks:
         opts = ['<option value="all">全部检查项</option>']
-        for cid in check_ids:
+        for cid, definition in definitions.items():
             opts.append('<option value="{cid}">{cid} · {name}</option>'.format(
-                cid=_esc(cid), name=_esc(check_names[cid])))
+                cid=_esc(cid), name=_esc(definition["name"])))
         check_dd = ('<span class="flabel">检查项</span>'
                     '<select id="check-filter">{}</select>'.format("".join(opts)))
     return (
@@ -350,58 +410,78 @@ def _actions_html(items):
     ).format(n=n_fail + sum(1 for i in items if i.get("status") == "WARN"), rows="".join(rows))
 
 
-def _matrix_html(items):
+def _matrix_html(items, definitions):
     """逐图 × 检查项 verdict 矩阵（有 checks[] 时生成）"""
-    col_ids = []
-    col_names = {}
-    for item in items:
-        for c in item.get("checks") or []:
-            cid = str(c.get("id", ""))
-            if cid and cid not in col_ids:
-                col_ids.append(cid)
-                col_names[cid] = str(c.get("name", ""))
+    col_ids = list(definitions)
     if not col_ids:
         return ""
-    head = ('<tr><th style="text-align:left">图片</th>' +
-            "".join('<th title="{}">{}</th>'.format(_esc(col_names[c]), _esc(c))
-                    for c in col_ids) + "</tr>")
+    head = ('<thead><tr><th scope="col" style="text-align:left">图片</th>' +
+            "".join('<th scope="col"><span class="check-id">{}</span>'
+                    '<span class="check-name">{}</span></th>'.format(
+                        _esc(cid), _esc(definitions[cid]["name"]))
+                    for cid in col_ids) + "</tr></thead>")
     rows = []
     for item in items:
-        cells = {str(c.get("id", "")): str(c.get("status", "NA"))
+        cells = {str(c.get("id") or "").strip(): str(c.get("status", "NA"))
                  for c in item.get("checks") or []}
         tds = []
         for cid in col_ids:
-            st = cells.get(cid, "NA")
+            if cid not in cells:
+                tds.append('<td><span class="cell absent">—</span></td>')
+                continue
+            st = cells[cid]
             if st not in ("PASS", "WARN", "FAIL"):
                 st = "NA"
             tds.append('<td><span class="cell {st}">{st}</span></td>'.format(st=st))
         rows.append('<tr data-img="{}"><td class="img">{}</td>{}</tr>'.format(
             _esc(item.get("image", "")), _esc(item.get("image", "")), "".join(tds)))
-    return ('<div class="section"><h2>逐图 × 检查项 判定矩阵</h2>'
-            '<table class="matrix">{}{}</table></div>').format(head, "".join(rows))
+    legend = []
+    for cid, definition in definitions.items():
+        group = ('<span class="group">{}</span>'.format(_esc(definition["group"]))
+                 if definition.get("group") else "")
+        remark = ('<br>补充：{}'.format(_esc(definition["remark"]))
+                  if definition.get("remark") else "")
+        legend.append('<div><dt><code>{cid}</code>{name}{group}</dt>'
+                      '<dd>{description}{remark}</dd></div>'.format(
+                          cid=_esc(cid), name=_esc(definition["name"]), group=group,
+                          description=_esc(definition["description"]), remark=remark))
+    return (
+        '<div class="section"><h2>逐图 × 检查项 判定矩阵</h2>'
+        '<p class="matrix-note">每行是一张图片，每列是一项检查。编号用于对应检查清单，'
+        '字母区分类别，数字是类别内的序号，不是评分。</p>'
+        '<div class="matrix-scroll"><table class="matrix">{head}<tbody>{rows}</tbody></table></div>'
+        '<p class="matrix-note">PASS：通过；WARN：已确认的轻微问题；FAIL：未通过；'
+        'NA：未检查（如缺少必要参照）；—：本图未列入该项检查。'
+        'NA 和 — 均不表示通过，具体原因见逐图检查依据。</p>'
+        '<details class="check-legend" open><summary>检查项说明 · {n} 项</summary>'
+        '<dl>{legend}</dl></details></div>'
+    ).format(head=head, rows="".join(rows), n=len(definitions), legend="".join(legend))
 
 
-def _item_html(item):
+def _item_html(item, definitions, missing_images):
     status = _esc(item.get("status", "ERROR"))
     image = _esc(item.get("image", ""))
     loc = _esc(item.get("loc", ""))
-    if status in {"MISSING", "ERROR", "SKIP"}:
+    missing_reason = missing_images.get(str(item.get("image", "")))
+    if missing_reason or status in {"MISSING", "ERROR", "SKIP"}:
         thumb = '<div class="thumb"><div class="noimg">{}</div></div>'.format(
+            _esc("图片未打包：" + missing_reason) if missing_reason else
             "图片文件缺失" if status == "MISSING" else "未检查")
     else:
         # 不用 str.format（JS 花括号会打架），占位符替换
-        thumb = ('<div class="thumb"><img src="{SRC}" alt="{SRC}" '
+        thumb = ('<div class="thumb"><img src="{SRC}" alt="{ALT}" '
                  'onerror="this.replaceWith(Object.assign('
                  "document.createElement('div'),"
                  "{className:'noimg',textContent:'图片加载失败'}))\"></div>"
-                 ).replace("{SRC}", image)
+                 ).replace("{SRC}", _esc(_image_url(str(item.get("image", ""))))).replace("{ALT}", image)
     checks = []
     # 新格式：checks 数组（按检查项维度，含编号/名称/状态/依据）——徽章逐项着色
     check_items = item.get("checks")
     if isinstance(check_items, list) and check_items:
         for c in check_items:
-            cid = _esc(c.get("id", ""))
-            name = _esc(c.get("name", ""))
+            raw_cid = str(c.get("id") or "").strip()
+            cid = _esc(raw_cid)
+            name = _esc(c.get("name") or definitions.get(raw_cid, {}).get("name", ""))
             text = _esc(c.get("note", ""))
             st = _esc(c.get("status", "")) or "NA"
             st_cls = st if st in ("PASS", "WARN", "FAIL", "NA") else "NA"
@@ -426,7 +506,7 @@ def _item_html(item):
     raw_status = str(item.get("status", "ERROR"))
     status_key = raw_status if raw_status in ("PASS", "WARN", "FAIL") else "OTHER"
     raw_checks = item.get("checks")
-    cids = " ".join(str(c.get("id", "")) for c in raw_checks) if isinstance(raw_checks, list) else ""
+    cids = " ".join(str(c.get("id") or "").strip() for c in raw_checks) if isinstance(raw_checks, list) else ""
     return (
         '<div class="item" data-status="{sk}" data-checks="{cids}" data-img="{img}">'
         '<div class="item-head"><span class="badge {status}">{status}</span>'
@@ -449,6 +529,9 @@ def _clean_meta(data):
 
 def render_report_html(data):
     items = data.get("items", [])
+    missing = data.get("packaging", {}).get("missing_images", [])
+    missing_images = {entry["image"]: entry["reason"] for entry in missing}
+    definitions = _check_definitions(items)
     counts = {}
     for item in items:
         counts[item.get("status", "ERROR")] = counts.get(item.get("status", "ERROR"), 0) + 1
@@ -462,32 +545,32 @@ def render_report_html(data):
         vision_model=_esc(vision),
         generated_at=generated_at,
         stats_html=_stats_html(counts),
-        filters_html=_filters_html(counts, items),
+        filters_html=_filters_html(counts, items, definitions),
+        assets_html=(
+            '<div class="asset-warning"><h2>图片未完整打包 · {} 张</h2>'
+            '<p>以下图片未包含在 ZIP 中，请补齐文件或修正路径后重新生成报告。</p><ul>{}</ul></div>'
+        ).format(len(missing), "".join('<li><b>{}</b>：{}</li>'.format(
+            _esc(entry["image"]), _esc(entry["reason"])) for entry in missing)) if missing else "",
         actions_html=_actions_html(items),
-        matrix_html=_matrix_html(items),
-        items_html="".join(_item_html(i) for i in items) or
+        matrix_html=_matrix_html(items, definitions),
+        items_html="".join(_item_html(i, definitions, missing_images) for i in items) or
                    '<p class="noimg">没有检查项。</p>',
     )
 
 
-def _iter_local_images(data):
-    """items 里引用的本地图片相对路径（跳过外链与越界路径）"""
-    for item in data.get("items", []):
-        src = str(item.get("image", "")).strip()
-        if not src or src.lower().startswith(("http://", "https://", "data:")):
-            continue
-        rel = Path(src)
-        if rel.is_absolute() or ".." in rel.parts:
-            continue
-        yield src
+def _is_remote(src):
+    return src.lower().startswith(("http://", "https://", "data:"))
 
 
-def _rewrite_src_for_generate(html_text, data, doc_dir_rel):
-    """generate/ 副本：图片引用改写为 ../<doc_dir>/<img>（raw 端点按会话相对路径解析）"""
-    prefix = "../" + (doc_dir_rel.rstrip("/") + "/" if doc_dir_rel else "")
-    for src in _iter_local_images(data):
-        html_text = html_text.replace('src="{}"'.format(_esc(src)),
-                                      'src="{}{}"'.format(prefix, _esc(src)))
+def _image_url(src):
+    return src if _is_remote(src) else quote(src, safe="/")
+
+
+def _rewrite_src_for_generate(html_text, assets):
+    """ZIP 图片均使用会话相对路径，generate/ 的预览在同一路径前加 ../。"""
+    for src in assets:
+        html_text = html_text.replace('src="{}"'.format(_esc(_image_url(src))),
+                                      'src="{}"'.format(_esc(_image_url("../" + src))))
     return html_text
 
 
@@ -501,30 +584,55 @@ def _session_path(path, session_root, *, allow_root=False):
     return target
 
 
-def _pack_zip(zip_path, html_text, data, out_dir, session_root):
-    """自包含 ZIP：HTML（保持原始相对引用）+ JSON + 全部本地图片（保持相对结构）"""
-    packed = skipped = 0
+def _prepare_images(data, doc_dir, session_root):
+    """解析两种图片基址，规范为会话相对路径，避免同名文件冲突和越界打包。"""
+    assets = {}
+    missing = {}
+    items = []
+    for original in data.get("items", []):
+        item = dict(original)
+        src = str(item.get("image", "")).strip()
+        if not src or _is_remote(src):
+            items.append(item)
+            continue
+        try:
+            path = Path(src.replace("\\", "/"))
+            # 附件及其他显式 Session 路径不应拼到 Markdown 的 doc_dir 下。
+            session_relative = path.parts and path.parts[0] in {"workspace", "attachments", "generate"}
+            base = session_root if session_relative or path.is_absolute() else doc_dir
+            if base == session_root and len(path.parts) == 1 and not session_relative:
+                base = session_root / "attachments"
+            resolved = _session_path(base / path, session_root)
+            # 兼容旧报告只写粘贴附件的文件名：仅按精确文件名查附件，不做全目录猜测。
+            if not resolved.is_file() and len(path.parts) == 1:
+                attachment = _session_path(session_root / "attachments" / path, session_root)
+                if attachment.is_file():
+                    resolved = attachment
+            canonical = resolved.relative_to(session_root).as_posix()
+            item["image"] = canonical
+            if canonical != src and not path.is_absolute():
+                item.setdefault("source_image", src)
+            if resolved.is_file():
+                assets[canonical] = resolved
+            else:
+                missing[canonical] = "文件不存在"
+        except (ValueError, OSError):
+            missing[src] = "路径无效或超出当前会话的文件目录"
+        items.append(item)
+    report = {**data, "items": items, "packaging": {
+        "packed_images": len(assets),
+        "missing_images": [{"image": src, "reason": reason} for src, reason in missing.items()],
+    }}
+    return report, assets
+
+
+def _pack_zip(zip_path, html_text, data, assets):
+    """自包含 ZIP：HTML + JSON + 解析成功的文档配图及附件，统一保持会话目录结构。"""
     with zipfile.ZipFile(zip_path, "w", zipfile.ZIP_DEFLATED) as zf:
         zf.writestr("qc-report.html", html_text)
         zf.writestr("qc-report.json", json.dumps(data, ensure_ascii=False, indent=2))
-        seen = set()
-        for src in _iter_local_images(data):
-            arc = Path(src).as_posix()
-            if arc in seen:
-                continue
-            seen.add(arc)
-            try:
-                fp = _session_path(out_dir / src, session_root)
-                fp.relative_to(out_dir.resolve())
-            except ValueError:
-                skipped += 1
-                continue
-            if fp.is_file():
-                zf.write(fp, arc)
-                packed += 1
-            else:
-                skipped += 1
-    return packed, skipped
+        for relative, path in assets.items():
+            zf.write(path, relative)
 
 
 def emit(obj):
@@ -567,6 +675,7 @@ def main():
     # 不向文档目录写任何产物——所有输出只落 generate/
 
     try:
+        data, assets = _prepare_images(data, doc_dir_abs, session_root)
         html_text = render_report_html(data)
     except Exception as e:
         emit({"ok": False, "result": f"渲染失败：{e}", "files": []})
@@ -575,16 +684,15 @@ def main():
     # ---- generate/ 交付区（唯一产物位置）：HTML + JSON + 自包含 ZIP ----
     doc_stem = re.sub(r'[\\/:*?"<>|]+', "_", Path(document := str(data.get("document", ""))).stem) or "report"
     gen_files: list[str] = []
-    doc_dir_rel = ""
-    if doc_dir_abs != session_root:
-        doc_dir_rel = doc_dir_abs.relative_to(session_root).as_posix()
     try:
         gen_html = workdir / f"qc-report-{doc_stem}.html"
-        gen_html.write_text(_rewrite_src_for_generate(html_text, data, doc_dir_rel), encoding="utf-8")
+        gen_html.write_text(_rewrite_src_for_generate(html_text, assets), encoding="utf-8")
         gen_json = workdir / f"qc-report-{doc_stem}.json"
         gen_json.write_text(json.dumps(data, ensure_ascii=False, indent=2), encoding="utf-8")
         zip_path = workdir / f"qc-report-{doc_stem}.zip"
-        packed, skipped = _pack_zip(zip_path, html_text, data, doc_dir_abs, session_root)
+        _pack_zip(zip_path, html_text, data, assets)
+        packed = len(assets)
+        skipped = len(data["packaging"]["missing_images"])
         gen_files = [gen_html.name, gen_json.name, zip_path.name]
         print(f"generate 交付：{gen_html.name} / {gen_json.name} / {zip_path.name}"
               f"（ZIP 内图片 {packed} 张{f'，跳过 {skipped} 张' if skipped else ''}）", file=sys.stderr)
@@ -600,7 +708,10 @@ def main():
     emit({
         "ok": True,
         "result": f"HTML 报告已生成（{summary}），产物全部位于 generate/："
-                  + "、".join(gen_files),
+                  + "、".join(gen_files)
+                  + ("。注意：以下图片未打包：" + "；".join(
+                      entry["image"] + "（" + entry["reason"] + "）"
+                      for entry in data["packaging"]["missing_images"]) if skipped else ""),
         "files": [f"generate/{n}" for n in gen_files],
     })
 
