@@ -31,7 +31,7 @@ def _bootstrap_admin(store, logger: logging.Logger) -> None:
 def _serve_admin(app, host: str, port: int) -> None:
     import uvicorn
 
-    uvicorn.run(app, host=host, port=port, log_level="warning")
+    uvicorn.run(app, host=host, port=port, log_level="warning", root_path=app.root_path)
 
 
 def main() -> None:
@@ -68,6 +68,7 @@ def main() -> None:
             "# 模型地址、密钥、模型名在管理面 Provider / Model 或 CLI 中配置。\n"
             "# 部署配置（修改后重启；本地开发前缀/CA 保持为空）\n"
             "UMEKO_BASE_PATH=\n"
+            "UMEKO_ADMIN_BASE_PATH=\n"
             "UMEKO_PUBLIC_URL=\n"
             "MODEL_CA_FILE=\n"
             "UMEKO_DATA_ROOT=server_data\n"
@@ -82,8 +83,8 @@ def main() -> None:
             logger.info("检测到未配置模型：已生成 .env 模板（%s）", env_path)
             logger.info(
                 "模型配置：打开管理面 "
-                "http://%s:%d 用默认账号登录，在 Provider/Model 页添加",
-                args.admin_host, args.admin_port,
+                "http://%s:%d%s/ 用默认账号登录，在 Provider/Model 页添加",
+                args.admin_host, args.admin_port, settings.admin_base_path,
             )
         except OSError:
             pass  # 只读目录等情况，跳过不影响启动
@@ -108,8 +109,8 @@ def main() -> None:
             args=(admin_app, args.admin_host, args.admin_port),
             daemon=True,
         ).start()
-        logger.info("管理面：http://%s:%d（仅管理员，用户面无入口）",
-                    args.admin_host, args.admin_port)
+        logger.info("管理面：http://%s:%d%s/（仅管理员，用户面无入口）",
+                    args.admin_host, args.admin_port, settings.admin_base_path)
 
     uvicorn.run(app, host=args.host, port=args.port, log_level="info",
                 root_path=settings.base_path)

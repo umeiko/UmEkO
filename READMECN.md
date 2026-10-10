@@ -117,6 +117,7 @@ Web 和 CLI 使用 `events.py` 中的事件定义展示执行进度。当前实�
 | --- | --- |
 | `UMEKO_DATA_ROOT` | 数据及 Provider 注册表目录，默认 `server_data`，需持久化 |
 | `UMEKO_BASE_PATH` | 入口路径前缀，如 `/doc-master/consistency/image-text`；本地根路径留空 |
+| `UMEKO_ADMIN_BASE_PATH` | 管理面独立入口前缀；管理端口根路径留空，不继承用户前缀 |
 | `MODEL_CA_FILE` | 模型服务额外信任的 PEM CA；仍校验证书和域名 |
 | `UMEKO_ADMIN_USERNAME/PASSWORD` | 首次管理员引导 |
 

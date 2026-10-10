@@ -63,9 +63,11 @@ class Settings:
     task_caller_limit: int = 20
     task_retention_seconds: int = 86400
     task_timeout_seconds: int = 3600
+    # 管理面独立入口前缀；不继承用户面的 base_path。留空表示管理端口根路径。
+    admin_base_path: str = ""
 
 
-def normalize_base_path(value: str) -> str:
+def normalize_base_path(value: str, setting_name: str = "UMEKO_BASE_PATH") -> str:
     value = value.strip()
     if value in {"", "/"}:
         return ""
@@ -73,7 +75,7 @@ def normalize_base_path(value: str) -> str:
     if (not re.fullmatch(r"(?:/[A-Za-z0-9._~-]+)+", value)
             or any(part in {".", ".."} for part in value.split("/"))):
         raise RuntimeError(
-            "UMEKO_BASE_PATH 必须是 /doc-master/consistency/image-text 这样的路径，"
+            f"{setting_name} 必须是 /doc-master/consistency/image-text 这样的路径，"
             "不含域名、查询参数、空格或 . / .. 路径段。"
         )
     return value
@@ -135,6 +137,7 @@ def load_settings(env_path: str | Path | None = None, data_root: str | Path | No
         text_model=ModelConfig("unconfigured", "", "https://invalid.unconfigured", ca_file=model_ca),
         context_window=max(1, int(os.getenv("TEXT_MODEL_CONTEXT_WINDOW", "128000"))),
         base_path=normalize_base_path(os.getenv("UMEKO_BASE_PATH", "")),
+        admin_base_path=normalize_base_path(os.getenv("UMEKO_ADMIN_BASE_PATH", ""), "UMEKO_ADMIN_BASE_PATH"),
         data_root=str(root.resolve()),
         registry_managed=True,
         max_subagent_tool_iterations=max(

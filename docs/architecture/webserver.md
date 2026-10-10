@@ -39,7 +39,7 @@ SSE 连接断开不会自动取消 Run。网页可以带 `Last-Event-ID` 重新�
 应用：/v1/runs/xxx/events
 ```
 
-`UMEKO_BASE_PATH` 显式声明这个前缀，启动时注入 HTML，同时用于 ASGI `root_path`、Cookie Path 和产物 URL。前缀无需重新构建前端。代理应统一处理所有子路径，不能只把首页转发成功就认为部署完成。
+`UMEKO_BASE_PATH` 显式声明用户服务前缀，管理面使用独立的 `UMEKO_ADMIN_BASE_PATH`（默认空，不继承用户前缀）。两者分别注入各自 HTML，用于资源、API、ASGI `root_path` 和 Cookie Path；产物 URL 和机器协议地址仍使用用户服务基址。前缀无需重新构建前端。代理应统一处理所有子路径，不能只把首页转发成功就认为部署完成。
 
 NGINX 要关闭 SSE 缓冲，并给予长任务足够的读取超时。HTTPS 页面访问模型的链路由服务器负责；公司私有 CA 使用 `MODEL_CA_FILE` 追加信任，保留证书验证。完整配置见[部署指南](../deployment.md)。
 

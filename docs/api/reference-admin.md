@@ -4,7 +4,7 @@
 
 共 **56** 个 HTTP 操作。[下载 OpenAPI](openapi-admin.json) · [数据结构](schemas.md)
 
-路径为应用内部路由；带前缀部署时在公共 URL 前加 `UMEKO_BASE_PATH`。登录、原始字节体与 SSE 契约由生成器显式补充。
+路径为应用内部路由；带前缀部署时在公共 URL 前加 `UMEKO_ADMIN_BASE_PATH`。登录、原始字节体与 SSE 契约由生成器显式补充。
 
 泛型 `object` / 任意 JSON 表示源码尚未声明完整字段模型，请结合各专题指南。表中响应码来自 OpenAPI，不包含中间件产生的全部错误。
 

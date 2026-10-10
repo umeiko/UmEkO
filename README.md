@@ -141,6 +141,7 @@ the same resolver. `.env` contains deployment settings and runtime defaults.
 |---|---|
 | `UMEKO_DATA_ROOT` | persistent data / Provider registry directory (default `server_data`) |
 | `UMEKO_BASE_PATH` | public URL prefix, e.g. `/doc-master/consistency/image-text`; empty for root |
+| `UMEKO_ADMIN_BASE_PATH` | independent admin URL prefix; empty for the admin port root |
 | `MODEL_CA_FILE` | additional PEM CA for HTTPS model services; certificate checks remain enabled |
 | `UMEKO_ADMIN_USERNAME/PASSWORD` | credentials for initializing the first admin account |
 

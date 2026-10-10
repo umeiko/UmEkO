@@ -20,7 +20,7 @@ from pydantic import BaseModel, ConfigDict, Field
 from .. import __version__
 from ..host.identities import SCOPES
 
-from ..config import Settings
+from ..config import Settings, normalize_base_path
 from ..host.service import AgentService
 from ..host.storage import Store
 from ..skillpacks import parse_skill_pack_text
@@ -158,15 +158,20 @@ class _AgentIn(BaseModel):
 
 
 def create_admin_app(settings: Settings, service: AgentService, store: Store, public_url: str | None = None) -> FastAPI:
+    base_path = normalize_base_path(settings.admin_base_path, "UMEKO_ADMIN_BASE_PATH")
     public_base = settings.public_url or public_url or "http://127.0.0.1:8000" + settings.base_path
     app = FastAPI(
         title="Umeko Admin",
+        root_path=base_path,
         docs_url=None, redoc_url=None, openapi_url=None,  # 不暴露任何 API 文档
     )
 
     @app.middleware("http")
     async def authenticate_admin(request: Request, call_next):
-        path = request.url.path
+        path = request.scope["path"]
+        root_path = request.scope.get("root_path", "")
+        if root_path and (path == root_path or path.startswith(root_path + "/")):
+            path = path[len(root_path):] or "/"
         if path.startswith("/admin/v1/"):
             user = store.user_for_token(request.cookies.get(ADMIN_COOKIE))
             if user is None or user.get("role") != "admin":
@@ -177,7 +182,7 @@ def create_admin_app(settings: Settings, service: AgentService, store: Store, pu
     @app.get("/", response_class=HTMLResponse, include_in_schema=False)
     def admin_page() -> HTMLResponse:
         from .ui import render_ui
-        return HTMLResponse(render_ui("admin.html"))
+        return HTMLResponse(render_ui("admin.html", base_path))
 
     @app.get("/health")
     def health() -> dict:
@@ -191,13 +196,14 @@ def create_admin_app(settings: Settings, service: AgentService, store: Store, pu
         response.set_cookie(
             ADMIN_COOKIE, store.issue_token(user["id"]),
             httponly=True, samesite="lax", secure=False, max_age=7 * 86400,
+            path=base_path or "/",
         )
         return {"id": user["id"], "username": user["username"]}
 
     @app.post("/admin/logout", status_code=204)
     def logout(request: Request, response: Response) -> None:
         store.revoke_token(request.cookies.get(ADMIN_COOKIE))
-        response.delete_cookie(ADMIN_COOKIE)
+        response.delete_cookie(ADMIN_COOKIE, path=base_path or "/")
 
     # ---------- 用户管理 ----------
 

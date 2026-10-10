@@ -12,6 +12,7 @@ import uvicorn
 
 from umeko.config import ModelConfig, Settings
 from umeko.server import admin as admin_module
+from umeko.server.__main__ import _serve_admin
 from umeko.server.app import create_app
 from umeko.skills import script_runner
 
@@ -54,13 +55,15 @@ def main():
     parser.add_argument("--admin-port", type=int, required=True)
     parser.add_argument("--directory", type=Path, required=True)
     parser.add_argument("--prefix", default="")
+    parser.add_argument("--admin-prefix", default="")
+    parser.add_argument("--public-url", default="")
     args = parser.parse_args()
     directory = args.directory.resolve()
     # Skill source writes stay in the test directory, including Python scripts.
     os.environ["UMEKO_SKILL_DIR"] = str(directory / "skills")
     script_runner.skill_packs_dir = lambda: directory / "skills"
     settings = Settings(ModelConfig("fixture-text", "fixture-only", "https://example.invalid/v1"),
-                        base_path=args.prefix)
+                        base_path=args.prefix, admin_base_path=args.admin_prefix)
     app = create_app(settings, data_root=directory / "data", workspace_root=directory / "output")
     service, store = app.state.agent_service, app.state.store
     password = secrets.token_urlsafe(20)
@@ -118,16 +121,15 @@ def main():
 
     service._execute_run = execute
     admin_app = admin_module.create_admin_app(settings, service, store,
-                                             public_url=f"http://127.0.0.1:{args.port}{args.prefix}")
+                                             public_url=args.public_url or f"http://127.0.0.1:{args.port}{args.prefix}")
     (directory / "state.json").write_text(json.dumps({
         "username": user["username"], "password": password,
         "text_model": text["id"], "vision_model": vision["id"],
         "markdown_sample": MARKDOWN_SAMPLE,
         "directory_sample": DIRECTORY_SAMPLE,
     }), encoding="utf-8")
-    threading.Thread(target=lambda: uvicorn.run(admin_app, host="127.0.0.1", port=args.admin_port,
-                                               log_level="error"), daemon=True).start()
-    uvicorn.run(app, host="127.0.0.1", port=args.port, log_level="error")
+    threading.Thread(target=_serve_admin, args=(admin_app, "127.0.0.1", args.admin_port), daemon=True).start()
+    uvicorn.run(app, host="127.0.0.1", port=args.port, log_level="error", root_path=args.prefix)
 
 
 if __name__ == "__main__":

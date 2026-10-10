@@ -1,5 +1,5 @@
 import { reactive } from 'vue';
-import { errorMessage } from '../shared/api.js';
+import { appUrl, errorMessage } from '../shared/api.js';
 import { useAdminI18n } from '../shared/adminI18n.js';
 const { tr } = useAdminI18n();
 export const admin = reactive({
@@ -23,7 +23,7 @@ export function notify(message, bad = false) {
   }, 4500);
 }
 export async function api(method, path, body) {
-  const response = await fetch(path, {
+  const response = await fetch(appUrl(path), {
     method,
     credentials: 'same-origin',
     headers: body ? { 'Content-Type': 'application/json' } : {},

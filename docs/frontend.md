@@ -56,7 +56,7 @@ umeko/server/static/ui/       已构建资源，随 Python 包或 exe 发布
 
 ## 本地开发
 
-先启动 Python 用户服务和管理服务，使用本地根路径，`UMEKO_BASE_PATH` 留空：
+先启动 Python 用户服务和管理服务，使用本地根路径，`UMEKO_BASE_PATH` 和 `UMEKO_ADMIN_BASE_PATH` 均留空：
 
 ```sh
 python -m umeko.server --host 127.0.0.1 --port 8000 --admin-port 9000
@@ -82,7 +82,9 @@ npm run build
 
 构建只替换 `umeko/server/static/ui/`，不要在该目录手工修改代码。提交前端修改时同时提交构建资源。CI 重新构建并比较产物，再运行浏览器验收；exe 打包前也会重新构建。
 
-Vite 使用相对资源路径，Python 在返回首页时把主脚本、共享模块预加载和 CSS 链接转换成带部署前缀的 `/static/ui/assets/…`。JavaScript 的模块导入相对当前脚本解析，因此同一套构建可以运行在 `/` 或 `/doc-master/consistency/image-text/`。API、SSE、下载与头像继续使用运行时 `UMEKO_BASE_PATH`，修改前缀只需重启服务。
+Vite 使用相对资源路径，Python 在返回首页时把主脚本、共享模块预加载和 CSS 链接转换成带部署前缀的 `/static/ui/assets/…`。JavaScript 的模块导入相对当前脚本解析，因此同一套构建可以运行在 `/` 或 `/doc-master/consistency/image-text/`。用户页使用运行时 `UMEKO_BASE_PATH`，管理页使用独立的 `UMEKO_ADMIN_BASE_PATH`；首页、资源、API 与 Cookie Path 均对齐各自的前缀，修改后只需重启服务。
+
+浏览器验收包含根路径以及同一域名下的用户/管理双前缀；测试网关移除前缀后转发，域名根下的资源和管理请求返回 404，防止漏前缀被意外放行。设置 `UMEKO_TEST_NGINX` 为本机 NGINX 可执行文件路径后，`npm run test:smoke` 会使用真实 NGINX 运行前缀场景。测试使用临时数据与离线模型，不读取项目 `.env`。
 
 发布时同时更新 HTML 和整个资源目录，避免旧首页引用已经删除的文件。普通发布是 Python 服务，Vite 开发端口不作为生产入口。NGINX 仍需统一转发子路径并关闭 SSE 缓冲，配置见[部署指南](deployment.md)。
 

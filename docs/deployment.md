@@ -200,7 +200,56 @@ location /doc-master/consistency/image-text/ {
 
 代理 HTTPS 的协议信息由 `X-Forwarded-Proto` 传递。NGINX 同机时默认信任回环来源；
 容器或远端代理可通过 Uvicorn 支持的 `FORWARDED_ALLOW_IPS` 环境变量显式信任相应代理地址。
-管理面仍在独立端口，`UMEKO_BASE_PATH` 只影响用户工作台。
+管理面仍在独立端口，`UMEKO_BASE_PATH` 只影响用户工作台；管理前缀使用下面的独立配置。
+
+### 管理页面的路径前缀 { #admin-prefix }
+
+例如用户页是 `https://example.internal/doc-master/consistency/image-text/`，管理页是
+`https://example.internal/doc-master/consistency/image-text-admin/`：
+
+```ini
+UMEKO_BASE_PATH=/doc-master/consistency/image-text
+UMEKO_ADMIN_BASE_PATH=/doc-master/consistency/image-text-admin
+UMEKO_PUBLIC_URL=https://example.internal/doc-master/consistency/image-text
+```
+
+`UMEKO_ADMIN_BASE_PATH` 填管理页在浏览器里的完整路径前缀，不填域名或端口。
+它不继承用户页前缀；留空时仍从管理端口根路径访问。两项都在运行时生效，修改 `.env` 后重启服务，无须重新构建前端。
+管理页的 JS/CSS、登录、退出和全部管理 API 使用此管理前缀，管理员 Cookie 也限定在此路径。
+`UMEKO_PUBLIC_URL` 始终是用户/机器服务地址，管理页展示的 Agent Card、A2A、MCP 链接仍指向用户服务。
+Provider 中的 `base_url` 是上游模型地址，与这些网页部署前缀无关。
+
+在对应的内网 NGINX `server` 块增加独立规则：
+
+```nginx
+location = /doc-master/consistency/image-text-admin {
+    return 308 /doc-master/consistency/image-text-admin/;
+}
+location /doc-master/consistency/image-text-admin/ {
+    client_max_body_size 64m;
+    proxy_pass http://127.0.0.1:9000/;
+    proxy_http_version 1.1;
+    proxy_set_header Connection "";
+    proxy_set_header Host $http_host;
+    proxy_set_header X-Forwarded-For $proxy_add_x_forwarded_for;
+    proxy_set_header X-Forwarded-Proto $scheme;
+    proxy_read_timeout 600s;
+}
+```
+
+此规则移除管理前缀后转到 9000；用户规则转到 8000。若 ALB 已移除前缀，内层不要重复移除。
+使用 `python -m umeko.server` 时两个端口的 ASGI `root_path` 都会自动配置；自定义管理端 Uvicorn 入口的
+`--root-path` 须与 `UMEKO_ADMIN_BASE_PATH` 一致。管理端代理应放在公司受控的内网入口。
+
+部署后通过**外部管理地址**验证：
+
+1. 页面资源均在管理前缀下，例如 `…/image-text-admin/static/ui/assets/…`，返回 200。
+2. 登录请求发往 `…/image-text-admin/admin/login`；登录后 `…/image-text-admin/admin/v1/me` 返回 200。
+3. 切换用户、模型、会话、技能、资源监控和服务接入各页，确认请求都在管理前缀下。
+4. 退出后 `…/image-text-admin/admin/v1/me` 返回 401；未登录时管理 API 也应返回 401。
+
+旧版本只支持用户页前缀，管理页仍从域名根路径请求。部署本修复时需一起更新 Python 代码和随包的
+`umeko/server/static/ui`，重启并刷新页面；只修改 `.env` 或只替换 HTML 不足以修复旧管理脚本。
 
 ### MCP、A2A 与自动发现
 
@@ -320,6 +369,7 @@ JSON 导入也支持模型字段 `max_concurrent_requests`，省略时不会覆�
 | --- | --- |
 | 启动提示缺少 `fastapi` / `uvicorn` | 安装 `server` 依赖，确认使用同一个 Python 环境 |
 | 页面打开但没有样式，或 `/static/...` 返回 404 | `UMEKO_BASE_PATH` 与公共入口一致，代理只移除一次前缀，修改后重启并刷新页面 |
+| 用户页正常，但管理页资源、登录或功能请求 404 | 更新服务代码与前端资源，配置 `UMEKO_ADMIN_BASE_PATH`，将此路径下全部请求代理到管理端口，重启并刷新 |
 | 提问请求 202，但一直没有回答 | 分开检查事件接口 `/v1/runs/{id}/events` 和模型调用结果，不能把 202 当作回答成功 |
 | 回答全部结束后才一次出现 | 每层 NGINX 关闭 `proxy_buffering`，核对外层代理的缓冲和超时设置 |
 | 上传文件返回 413 | 核对 NGINX 的 `client_max_body_size` 及其他入口限制；头像接口另有 2 MB 应用限制 |

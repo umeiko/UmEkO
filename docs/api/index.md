@@ -18,7 +18,7 @@ BASE_URL=https://example.internal/doc-master/consistency/image-text
 GET BASE_URL/v1/sessions
 ```
 
-网页文档中的 `/v1/...` 相对用户服务基址。机器任务示例中的 `/v1/tasks` 相对具体 Agent 的基址，即用户服务基址加 `/agent/{slug}`。管理面不自动继承用户面的 `UMEKO_BASE_PATH`；它有独立入口与 Cookie Path，代理部署需单独规划。
+网页文档中的 `/v1/...` 相对用户服务基址。机器任务示例中的 `/v1/tasks` 相对具体 Agent 的基址，即用户服务基址加 `/agent/{slug}`。管理面使用独立的 `UMEKO_ADMIN_BASE_PATH` 与 Cookie Path，不继承用户面的 `UMEKO_BASE_PATH`；代理部署步骤见[部署说明](../deployment.md#admin-prefix)。
 
 ## 按能力阅读
 

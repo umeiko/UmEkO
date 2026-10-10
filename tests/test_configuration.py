@@ -14,7 +14,7 @@ from umeko.llm import client as client_module
 
 @pytest.fixture
 def deployment_env(monkeypatch, tmp_path):
-    for key in {*LEGACY_MODEL_KEYS, "UMEKO_DATA_ROOT", "UMEKO_BASE_PATH", "MODEL_CA_FILE",
+    for key in {*LEGACY_MODEL_KEYS, "UMEKO_DATA_ROOT", "UMEKO_BASE_PATH", "UMEKO_ADMIN_BASE_PATH", "UMEKO_PUBLIC_URL", "MODEL_CA_FILE",
                 "TEXT_MODEL_CONTEXT_WINDOW", "MAX_TOOL_ITERATIONS", "MAX_SUBAGENT_TOOL_ITERATIONS"}:
         monkeypatch.delenv(key, raising=False)
     path = tmp_path / ".env"
@@ -31,6 +31,19 @@ def test_prefix_normalization(value, expected):
 def test_invalid_prefix_fails_early(value):
     with pytest.raises(RuntimeError, match="UMEKO_BASE_PATH"):
         normalize_base_path(value)
+
+
+def test_admin_prefix_is_independent_and_process_env_takes_precedence(deployment_env, monkeypatch):
+    deployment_env.write_text("UMEKO_BASE_PATH=/workbench\n", encoding="utf-8")
+    assert load_settings(deployment_env).admin_base_path == ""
+    deployment_env.write_text("UMEKO_BASE_PATH=/workbench\nUMEKO_ADMIN_BASE_PATH=/file-admin/\n", encoding="utf-8")
+    assert load_settings(deployment_env).admin_base_path == "/file-admin"
+    monkeypatch.setenv("UMEKO_ADMIN_BASE_PATH", "/operations/umeko/")
+    settings = load_settings(deployment_env)
+    assert settings.admin_base_path == "/operations/umeko" and settings.base_path == "/workbench"
+    monkeypatch.setenv("UMEKO_ADMIN_BASE_PATH", "https://company.internal/admin")
+    with pytest.raises(RuntimeError, match="UMEKO_ADMIN_BASE_PATH"):
+        load_settings(deployment_env)
 
 
 def test_legacy_models_move_to_shared_registry_once(deployment_env, monkeypatch):

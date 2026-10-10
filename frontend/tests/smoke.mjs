@@ -6,6 +6,7 @@ import { tmpdir } from 'node:os';
 import { createServer } from 'node:net';
 import { fileURLToPath } from 'node:url';
 import path from 'node:path';
+import { startProxy } from './proxy.mjs';
 const require = createRequire(import.meta.url);
 const { chromium } = require(process.env.UMEKO_PLAYWRIGHT || 'playwright');
 const root = fileURLToPath(new URL('../../', import.meta.url));
@@ -396,9 +397,14 @@ async function composerButtonsFit(page) {
 const browser = await chromium.launch({ headless: true });
 try {
   for (const prefix of ['', '/doc-master/consistency/image-text']) {
+    const adminPrefix = prefix ? '/operations/umeko' : '';
     const directory = await mkdtemp(path.join(tmpdir(), 'umeko-vue-')),
       port = await freePort(),
-      adminPort = await freePort();
+      adminPort = await freePort(),
+      gatewayPort = prefix ? await freePort() : null;
+    const base = `http://127.0.0.1:${gatewayPort || port}`,
+      publicBase = base + prefix,
+      adminBase = (prefix ? base : `http://127.0.0.1:${adminPort}`) + adminPrefix;
     const child = spawn(
       python,
       [
@@ -411,6 +417,10 @@ try {
         directory,
         '--prefix',
         prefix,
+        '--admin-prefix',
+        adminPrefix,
+        '--public-url',
+        publicBase,
       ],
       {
         cwd: root,
@@ -420,13 +430,20 @@ try {
     );
     let diagnostics = '';
     child.stderr.on('data', (chunk) => (diagnostics += chunk.toString()));
-    let context;
+    let context, closeProxy;
     try {
-      const base = `http://127.0.0.1:${port}`,
-        publicBase = base + prefix,
-        adminBase = `http://127.0.0.1:${adminPort}`;
+      if (prefix)
+        closeProxy = await startProxy(directory, gatewayPort, [
+          { prefix, port },
+          { prefix: adminPrefix, port: adminPort },
+        ]);
       await ready(publicBase + '/health', child);
       await ready(adminBase + '/health', child);
+      if (prefix) {
+        assert.equal((await fetch(base + '/static/ui/missing.js')).status, 404);
+        assert.equal((await fetch(base + '/admin/login', { method: 'POST' })).status, 404);
+        assert.equal((await fetch(adminBase + '/admin/v1/users')).status, 401);
+      }
       const state = JSON.parse(await readFile(path.join(directory, 'state.json'), 'utf8'));
       // Keep host OS language from changing selectors, and exercise both UI locales.
       const locale = prefix ? 'en-US' : 'zh-CN';
@@ -434,6 +451,17 @@ try {
       context = await browser.newContext({ viewport: { width: 1440, height: 1000 }, locale });
       const page = await context.newPage(),
         errors = [];
+      const adminRequests = [],
+        adminAssets = [];
+      page.on('request', (r) => {
+        if (new URL(r.url()).origin === new URL(adminBase).origin)
+          adminRequests.push(new URL(r.url()).pathname);
+      });
+      page.on('response', (r) => {
+        const url = new URL(r.url());
+        if (url.origin === new URL(adminBase).origin && url.pathname.includes('/static/'))
+          adminAssets.push({ path: url.pathname, status: r.status() });
+      });
       page.on('pageerror', (e) => errors.push(e.message));
       await page.goto(adminBase + '/');
       await page.locator('[data-language-select]').selectOption('en');
@@ -459,6 +487,15 @@ try {
       await page.locator('#l-pass').fill(state.password);
       await page.getByRole('button', { name: '登录', exact: true }).click();
       await page.locator('#page-access').waitFor();
+      assert.ok(
+        adminAssets.length >= 3 &&
+          adminAssets.every(
+            (a) => [200, 304].includes(a.status) && a.path.startsWith(adminPrefix + '/static/ui/'),
+          ),
+        'Admin scripts, styles and shared modules load with the admin prefix',
+      );
+      const adminCookie = (await context.cookies()).find((c) => c.name === 'umeko_admin');
+      assert.equal(adminCookie.path, adminPrefix || '/');
       // Account validation, one-off secret, a cancelled deletion and a blocked deletion.
       const builtins = await (await context.request.get(adminBase + '/admin/v1/agents')).json();
       const imageQc = builtins.agents.find((agent) => agent.slug === 'image-qc');
@@ -676,6 +713,8 @@ try {
       await page.locator('#tab-sessions').click();
       await page.locator('#page-sessions').waitFor();
       await checkAdminLanguages(page, context, adminBase);
+      // Both prefixed apps share an origin, so choose the saved locale for the workspace too.
+      await page.locator('[data-language-select]').selectOption(prefix ? 'en' : 'zh-CN');
       // Browser registration, files, module assets, SSE increments, tool folding and cancellation.
       const work = await context.newPage(),
         requests = [],
@@ -1150,6 +1189,14 @@ try {
       assert.ok(await work.evaluate(() => document.documentElement.scrollWidth <= innerWidth + 1));
       await screenshot(work, 'tool-directory-mobile', prefix);
       await work.locator('#tool-detail-close').click();
+      await page.locator('.sidebar-footer .icon-button').click();
+      await page.locator('#l-user').waitFor();
+      assert.equal((await context.request.get(adminBase + '/admin/v1/me')).status(), 401);
+      assert.ok(!(await context.cookies()).some((c) => c.name === 'umeko_admin'));
+      assert.ok(
+        adminRequests.every((p) => p.startsWith(adminPrefix + '/')),
+        'Every admin page, resource, login, logout and management request includes the admin prefix',
+      );
       assert.deepEqual(errors, []);
       console.log(
         `Passed browser workflows: ${prefix || '/'} (${locale}, ${appearance}, Markdown preview/source, live rendering, highlighted code and clipboard, consistent preview toggle, skill tree/Markdown/edit/save/member files, long titles, file tree, composer, admin, files, external file drops/root/nested/blank/duplicates/partial failure/progress/session switching/internal move, 20 folded tools, cancellation, desktop/mobile)`,
@@ -1159,6 +1206,7 @@ try {
       throw e;
     } finally {
       await context?.close();
+      await closeProxy?.();
       if (child.exitCode === null) {
         child.kill();
         await Promise.race([new Promise((resolve) => child.once('exit', resolve)), wait(5000)]);
