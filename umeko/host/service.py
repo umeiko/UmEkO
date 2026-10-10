@@ -15,7 +15,6 @@ import shutil
 import tempfile
 import threading
 import uuid
-import zipfile
 from contextlib import nullcontext
 from dataclasses import dataclass, field, replace
 from datetime import datetime, timezone
@@ -25,6 +24,8 @@ from urllib.parse import quote
 from .. import events as ev
 from ..agent import UmekoAgent
 from ..cancellation import OperationCancelled
+from ..archives import ARCHIVE_SUFFIXES, extract_archive, write_zip
+from ..file_operations import bounded_path, operate_files
 from ..config import Settings
 from ..prompts.system import DEFAULT_SYSTEM
 from ..runner import Run, RunManager, TERMINAL_STATUSES
@@ -192,33 +193,14 @@ class AgentService:
         if not target.is_dir():
             raise FileNotFoundError(relative_path)
 
-        session_root = self.get_session(session_id).root.resolve()
-        target_root = target.resolve()
         handle = tempfile.NamedTemporaryFile(
             prefix="umeko-directory-", suffix=".zip", delete=False
         )
         archive = Path(handle.name)
         handle.close()
+        archive.unlink()
         try:
-            with zipfile.ZipFile(
-                archive, "w", compression=zipfile.ZIP_DEFLATED, allowZip64=True
-            ) as output:
-                root_name = target.name
-                output.writestr(f"{root_name}/", b"")
-                for path in sorted(target.rglob("*"), key=lambda item: item.as_posix()):
-                    if path.is_symlink():
-                        continue
-                    resolved = path.resolve(strict=True)
-                    try:
-                        resolved.relative_to(session_root)
-                        resolved.relative_to(target_root)
-                    except ValueError as exc:
-                        raise ValueError("目录中包含超出当前 Session 的路径") from exc
-                    member = Path(root_name, *path.relative_to(target).parts).as_posix()
-                    if path.is_dir():
-                        output.writestr(member.rstrip("/") + "/", b"")
-                    elif path.is_file():
-                        output.write(path, member)
+            write_zip(target, archive)
             return archive, True
         except Exception:
             archive.unlink(missing_ok=True)
@@ -286,39 +268,36 @@ class AgentService:
     def transfer_workspace_entry(
         self, session_id: str, source_path: str, target_path: str, operation: str
     ) -> Path:
+        if operation not in {"copy", "move"}:
+            raise ValueError("不支持的文件操作")
+        return self.operate_session_files("cp" if operation == "copy" else "mv",
+                                          session_id=session_id, path=source_path,
+                                          target=target_path, recursive=True)
+
+    def delete_workspace_entry(self, session_id: str, relative_path: str) -> None:
+        self.operate_session_files("rm", relative_path, session_id=session_id, recursive=True)
+
+    def operate_session_files(self, operation: str, path: str, target: str = "", *,
+                              session_id: str, recursive: bool = False, overwrite: bool = False,
+                              should_cancel=None) -> Path:
         session = self.get_session(session_id)
-        source = self._workspace_path(session_id, source_path, allow_root=False)
-        target = self._workspace_path(session_id, target_path, must_exist=False, allow_root=False)
-        if target.exists():
-            raise ValueError(f"目标已存在：{target_path}")
-        if not target.parent.is_dir():
-            raise ValueError("目标父目录不存在")
-        if source.is_dir() and (target == source or source in target.parents):
-            raise ValueError("不能把目录移动或复制到自身内部")
-        if operation == "copy":
-            shutil.copytree(source, target) if source.is_dir() else shutil.copy2(source, target)
-        elif operation == "move":
-            shutil.move(str(source), str(target))
+        allowed = tuple(session.root / name for name in self.WORKSPACE_ROOTS)
+        source = bounded_path(session.root, path, allowed)
+        result = operate_files(operation, path, target, root=session.root, allowed_roots=allowed,
+                               recursive=recursive, overwrite=overwrite, should_cancel=should_cancel)
+        if operation in {"mv", "rm"}:
+            destination = result if operation == "mv" else None
+            self.store.rewrite_session_file_paths(session_id, source, destination)
             for file_id, registered in list(session.files.items()):
                 try:
                     tail = registered.relative_to(source)
                 except ValueError:
                     continue
-                session.files[file_id] = target / tail
-        else:
-            raise ValueError("不支持的文件操作")
-        return target
-
-    def delete_workspace_entry(self, session_id: str, relative_path: str) -> None:
-        session = self.get_session(session_id)
-        target = self._workspace_path(session_id, relative_path, allow_root=False)
-        for file_id, registered in list(session.files.items()):
-            if registered == target or target in registered.parents:
-                session.files.pop(file_id, None)
-        if target.is_dir():
-            shutil.rmtree(target)
-        else:
-            target.unlink()
+                if destination is None:
+                    session.files.pop(file_id, None)
+                else:
+                    session.files[file_id] = destination / tail
+        return result
 
     def save_workspace_file(
         self, session_id: str, filename: str, content: bytes,
@@ -348,70 +327,17 @@ class AgentService:
         path.write_bytes(content)
         return path
 
-    # ---------- 压缩包解压（7-Zip） ----------
+    # ---------- 跨平台压缩包解压 ----------
 
-    ARCHIVE_SUFFIXES = {".zip", ".7z", ".rar", ".tar", ".gz", ".bz2", ".xz", ".tgz"}
+    ARCHIVE_SUFFIXES = ARCHIVE_SUFFIXES
 
     def extract_archive(self, session_id: str, relative_path: str) -> Path:
-        """用本机 7-Zip 把 workspace 内的压缩包解压到同名目录（不覆盖已有文件）。
-
-        返回解压目标目录。安全：目标目录保持在 workspace 内；7z 已带防路径
-        穿越（-snld 前缀剥离 + 目标限制）；超出预算（条目/累计体积）时中止。
-        """
-        import subprocess
-
-        archive = self._workspace_path(session_id, relative_path, must_exist=True)
-        if archive.suffix.lower() not in self.ARCHIVE_SUFFIXES:
-            raise ValueError(
-                f"不支持的压缩包格式：{archive.suffix or '(无后缀)'}。"
-                f"支持：{'、'.join(sorted(self.ARCHIVE_SUFFIXES))}"
-            )
-        seven_zip = Path(os.environ.get("SEVENZIP_PATH", r"C:\Program Files\7-Zip\7z.exe"))
-        if not seven_zip.is_file():
-            raise ValueError(
-                "未找到 7-Zip（默认路径 C:\\Program Files\\7-Zip\\7z.exe），"
-                "请安装或用环境变量 SEVENZIP_PATH 指定 7z.exe 位置。"
-            )
-        target = archive.parent / archive.stem
-        # 同名目录已存在：追加序号，避免混淆旧解压结果
-        final_target = target
-        counter = 1
-        while final_target.exists():
-            final_target = archive.parent / f"{archive.stem}_{counter}"
-            counter += 1
-        final_target.mkdir(parents=True)
-        workspace = self.session_workspace(session_id).resolve()
-        try:
-            result = subprocess.run(
-                [str(seven_zip), "x", "-y", f"-o{final_target}", str(archive)],
-                capture_output=True, text=True, timeout=300,
-                creationflags=getattr(subprocess, "CREATE_NO_WINDOW", 0),
-            )
-        except subprocess.TimeoutExpired as exc:
-            shutil.rmtree(final_target, ignore_errors=True)
-            raise ValueError("解压超时（5 分钟），已中止并清理。") from exc
-        if result.returncode != 0:
-            shutil.rmtree(final_target, ignore_errors=True)
-            detail = (result.stderr or result.stdout or "").strip().splitlines()
-            raise ValueError("解压失败：" + (detail[-1] if detail else f"7z 退出码 {result.returncode}"))
-        # 去掉"单根包裹"：压缩包里唯一顶层条目是一个目录时（如 Windows 右键压缩
-        # WZ/ 文件夹得到 WZ.zip），把该目录的内容提升一层，避免 WZ/WZ/ 嵌套。
-        # 此时 final_target 下只有 wrapper 一个条目，内层条目移上来无名字冲突。
-        top = [p for p in final_target.iterdir()]
-        if len(top) == 1 and top[0].is_dir():
-            wrapper = top[0]
-            inner = list(wrapper.iterdir())
-            for item in inner:
-                shutil.move(str(item), str(final_target / item.name))
-            wrapper.rmdir()  # 已空
-        # 安全校验：解压产物必须全部落在 workspace 内
-        for p in final_target.rglob("*"):
-            try:
-                p.resolve().relative_to(workspace)
-            except ValueError as exc:
-                shutil.rmtree(final_target, ignore_errors=True)
-                raise ValueError("压缩包内含越界路径，已中止并清理。") from exc
-        return final_target
+        session = self.get_session(session_id)
+        archive = bounded_path(session.root, relative_path,
+                               tuple(session.root / name for name in self.WORKSPACE_ROOTS))
+        if not archive.is_file():
+            raise FileNotFoundError(relative_path)
+        return extract_archive(archive)
 
     # ---------- Session 生命周期 ----------
 
@@ -553,6 +479,9 @@ class AgentService:
             readable_root=root,
             readable_roots=tuple(root / name for name in self.WORKSPACE_ROOTS),
             command_runner=self._command_runner,
+            file_operator=lambda operation, path, target="", **kwargs: self.operate_session_files(
+                operation, path, target, session_id=session_id, **kwargs
+            ),
             should_cancel=lambda: bool(
                 holder["run"] and holder["run"].cancel_requested()
             ),

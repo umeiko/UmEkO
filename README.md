@@ -53,7 +53,7 @@ Screenshots show the actual UI with isolated offline demo data; no live model ca
 - **Administration**: a Chinese/English console on a separate port for users, sessions, models, skill packs, service credentials and resource monitoring.
 - **Machine integrations**: MCP Streamable HTTP and A2A 1.0 JSON-RPC, with scoped service credentials, durable tasks, bounded queues and automatic expiry.
 - **Multiple agents**: configure separate names, instructions, default text and vision models, and skill selections in the admin console; publish each under `/agent/{slug}` with its own Card, MCP, A2A and REST task endpoints, sharing one runtime and model queues.
-- **File operations**: reading, searching, editing and writing within session directories, archive extraction with 7-Zip and drag-and-drop uploads.
+- **File operations**: reading, searching, editing, copying, moving and deleting within session directories, clipboard/drag-and-drop attachments and cross-platform archive handling. All archive operations use native 7-Zip on Windows and Linux. See the [deployment guide](docs/deployment.md#archive-support).
 - **History**: messages, tool calls and attachment mappings are stored in SQLite.
 - **Run control**: SSE output and cooperative cancellation.
 

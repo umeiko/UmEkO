@@ -34,16 +34,17 @@ jobs:
           python -m pip install --upgrade pip
           pip install -e ".[dev]"
 
-      - name: Install NGINX for prefix deployment checks
+      - name: Install NGINX and native archive backend
         run: |
           sudo apt-get update
-          sudo apt-get install -y nginx
+          sudo apt-get install -y nginx 7zip
 
       - name: Run tests
         run: pytest tests/ -q
         env:
           PYTHONUTF8: "1"
           UMEKO_TEST_NGINX: /usr/sbin/nginx
+          UMEKO_TEST_REQUIRE_7ZIP: "1"
 
       - name: Build and check frontend
         working-directory: frontend

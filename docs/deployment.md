@@ -4,6 +4,23 @@
 
 ## 首次启动
 
+### 跨平台压缩包支持 {#archive-support}
+
+网页“解压”、目录打包下载和 Agent 的 `archive_tool` 使用同一个原生 7-Zip 后端。ZIP、TAR、TAR.GZ/TGZ、TAR.BZ2/TBZ2、TAR.XZ/TXZ、单文件 GZ/BZ2/XZ、7z、RAR、WIM 等均调用 7-Zip，不使用 Python 解压或压缩实现。原生程序按整包批量处理，避免逐个文件启动进程。
+
+所有格式都需要运行环境中的 7-Zip。未设置 `SEVENZIP_PATH` 时依次搜索 `PATH` 中的 `7zz`、`7z`、`7za`，Windows 还会检查常见安装目录。指定该变量时严格使用指定程序，无效路径或缺少执行权限会报错。
+
+Ubuntu/Debian 可安装发行版提供的 `7zip`；RAR 解码器可能是单独的 `7zip-rar` 包，具体取决于软件源和构建。官方 [7-Zip 下载页](https://www.7-zip.org/download.html)提供 Linux x86-64 与 ARM64 命令行版本，可用于 Red Hat/UBI 等没有合适软件包的镜像。根据架构下载，在构建镜像时把 `7zz` 或 `7zzs` 放到可执行目录，或挂载已准备的程序，然后设置：
+
+```ini
+# 示例：路径必须在容器内部存在，并且服务用户有执行权限。
+SEVENZIP_PATH=/usr/local/bin/7zz
+```
+
+不要把 Windows 的 `C:/Program Files/7-Zip/7z.exe` 配置带到 Linux。安装在宿主机并不代表容器内可用；可在容器内运行 `7zz i` 确认格式支持。缺少程序时，网页解压 API 返回 `400`，模型工具返回明确的安装/配置提示。加密压缩包暂不支持；解压条目限制、路径校验与清理行为见[文件与技能](api/files-skills.md)。
+
+文件整理使用模型工具 `file_operate`，不需要在生产环境开放通用命令执行。Web/机器任务仅可操作当前 Session 的 `workspace/`、`attachments/`、`generate/`，CLI 的新文件整理工具仅可操作当前产物目录。文本写入仍保留原来的产物目录限制。
+
 ### 源码运行（Windows / WSL / Linux）
 
 在项目根目录安装服务端依赖：

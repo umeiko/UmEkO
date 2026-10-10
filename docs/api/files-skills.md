@@ -27,7 +27,7 @@
 | POST | `/v1/sessions/{sid}/workspace/entries` | 新建文件或目录 |
 | DELETE | `/v1/sessions/{sid}/workspace/entries` | 查询 `path`，删除条目，`204` |
 | POST | `/v1/sessions/{sid}/workspace/transfer` | 复制或移动 |
-| POST | `/v1/sessions/{sid}/workspace/extract` | 解压，依赖 7-Zip |
+| POST | `/v1/sessions/{sid}/workspace/extract` | 使用原生 7-Zip 解压 |
 
 工作区路径带虚拟根，例如 `workspace/data.csv`、`attachments/sample.png`、`generate/report.html`。文件树可能标记 `truncated`，不能据一个已截断列表判断整个目录没有其他文件。
 
@@ -52,6 +52,19 @@
 ```
 
 文件修改遇到会话执行锁可能返回 `409`；不是所有写接口都有相同的锁检查。调用方应避免在 Agent 正在处理的文件上并发修改。
+
+网页与模型的 `archive_tool` 统一使用原生 7-Zip 列表、解压和 ZIP 打包，目录下载也使用同一后端；不使用 Python 解压实现。解压到压缩包同级的同名目录，已有目录时自动追加序号，单一顶层文件夹通常会提升一层。每层压缩包一次批量解压，不逐文件启动程序；TAR.GZ/TGZ、TAR.BZ2/TBZ2、TAR.XZ/TXZ 由 7-Zip 依次处理压缩层与 TAR 层，中间文件自动清理。解压前校验包内路径，拒绝绝对路径、目录穿越、符号链接、硬链接与特殊文件；每层上限为 5000 条目、512 MiB 解压内容，全程 5 分钟，失败或取消会清理本次生成的目录。安装与格式说明见[部署指南](../deployment.md#archive-support)。
+
+模型通过 `file_operate` 管理目录项，与网页复制、移动、删除共用边界检查和文件操作实现。它是模型工具，不是新增 HTTP 路由。主 Agent、文件子 Agent、Web 与 REST/MCP/A2A 所调用的 Agent 都可使用；机器协议继续通过任务执行访问这些工具，不开放任意服务器文件访问。
+
+| operation | 含义 | 示例参数 |
+| --- | --- | --- |
+| `cp` | 复制 | `{"operation":"cp","path":"attachments/input.png","target":"workspace/input.png"}` |
+| `mv` | 移动或重命名 | `{"operation":"mv","path":"workspace/input.png","target":"workspace/renamed.png"}` |
+| `rm` | 删除文件或目录 | `{"operation":"rm","path":"generate/old","recursive":true}` |
+| `mkdir` | 创建目录 | `{"operation":"mkdir","path":"workspace/reports/images","recursive":true}` |
+
+`target` 是完整目标路径，不会自动把文件放入某个已存在目录。复制目录与递归删除需要 `recursive: true`；默认不覆盖，仅文件可显式设置 `overwrite: true`。工作区、附件和产物顶层节点不能修改，路径及目录中的链接会被拒绝。移动会更新内存与数据库中的附件 ID 映射；删除会移除映射，避免重启后恢复失效附件。文本内容编辑继续使用 `write_file` 和 `replace_in_file`，压缩操作继续使用 `archive_tool`。
 
 ## 会话技能
 

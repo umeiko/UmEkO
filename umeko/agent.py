@@ -95,6 +95,7 @@ class UmekoAgent:
         should_cancel: Callable[[], bool] | None = None,
         on_subagent_event: Callable[[str, dict], None] | None = None,
         on_event: Callable[[str, dict], None] | None = None,
+        file_operator: Callable | None = None,
     ):
         self._settings = settings
         self._session = session
@@ -123,6 +124,7 @@ class UmekoAgent:
             readable_root=readable_root,
             readable_roots=readable_roots,
             should_cancel=should_cancel,
+            file_operator=file_operator,
             on_tool_progress=(
                 lambda name, delta: self._emit(
                     ev.TOOL_PROGRESS, name=name, output_delta=delta
@@ -139,6 +141,7 @@ class UmekoAgent:
             command_runner=command_runner,
             should_cancel=should_cancel,
             on_event=self._fanout_subagent(on_subagent_event),
+            file_operator=file_operator,
         )
         skills.append(
             Skill(

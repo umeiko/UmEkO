@@ -836,6 +836,21 @@ class Store:
                 (file_id, session_id, path.as_posix(), _now()),
             )
 
+    def rewrite_session_file_paths(self, session_id: str, source: Path, target: Path | None) -> None:
+        """Keep attachment IDs valid after moves; permanently unregister deleted entries."""
+        with self.connect() as db:
+            rows = db.execute("SELECT file_id,path FROM session_files WHERE session_id=?", (session_id,)).fetchall()
+            for row in rows:
+                try:
+                    tail = Path(row["path"]).relative_to(source)
+                except ValueError:
+                    continue
+                if target is None:
+                    db.execute("DELETE FROM session_files WHERE session_id=? AND file_id=?", (session_id, row["file_id"]))
+                else:
+                    db.execute("UPDATE session_files SET path=? WHERE session_id=? AND file_id=?",
+                               ((target / tail).as_posix(), session_id, row["file_id"]))
+
     def session_files(self, session_id: str) -> dict[str, Path]:
         """恢复 file_id → Path 映射（重建 SessionState 时用）。失效路径自动剔除。"""
         mapping: dict[str, Path] = {}

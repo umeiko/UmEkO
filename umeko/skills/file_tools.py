@@ -12,6 +12,8 @@ from pathlib import Path
 from typing import Callable, Iterable, Protocol
 
 from ..cancellation import CancelCheck, raise_if_cancelled
+from ..archives import archive_members, extract_archive, create_zip
+from ..file_operations import bounded_path, operate_files
 from ..images import validate_image
 from ..llm import LLMClient
 from ..session import Session
@@ -293,142 +295,63 @@ class ImageQueue(Protocol):
     def add(self, path: str) -> str: ...
 
 
-# ---------------- 7z 压缩包工具 ----------------
-
-_ARCHIVE_SUFFIXES = {".zip", ".7z", ".rar", ".tar", ".gz", ".bz2", ".xz", ".tgz", ".wim"}
-
-
-def _seven_zip_binary() -> Path:
-    import os
-
-    seven_zip = Path(os.environ.get("SEVENZIP_PATH", r"C:\Program Files\7-Zip\7z.exe"))
-    if not seven_zip.is_file():
-        raise ValueError(
-            "未找到 7-Zip（默认路径 C:\\Program Files\\7-Zip\\7z.exe），"
-            "请安装或用环境变量 SEVENZIP_PATH 指定 7z.exe 位置。"
-        )
-    return seven_zip
-
-
-def _run_7z(args: list[str], timeout: int = 300) -> str:
-    """执行 7z 命令并返回 stdout；非零退出码抛 ValueError。"""
-    import subprocess
-
-    try:
-        result = subprocess.run(
-            [str(_seven_zip_binary()), *args],
-            capture_output=True, text=True, timeout=timeout, encoding="utf-8", errors="replace",
-            creationflags=getattr(subprocess, "CREATE_NO_WINDOW", 0),
-        )
-    except subprocess.TimeoutExpired as exc:
-        raise ValueError(f"7z 操作超时（{timeout}s），已中止。") from exc
-    if result.returncode != 0:
-        detail = (result.stderr or result.stdout or "").strip().splitlines()
-        raise ValueError("7z 失败：" + (detail[-1] if detail else f"退出码 {result.returncode}"))
-    return result.stdout or ""
-
+# ---------------- 跨平台压缩包与文件操作 ----------------
 
 def archive_tool(
-    operation: str,
-    path: str,
-    root: Path | None = None,
-    readable_roots: Iterable[Path] | None = None,
-    display_root: Path | None = None,
-    output_dir: Path | None = None,
+    operation: str, path: str, root: Path | None = None,
+    readable_roots: Iterable[Path] | None = None, display_root: Path | None = None,
+    output_dir: Path | None = None, should_cancel: CancelCheck = None,
+) -> str:
+    """Use the same archive backend as the Web workspace."""
+    raise_if_cancelled(should_cancel)
+    if operation not in {"list", "extract", "create"}:
+        return "错误：operation 只支持 list、extract、create"
+    try:
+        resolved = resolve_readable_path(path, root, readable_roots)
+        if not resolved.exists():
+            return f"错误：路径不存在：{path}"
+        if operation == "list":
+            members = archive_members(resolved, should_cancel)
+            lines = [f"{member.name}{'/' if member.directory else ''} ({str(member.size) + ' B' if member.size is not None else '大小未知'})" for member in members[:_MAX_LIST_ENTRIES]]
+            if len(members) > _MAX_LIST_ENTRIES:
+                lines.append(f"…（共 {len(members)} 条目，已截断）")
+            return f"{resolved.name} 包内清单：\n" + "\n".join(lines)
+        if operation == "extract":
+            target = extract_archive(resolved, should_cancel)
+            count = sum(entry.is_file() for entry in target.rglob("*"))
+            return f"已解压 {resolved.name} → {_display_read_path(target, display_root)}（{count} 个文件）。下一步可用 list_dir 查看结构。"
+        if output_dir is None:
+            return "错误：当前环境不支持创建压缩包（无写入边界）"
+        destination_root = (bounded_path(root, output_dir, readable_roots, allow_root=True)
+                            if root is not None else output_dir.resolve())
+        destination = create_zip(resolved, destination_root, should_cancel)
+        return f"已压缩 → {_display_read_path(destination, display_root)}（{destination.stat().st_size} 字节）。"
+    except (ValueError, OSError) as exc:
+        return f"错误：{exc}" if isinstance(exc, ValueError) else "错误：压缩包不存在、无法读取或写入，请检查权限和文件完整性"
+
+
+def file_operate(
+    operation: str, path: str, target: str = "", recursive: bool = False,
+    overwrite: bool = False, *, root: Path, allowed_roots: Iterable[Path] | None = None,
+    display_root: Path | None = None, operator: Callable | None = None,
     should_cancel: CancelCheck = None,
 ) -> str:
-    """压缩包三合一工具（7z 后端）：list 看包内文件树 / extract 解压 / create 压缩。
-
-    安全边界：读侧路径须在可读根内；解压/压缩目标限定在 Session 目录内；
-    解压后逐条目校验无路径穿越；输出按估算 token 截断。
-    """
     raise_if_cancelled(should_cancel)
-    op = (operation or "").strip().lower()
-    if op not in ("list", "extract", "create"):
-        return "错误：operation 只支持 list（看包内文件树）/ extract（解压）/ create（压缩）。"
-    # 解析源路径（list/extract 读压缩包；create 读文件或目录）
-    src = Path(path)
     try:
-        if src.is_absolute():
-            resolved = resolve_readable_path(path, root, readable_roots)
+        if operator is not None:
+            result = operator(operation, path, target, recursive=recursive, overwrite=overwrite,
+                              should_cancel=should_cancel)
         else:
-            resolved = (display_root / src).resolve() if display_root is not None else src.resolve()
-    except ValueError as e:
-        return f"错误：{e}"
-    if not resolved.exists():
-        return f"错误：路径不存在：{path}"
-
-    import shutil
-
-    try:
-        if op == "list":
-            if resolved.suffix.lower() not in _ARCHIVE_SUFFIXES:
-                return f"错误：不是支持的压缩包格式（{resolved.name}）。支持：{'、'.join(sorted(_ARCHIVE_SUFFIXES))}"
-            out = _run_7z(["l", "-ba", str(resolved)], timeout=120)
-            lines = out.splitlines()
-            head = "\n".join(lines[:_MAX_LIST_ENTRIES * 2])  # l 输出每条约2行
-            if len(lines) > _MAX_LIST_ENTRIES * 2:
-                head += f"\n…（共 {len(lines)} 行输出，已截断；可用更小的包或分卷查看）"
-            return f"{resolved.name} 包内清单：\n{head}"
-
-        if op == "extract":
-            if resolved.suffix.lower() not in _ARCHIVE_SUFFIXES:
-                return f"错误：不是支持的压缩包格式（{resolved.name}）。支持：{'、'.join(sorted(_ARCHIVE_SUFFIXES))}"
-            # 与界面「解压到此处」一致：解压到压缩包同级目录（workspace/x.zip → workspace/x/）
-            base = resolved.parent
-            target = base / f"{resolved.stem}"
-            counter = 1
-            while target.exists():
-                target = base / f"{resolved.stem}_{counter}"
-                counter += 1
-            target.mkdir(parents=True)
-            try:
-                _run_7z(["x", "-y", f"-o{target}", str(resolved)])
-            except ValueError:
-                shutil.rmtree(target, ignore_errors=True)
-                raise
-            # 单根包裹提升（WZ.zip → WZ/WZ/* 提升一层）
-            top = list(target.iterdir())
-            if len(top) == 1 and top[0].is_dir():
-                wrapper = top[0]
-                for item in wrapper.iterdir():
-                    shutil.move(str(item), str(target / item.name))
-                wrapper.rmdir()
-            # 路径穿越校验：产物必须都在目标目录内
-            for p in target.rglob("*"):
-                try:
-                    p.resolve().relative_to(base.resolve())
-                except ValueError:
-                    shutil.rmtree(target, ignore_errors=True)
-                    return "错误：压缩包内含越界路径，已中止并清理。"
-            n_files = sum(1 for p in target.rglob("*") if p.is_file())
-            if display_root is not None and display_root in target.parents:
-                rel = target.relative_to(display_root).as_posix()
-            else:
-                rel = str(target)
-            return f"已解压 {resolved.name} → {rel}（{n_files} 个文件）。下一步可用 list_dir 查看结构。"
-
-        # create
-        if output_dir is None:
-            return "错误：当前环境不支持创建压缩包（无写入边界）。"
-        if resolved.is_dir():
-            default_name = f"{resolved.name}.zip"
-        else:
-            default_name = f"{resolved.stem}.zip"
-        dest = output_dir / default_name
-        counter = 1
-        while dest.exists():
-            dest = output_dir / f"{resolved.stem}_{counter}.zip"
-            counter += 1
-        try:
-            _run_7z(["a", "-tzip", str(dest), str(resolved)])
-        except ValueError:
-            dest.unlink(missing_ok=True)
-            raise
-        rel = f"generate/{dest.relative_to(output_dir).as_posix()}" if output_dir in dest.parents else str(dest)
-        return f"已压缩 → {rel}（{dest.stat().st_size} 字节）。"
-    except ValueError as e:
-        return f"错误：{e}"
+            result = operate_files(operation, path, target, root=root, allowed_roots=allowed_roots,
+                                   recursive=recursive, overwrite=overwrite, should_cancel=should_cancel)
+        labels = {"cp": "已复制", "mv": "已移动", "rm": "已删除", "mkdir": "已创建目录"}
+        return f"{labels[operation]}：{_display_read_path(result, display_root or root)}"
+    except ValueError as exc:
+        return f"错误：{exc}"
+    except FileNotFoundError:
+        return "错误：源文件或父目录不存在，请先 list_dir 确认路径"
+    except OSError:
+        return "错误：文件操作失败，请检查权限、目标是否存在或目录是否为空"
 
 
 class CommandRunner(Protocol):
@@ -655,6 +578,7 @@ def build_file_tools(
     should_cancel: CancelCheck = None,
     allow_force_read: bool = False,
     on_tool_progress: Callable[[str, str], None] | None = None,
+    file_operator: Callable | None = None,
 ) -> list[Skill]:
     """构建主 Agent 的工具表。ocr_llm 不为 None 时注册 ocr_image
     （主模型无视觉能力时，用多模态验证模型做图片文字提取）；
@@ -995,18 +919,50 @@ def build_file_tools(
                 ),
             )
         )
-    # 压缩包三合一（7z 后端）：主/子 Agent 均可用，不依赖 run_command
+    skills.append(
+        Skill(
+            name="file_operate",
+            description=(
+                "在安全目录内管理文件与目录：cp=复制、mv=移动或重命名、rm=删除、mkdir=建目录。"
+                "先 list_dir 确认路径；target 必须是完整的新路径，不会自动加入已有目录。"
+                "复制目录、递归删除目录或 mkdir 创建多级目录需 recursive=true。"
+                "默认不覆盖；overwrite=true 仅用于文件，不能合并或覆盖目录。"
+                "不能操作顶层目录、链接或安全目录之外的文件。不执行 shell 命令。"
+                "文本内容写入和局部替换仍使用 write_file / replace_in_file。"
+                + (session_path_hint if readable_root else "CLI 仅允许当前产物目录，相对路径以产物目录为基准。")
+            ),
+            parameters={
+                "type": "object",
+                "properties": {
+                    "operation": {"type": "string", "enum": ["cp", "mv", "rm", "mkdir"]},
+                    "path": {"type": "string", "description": "源路径；rm 要删除的路径；mkdir 要创建的目录"},
+                    "target": {"type": "string", "description": "cp/mv 的完整目标路径，其他操作省略"},
+                    "recursive": {"type": "boolean", "default": False},
+                    "overwrite": {"type": "boolean", "default": False},
+                },
+                "required": ["operation", "path"],
+                "additionalProperties": False,
+            },
+            # Only public tool arguments are accepted; callers cannot replace bound security settings.
+            handler=lambda operation, path, target="", recursive=False, overwrite=False: file_operate(
+                operation, path, target, recursive, overwrite, root=readable_root or writable_root,
+                allowed_roots=readable_roots if readable_root else (writable_root,),
+                display_root=readable_root, operator=file_operator, should_cancel=should_cancel),
+        )
+    )
+    # 主/子 Agent 与网页共用跨平台压缩包后端，不依赖 run_command。
     skills.append(
         Skill(
             name="archive_tool",
             description=(
-                "压缩包工具（7-Zip 后端），三个操作："
+                "跨平台压缩包工具，三个操作："
                 "list=查看压缩包内文件清单（不解压）；"
-                "extract=把压缩包解压到 workspace 下的同名目录（自动防路径穿越，"
+                "extract=把压缩包解压到同级的同名目录（自动防路径穿越，"
                 "单根包裹自动提升一层）；"
                 "create=把文件或目录压缩为 zip 放到 generate/。"
-                "支持 zip/7z/rar/tar/gz/bz2/xz/tgz。"
+                "所有格式统一使用系统安装的 7-Zip（Windows/Linux），不使用 Python 压缩包后端。"
                 "收到压缩包（如上传的 zip/7z）时：先 list 看结构，再 extract 解压后处理。"
+                + session_path_hint
             ),
             parameters={
                 "type": "object",
@@ -1023,8 +979,8 @@ def build_file_tools(
                 },
                 "required": ["operation", "path"],
             },
-            handler=partial(
-                archive_tool,
+            handler=lambda operation, path: archive_tool(
+                operation, path,
                 root=readable_root, readable_roots=readable_roots,
                 display_root=readable_root,
                 output_dir=writable_root,

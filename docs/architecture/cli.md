@@ -43,6 +43,8 @@ sequenceDiagram
 
 CLI 创建独立的 `Session` 和 `RunManager(max_workers=1)`。当前终端聊天记录不进入 Web 的用户会话数据库，文件产物使用本地输出目录。数据库在这里主要提供模型配置。
 
+主 Agent 与文件子 Agent 均提供 `file_operate`（`cp`、`mv`、`rm`、`mkdir`）。CLI 中它只允许当前产物目录，相对路径以该目录为基准；Web 与机器任务则使用当前 Session 的三个文件节点。复制、移动、删除和建目录管理目录项，`write_file` / `replace_in_file` 专门管理文本内容，`archive_tool` 专门管理压缩包，避免把用途与参数不同的工具混在一个入口中。跨平台后端与[部署说明](../deployment.md#archive-support)共用。
+
 本地技能目录中的名称与简介随模型请求提供，完整指引只在任务相关或明确指定技能时通过 `use_skill` 读取。一轮结束后正文退出工作上下文，需要时下轮重新读取；机制与网页、机器任务一致，见[技能的按需加载](index.md#skill-loading)。
 
 ## 控制与生命周期

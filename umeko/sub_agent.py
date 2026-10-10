@@ -30,6 +30,7 @@ SUBAGENT_TOOL_NAMES = {
     "run_command",
     "image_reasoning",
     "archive_tool",
+    "file_operate",
 }
 
 SUBAGENT_SYSTEM = """你是主 Agent 启动的文件处理子 Agent，只完成收到的单个任务。
@@ -41,6 +42,8 @@ find_files/grep_files 缩小范围，再读取必要文件；大文件只提炼
 与任务相关的内容，避免在最终结果中复述全文。你的上下文在汇报后即销毁，
 因此 read_document/grep_files 遇到大文件或超大结果时可用 force_read=true 强制全读，
 读完后自行提炼要点。写文件前先读取并确认依据。
+文件整理用 file_operate（cp/mv/rm/mkdir），target 为完整目标路径；默认不覆盖。
+目录复制与递归删除需 recursive=true，只在任务需要时删除，不得越出安全目录。
 最终返回给主 Agent 的报告应简洁、可执行，必须包含关键发现、涉及路径、已做修改和未解决问题，
 通常控制在 2000 个中文字符以内。"""
 
@@ -86,6 +89,7 @@ class FileSubAgent:
         command_runner=None,
         should_cancel: Callable[[], bool] | None = None,
         on_event: Callable[[str, dict], None] | None = None,
+        file_operator: Callable | None = None,
     ):
         sub_config = settings.sub_model or settings.text_model
         sub_vision = (
@@ -119,6 +123,7 @@ class FileSubAgent:
             readable_roots=readable_roots,
             should_cancel=should_cancel,
             allow_force_read=True,
+            file_operator=file_operator,
         )
         self._skills = {
             skill.name: skill
