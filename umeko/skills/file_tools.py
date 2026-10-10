@@ -1,4 +1,4 @@
-"""内置文件工具：文件读取/查找/写入/替换/搜索、读图/OCR、工作文档、Skill 挂载。
+"""内置文件工具：文件读取/查找/写入/替换/搜索、通用图像推理、工作文档、Skill 挂载。
 
 领域工具（如作图、领域状态查看）不进基座，由各领域项目以 extra_skills 注入。
 """
@@ -16,6 +16,7 @@ from ..archives import archive_members, extract_archive, create_zip
 from ..file_operations import bounded_path, operate_files
 from ..images import validate_image
 from ..llm import LLMClient
+from ..prompts.vision import IMAGE_REASONING_DESCRIPTION, IMAGE_REASONING_PROMPT_DESCRIPTION
 from ..session import Session
 from ..tree import build_tree, render_text
 from .base import Skill
@@ -580,8 +581,7 @@ def build_file_tools(
     on_tool_progress: Callable[[str, str], None] | None = None,
     file_operator: Callable | None = None,
 ) -> list[Skill]:
-    """构建主 Agent 的工具表。ocr_llm 不为 None 时注册 ocr_image
-    （主模型无视觉能力时，用多模态验证模型做图片文字提取）；
+    """构建主 Agent 的工具表。vision_llm 不为 None 时注册通用 image_reasoning；
     command_runner 不为 None 时注册 run_command（界面层提供确认与进程管理）；
     allow_force_read 为 True 时（子 Agent）允许 read_document/grep_files
     使用 force_read=true 强制返回完整内容。"""
@@ -887,20 +887,13 @@ def build_file_tools(
         skills.append(
             Skill(
                 name="image_reasoning",
-                description=(
-                    "使用视觉模型分析一张或多张图片（不限文字：可提取文字/描述内容/"
-                    "按指令检查图片）。prompt 里写清楚要做什么（如“提取图中全部文字”"
-                    "即为 OCR）。流式返回，执行中即可在工具卡片看到实时输出。"
-                ),
+                description=IMAGE_REASONING_DESCRIPTION,
                 parameters={
                     "type": "object",
                     "properties": {
                         "prompt": {
                             "type": "string",
-                            "description": (
-                                "发给视觉模型的完整指令，如“提取图中全部文字，按原样输出”"
-                                "或“描述图片内容”"
-                            ),
+                            "description": IMAGE_REASONING_PROMPT_DESCRIPTION,
                         },
                         "image_paths": {
                             "type": "array",

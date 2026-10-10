@@ -12,6 +12,9 @@ from .cancellation import OperationCancelled
 from .config import Settings
 from .images import image_data_url, validate_image
 from .llm import LLMClient, message_text
+from .prompts.vision import (
+    IMAGE_REASONING_DESCRIPTION, IMAGE_REASONING_PROMPT_DESCRIPTION, image_input_guidance,
+)
 from .session import Session
 from .skills import Skill, build_file_tools, resolve_readable_path
 
@@ -26,7 +29,6 @@ SUBAGENT_TOOL_NAMES = {
     "write_file",
     "replace_in_file",
     "read_image",
-    "ocr_image",
     "run_command",
     "image_reasoning",
     "archive_tool",
@@ -34,9 +36,9 @@ SUBAGENT_TOOL_NAMES = {
 }
 
 SUBAGENT_SYSTEM = """你是主 Agent 启动的文件处理子 Agent，只完成收到的单个任务。
-你可以查找、搜索、读取和编辑文件，也可以用 image_reasoning 按调用参数中的指令分析
-一张或多张明确给出的图片；image_reasoning 本身不提供任何领域规则，检查标准与执行流程
-必须来自主 Agent 交给你的 Skill，禁止自行臆造。不能修改 Agent 配置、任意
+你可以查找、搜索、读取和编辑文件；图像能力以本次工具列表为准。
+普通图像理解按主 Agent 转交的用户要求执行，不以 Skill 为前提。
+专业质检的检查标准与执行流程必须来自主 Agent 交给你的 Skill，禁止自行臆造。不能修改 Agent 配置、任意
 加载 Skill，也不能创建其他子 Agent。需要理解目录结构时先用 list_dir 查看固定两级 tree；其他文件任务先用
 find_files/grep_files 缩小范围，再读取必要文件；大文件只提炼
 与任务相关的内容，避免在最终结果中复述全文。你的上下文在汇报后即销毁，
@@ -134,17 +136,13 @@ class FileSubAgent:
         if self._image_reasoning_llm is not None:
             self._skills["image_reasoning"] = Skill(
                 name="image_reasoning",
-                description=(
-                    "使用视觉模型按给定 prompt 分析一张或多张图片，并流式返回模型推理"
-                    "与最终文本。该工具不内置检查项、分类、PASS/FAIL 规则或报告格式；"
-                    "调用方必须从当前任务提供的 Skill 中取得完整指令。"
-                ),
+                description=IMAGE_REASONING_DESCRIPTION,
                 parameters={
                     "type": "object",
                     "properties": {
                         "prompt": {
                             "type": "string",
-                            "description": "发给视觉模型的完整指令、上下文和严格输出格式",
+                            "description": IMAGE_REASONING_PROMPT_DESCRIPTION,
                         },
                         "image_paths": {
                             "type": "array",
@@ -242,7 +240,11 @@ class FileSubAgent:
                 if name in allowed
             ]
             messages = [
-                {"role": "system", "content": self._system_prompt},
+                {"role": "system", "content": self._system_prompt + image_input_guidance(
+                    native_vision=self._vision and "read_image" in allowed,
+                    reasoning_available="image_reasoning" in allowed,
+                    model_label="子模型",
+                )},
                 {"role": "user", "content": task},
             ]
             override = None

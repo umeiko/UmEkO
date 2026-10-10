@@ -40,7 +40,7 @@ class Settings:
     # 主 Agent 上下文窗口，用于 UI 占用估算与压缩提示。不同兼容端点无法统一
     # 返回精确 tokenizer 结果，因此这里只作为容量参考，不参与供应商计费。
     context_window: int = 128000
-    # 多模态（视觉）模型；None = 未配置——image_reasoning/ocr_image 工具不可用
+    # 显式视觉模型；None 时 image_reasoning 可复用具有原生视觉能力的主/子模型。
     vision_model: ModelConfig | None = None
     text_model_vision: bool = False  # 文本（主）模型是否具备原生多模态能力
     # 子 Agent（文件子 Agent / Skill 生成 Agent）独立模型；None = 跟随主模型。
