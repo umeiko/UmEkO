@@ -29,6 +29,7 @@ def test_admin_record_inspection_auth_context_and_no_session_wakeup(machine_app)
     session_url = prefix + "/admin/v1/sessions/" + session.id
     with TestClient(app) as user, TestClient(admin_app) as admin:
         assert admin.get(session_url).status_code == 401
+        assert admin.get(prefix + "/admin/v1/tasks/missing/files").status_code == 401
         admin.cookies.set("umeko_admin", store.issue_token(owner["id"]), path=prefix or "/")
         assert admin.get(session_url).status_code == 401
         admin.cookies.clear()
@@ -85,6 +86,11 @@ def test_admin_record_inspection_auth_context_and_no_session_wakeup(machine_app)
         assert detail["events"] and detail["record"]["run_id"] == row["run_id"]
         assert set(service.sessions) == loaded_before
         assert "fixture-key" not in json.dumps(detail)
+        files = admin.get(prefix + "/admin/v1/tasks/" + task["id"] + "/files")
+        assert files.status_code == 200
+        assert files.json()["file_count"] == 2
+        assert files.json()["total_size"] > 0
+        assert set(service.sessions) == loaded_before
         assert "password_hash" not in json.dumps(detail)
         assert user.get(settings.base_path + "/admin/v1/tasks/" + task["id"]).status_code == 404
         assert admin.get(prefix + "/admin/v1/tasks/missing").status_code == 404
@@ -100,7 +106,8 @@ def test_admin_queued_and_failed_tasks_without_execution_session(machine_app):
     definition = app.state.fixture_agent
     principal = {"user_id": caller["user_id"], "agent_id": definition["id"],
                  "agent_definition": definition, "scopes": caller["scopes"]}
-    task = service.task_service.submit(principal, {"prompt": "Not started"})
+    task = service.task_service.submit(principal, {"prompt": "Not started", "files": [
+        {"name": "pending.txt", "content_base64": base64.b64encode(b"fixture input").decode()}]})
     user = store.create_user("inspection-admin", "fixture-only-password", "admin")
     admin_app = create_admin_app(settings, service, store)
     try:
@@ -111,6 +118,9 @@ def test_admin_queued_and_failed_tasks_without_execution_session(machine_app):
             assert queued["context"]["session_available"] is False
             assert queued["messages"] == queued["tools"] == []
             assert queued["input"]["prompt"] == "Not started"
+            files = admin.get("/admin/v1/tasks/" + task["id"] + "/files").json()
+            assert files["source"] == "submitted" and not files["complete"]
+            assert files["file_count"] == 1 and files["total_size"] == len(b"fixture input")
             with store.connect() as db:
                 db.execute("UPDATE service_tasks SET status='failed',error=? WHERE id=?", ("Startup failed", task["id"]))
             failed = admin.get("/admin/v1/tasks/" + task["id"]).json()

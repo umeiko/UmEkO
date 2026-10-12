@@ -17,6 +17,47 @@ export async function checkRecordInspection(page, context, adminBase, state, pre
   assert.match(await dialog.innerText(), /SAVED_MACHINE_INPUT/);
   assert.equal(await dialog.locator('.markdown-body strong').innerText(), 'SAVED_MACHINE_OUTPUT');
   assert.ok(await dialog.locator('.hljs-built_in').count());
+  await dialog.getByRole('tab', { name: label('文件树', 'File Tree'), exact: true }).click();
+  const fileTree = dialog.locator('.task-file-tree');
+  await fileTree.locator('.metadata-row[data-path="attachments/pasted.png"]').waitFor();
+  const manifest = await get('/admin/v1/tasks/' + record.task_id + '/files');
+  assert.equal(manifest.source, 'snapshot');
+  assert.equal(manifest.file_count, 3);
+  assert.ok(!(await fileTree.innerText()).includes('PRIVATE_FILE_CONTENT'));
+  assert.equal(
+    await fileTree.locator('a, pre, img').count(),
+    0,
+    'File tree has no contents or downloads',
+  );
+  await fileTree.locator('summary[data-path="generate/reports"]').click();
+  const generated = fileTree.locator('.metadata-row[data-path="generate/reports/result.html"]');
+  await generated.waitFor();
+  assert.equal(await generated.locator('.metadata-size').innerText(), '20 B');
+  await fileTree.locator('summary[data-path="generate/reports/empty"]').click();
+  await fileTree.getByText(label('空目录', 'Empty directory'), { exact: true }).waitFor();
+  await screenshot(page, 'task-file-tree', prefix);
+  await page.setViewportSize({ width: 390, height: 844 });
+  assert.ok(
+    await dialog.evaluate((el) => el.scrollWidth <= el.clientWidth + 1),
+    'File tree fits mobile',
+  );
+  await screenshot(page, 'task-file-tree-mobile', prefix);
+  await page.setViewportSize({ width: 1440, height: 1000 });
+  const filesUrl = adminBase + '/admin/v1/tasks/' + record.task_id + '/files';
+  await page.route(filesUrl, (r) =>
+    r.fulfill({
+      status: 503,
+      contentType: 'application/json',
+      body: JSON.stringify({ detail: 'TREE_UNAVAILABLE' }),
+    }),
+  );
+  await fileTree
+    .getByRole('button', { name: label('刷新文件树', 'Refresh file tree'), exact: true })
+    .click();
+  await fileTree.getByRole('alert').waitFor();
+  await page.unroute(filesUrl);
+  await fileTree.getByRole('button', { name: label('重试', 'Retry'), exact: true }).click();
+  await fileTree.getByRole('alert').waitFor({ state: 'hidden' });
   await dialog.getByRole('tab', { name: label('工具调用', 'Tool Calls') }).click();
   await dialog.locator('.inspection-tool summary').click();
   assert.equal(
@@ -78,6 +119,10 @@ export async function checkRecordInspection(page, context, adminBase, state, pre
     .filter({ hasText: 'Saved conversation fixture' })
     .click();
   await dialog.locator('.inspection-message').last().waitFor();
+  assert.equal(
+    await dialog.getByRole('tab', { name: label('文件树', 'File Tree'), exact: true }).count(),
+    0,
+  );
   assert.equal(await dialog.locator('.inspection-message').count(), 3);
   assert.equal(
     await dialog.locator('.inspection-message .markdown-body strong').first().innerText(),

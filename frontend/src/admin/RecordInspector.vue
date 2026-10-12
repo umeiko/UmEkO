@@ -8,6 +8,7 @@ import UiModal from '../shared/UiModal.vue';
 import UiIcon from '../shared/UiIcon.vue';
 import HelpTip from '../shared/HelpTip.vue';
 import MarkdownDocument from '../shared/MarkdownDocument.vue';
+import TaskFileTree from './TaskFileTree.vue';
 const { tr, date } = useAdminI18n();
 const props = defineProps({ modelValue: Boolean, kind: String, recordId: String });
 const emit = defineEmits(['update:modelValue']);
@@ -16,6 +17,7 @@ const detail = ref(null),
   error = ref(''),
   tab = ref('io'),
   raw = ref(false);
+const fileRevision = ref(0);
 let sequence = 0;
 async function load() {
   if (!props.modelValue || !props.recordId) return;
@@ -25,7 +27,10 @@ async function load() {
   try {
     const collection = props.kind === 'task' ? 'tasks' : 'sessions';
     const value = await api('GET', `/admin/v1/${collection}/${encode(props.recordId)}`);
-    if (seq === sequence) detail.value = value;
+    if (seq === sequence) {
+      detail.value = value;
+      fileRevision.value++;
+    }
   } catch (e) {
     if (seq === sequence) error.value = e.message;
   } finally {
@@ -56,6 +61,7 @@ const tabs = computed(() => [
   },
   { id: 'tools', label: tr('工具调用'), icon: 'code', count: detail.value?.tools.length || 0 },
   { id: 'context', label: tr('上下文'), icon: 'skills' },
+  ...(props.kind === 'task' ? [{ id: 'files', label: tr('文件树'), icon: 'folder' }] : []),
   ...(props.kind === 'task'
     ? [
         {
@@ -306,6 +312,12 @@ function tabKey(event, index) {
               <p v-if="!activeMessages.length" class="muted">{{ tr('暂无会话记录') }}</p>
             </section>
           </template>
+          <TaskFileTree
+            v-else-if="tab === 'files'"
+            :task-id="recordId"
+            :active="modelValue && tab === 'files'"
+            :revision="fileRevision"
+          />
           <template v-else-if="tab === 'events'">
             <details v-for="event in detail.events" :key="event.id" class="inspection-tool">
               <summary>

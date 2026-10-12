@@ -109,6 +109,8 @@ class TaskService:
             if "request_key" not in columns:
                 db.execute("ALTER TABLE service_tasks ADD COLUMN request_key TEXT")
                 db.execute("UPDATE service_tasks SET request_key=idempotency_key")
+            if "file_manifest_json" not in columns:
+                db.execute("ALTER TABLE service_tasks ADD COLUMN file_manifest_json TEXT")
             db.execute("CREATE UNIQUE INDEX IF NOT EXISTS idx_task_request_key ON service_tasks(user_id,agent_id,request_key)")
 
     def start(self):
@@ -330,6 +332,19 @@ class TaskService:
             self._wake.wait(0.25)
             self._wake.clear()
 
+    def capture_files(self, task_id):
+        from .file_manifest import capture, session_root
+        with self.store.connect() as db:
+            row = db.execute("SELECT user_id,session_id FROM service_tasks WHERE id=?", (task_id,)).fetchone()
+        if row is None or not row["session_id"]:
+            return
+        root = session_root(self.service.data_root, row["user_id"], row["session_id"])
+        snapshot = capture(root) if root is not None else None
+        if snapshot is not None:
+            with self.store.connect() as db:
+                db.execute("UPDATE service_tasks SET file_manifest_json=? WHERE id=?",
+                           (json.dumps(snapshot, ensure_ascii=False), task_id))
+
     def _execute(self, task_id):
         session, run = None, None
         try:
@@ -399,6 +414,11 @@ class TaskService:
                 self._event(db, task_id, "task.failed", {"error": error})
             logger.exception("Machine task failed: %s", task_id)
         finally:
+            if session:
+                try:
+                    self.capture_files(task_id)
+                except Exception:
+                    logger.exception("Failed to capture task file metadata: %s", task_id)
             if session and (run is None or run.finished):
                 self.service.evict_session(session.id)
             if run and run.finished:

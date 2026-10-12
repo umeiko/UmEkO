@@ -2751,6 +2751,55 @@
         ]
       }
     },
+    "/admin/v1/tasks/{task_id}/files": {
+      "get": {
+        "operationId": "inspect_task_files_admin_v1_tasks__task_id__files_get",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "task_id",
+            "required": true,
+            "schema": {
+              "title": "Task Id",
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "additionalProperties": true,
+                  "title": "Response Inspect Task Files Admin V1 Tasks  Task Id  Files Get",
+                  "type": "object"
+                }
+              }
+            },
+            "description": "Successful Response"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            },
+            "description": "Validation Error"
+          }
+        },
+        "security": [
+          {
+            "umeko_admin": []
+          }
+        ],
+        "summary": "Inspect Task Files",
+        "tags": [
+          "monitoring"
+        ]
+      }
+    },
     "/admin/v1/users": {
       "get": {
         "operationId": "users_admin_v1_users_get",

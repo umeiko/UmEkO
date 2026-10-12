@@ -355,6 +355,14 @@ def create_admin_app(settings: Settings, service: AgentService, store: Store, pu
         except KeyError as exc:
             raise HTTPException(404, "任务不存在") from exc
 
+    @app.get("/admin/v1/tasks/{task_id}/files", tags=["monitoring"])
+    def inspect_task_files(task_id: str) -> dict:
+        from .inspection import task_files
+        try:
+            return task_files(service, task_id)
+        except KeyError as exc:
+            raise HTTPException(404, "任务不存在") from exc
+
     @app.get("/admin/v1/users")
     def users() -> list[dict]:
         return store.list_users()

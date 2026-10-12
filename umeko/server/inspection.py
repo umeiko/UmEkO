@@ -2,6 +2,7 @@
 from __future__ import annotations
 
 import json
+from ..host.file_manifest import capture, recorded_files, session_root, MAX_ENTRIES
 
 
 def _session(db, session_id):
@@ -99,3 +100,22 @@ def task_detail(service, task_id):
             "tools": _tools(db, row["session_id"], row["run_id"]) if row["run_id"] else [],
             "context": context, "events": events,
         }
+
+
+def task_files(service, task_id):
+    with service.store.connect() as db:
+        row = db.execute("SELECT user_id,session_id,status,input_json,created_at,file_manifest_json "
+                         "FROM service_tasks WHERE id=?", (task_id,)).fetchone()
+        if row is None:
+            raise KeyError("任务不存在")
+        artifacts = [dict(item) for item in db.execute(
+            "SELECT name,size FROM service_task_artifacts WHERE task_id=? ORDER BY name LIMIT ?", (task_id, MAX_ENTRIES))]
+    if row["file_manifest_json"] and row["status"] in {"completed", "failed", "cancelled"}:
+        return {**json.loads(row["file_manifest_json"]), "source": "snapshot"}
+    if row["session_id"]:
+        root = session_root(service.data_root, row["user_id"], row["session_id"])
+        current = capture(root) if root is not None else None
+        if current is not None:
+            return {**current, "source": "current"}
+    return {**recorded_files(json.loads(row["input_json"]), artifacts, row["created_at"]),
+            "source": "records" if row["session_id"] else "submitted"}

@@ -77,6 +77,14 @@ def inspection_records(service, store):
         db.execute("UPDATE service_tasks SET status='completed',session_id=?,run_id=?,reply=? WHERE id=?",
                    (execution.id, "fixture-machine-run", reply, task["id"]))
         service.task_service._event(db, task["id"], "task.completed", {"reply": reply})
+    (execution.root / "generate" / "reports" / "empty").mkdir(parents=True)
+    metadata_files = [execution.root / "attachments" / "pasted.png", execution.root / "workspace" / "data.txt",
+                      execution.root / "generate" / "reports" / "result.html"]
+    for path in metadata_files:
+        path.write_bytes(b"PRIVATE_FILE_CONTENT")
+    service.task_service.capture_files(task["id"])
+    for path in metadata_files:
+        path.unlink()  # The browser must display the persisted tree without file bodies.
     service.evict_session(execution.id)
     service.task_service._remove_staging(task["id"])
     failed = service.task_service.submit(principal, {"prompt": "FAILED_MACHINE_INPUT"}, source="a2a")
