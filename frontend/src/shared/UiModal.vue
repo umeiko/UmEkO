@@ -9,7 +9,9 @@ const dialog = ref();
 function sync() {
   if (!dialog.value) return;
   if (props.modelValue && !dialog.value.open) {
-    const field = dialog.value.querySelector('input:not([type="checkbox"]),textarea,select');
+    const field =
+      dialog.value.querySelector('input:not([type="checkbox"]),textarea,select') ||
+      dialog.value.querySelector('.modal-header > button');
     field?.setAttribute('autofocus', '');
     dialog.value.showModal();
     field?.focus();

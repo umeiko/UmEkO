@@ -28,8 +28,13 @@ API：
 | GET / PUT | `/admin/v1/service-access` | 接入方式 `auth_mode`：`required` 或 `anonymous` |
 | GET | `/admin/v1/tasks` | 最近 100 个任务的 `agent_id`、`agent_name`、调用者、协议来源、`caller_ip`、状态与时间，不包含输入正文和模型密钥 |
 | POST | `/admin/v1/tasks/{task_id}/cancel` | 请求取消后的任务 |
+| GET | `/admin/v1/tasks/{task_id}` | 任务详情：`record`、`input`、`output`、`messages`、`tools`、`context`、`events`；仅管理员可读 |
 | GET / POST | `/admin/v1/service-accounts` | 账号列表 / 创建账号并返回一次性凭据 |
 | PATCH | `/admin/v1/service-accounts/{account_id}` | 启用、停用或更换凭据 |
 | DELETE | `/admin/v1/service-accounts/{account_id}` | 删除账号、撤销凭据并清理所属历史与文件；任务未结束时返回 409 |
 
 这些接口只接受管理员 Cookie。普通用户服务端口不暴露管理 API。采样在后台执行，HTTP 返回已采集的数据；重启后趋势重新开始，不作为长期监控或审计存储。
+
+点击任务 ID 或“详情”，可以查看输入和附件信息、最终输出或错误、会话消息、工具参数与返回，以及运行事件。工具记录按本次 Run 过滤，打开详情不会重新加载模型或执行任务。未开始、失败或执行会话已经清理的任务仍可查看其保存的输入与事件；任务到期被清理后返回 `404`。运行事件沿用现有保留规则：最多 500 条，单条超过 16 KiB 的事件可能只有缩略信息，工具完整参数与结果从独立记录读取。
+
+“上下文”展示已保存的会话摘要、保留消息与技能挂载；有配置快照的机器任务还展示提交时的 Agent 工作指引和下发技能内容。它不等同于每一次模型请求的原始报文：基础系统提示词、临时消息和完整模型请求没有持久化，旧任务没有保存的配置不会用当前配置冒充。详情不返回 Provider 密钥或服务账号凭据。

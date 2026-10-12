@@ -7,6 +7,7 @@ import { createServer } from 'node:net';
 import { fileURLToPath } from 'node:url';
 import path from 'node:path';
 import { startProxy } from './proxy.mjs';
+import { checkRecordInspection } from './admin-inspection.mjs';
 const require = createRequire(import.meta.url);
 const { chromium } = require(process.env.UMEKO_PLAYWRIGHT || 'playwright');
 const root = fileURLToPath(new URL('../../', import.meta.url));
@@ -317,10 +318,7 @@ async function treeSelectionWorkflow(page, context, publicBase, originalSid, pre
     await action('attach').click();
     await page.locator('#attachments .chip-name').getByText('c.txt', { exact: true }).waitFor();
     assert.equal(await page.locator('#attachments .chip-name').count(), 2);
-    assert.equal(
-      await page.locator('#prompt').evaluate((node) => document.activeElement === node),
-      true,
-    );
+    await page.waitForFunction(() => document.activeElement === document.querySelector('#prompt'));
     await row('workspace/a.txt').click();
     await row('workspace/c.txt').click({ modifiers: ['Control'] });
     await page.keyboard.press('Control+c');
@@ -364,9 +362,8 @@ async function treeSelectionWorkflow(page, context, publicBase, originalSid, pre
     await page.locator('#file-entry-name').fill('a_renamed.txt');
     await page.locator('#file-entry-form button[type=submit]').click();
     await page.locator('#file-entry-dialog').waitFor({ state: 'hidden' });
-    assert.equal(
-      await row('generate/a_renamed.txt').evaluate((node) => node === document.activeElement),
-      true,
+    await page.waitForFunction(() =>
+      document.activeElement?.matches('.tree-file[data-path="generate/a_renamed.txt"]'),
     );
     await folder('workspace/dest').click({ button: 'right' });
     await action('paste').click();
@@ -1280,6 +1277,7 @@ try {
       await checkAdminLanguages(page, context, adminBase);
       // Both prefixed apps share an origin, so choose the saved locale for the workspace too.
       await page.locator('[data-language-select]').selectOption(prefix ? 'en' : 'zh-CN');
+      await checkRecordInspection(page, context, adminBase, state, prefix, screenshot);
       // Browser registration, files, module assets, SSE increments, tool folding and cancellation.
       const work = await context.newPage(),
         requests = [],

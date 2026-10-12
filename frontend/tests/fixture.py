@@ -12,6 +12,7 @@ import uvicorn
 
 from umeko.config import ModelConfig, Settings
 from umeko.server import admin as admin_module
+from umeko.host.identities import SCOPES
 from umeko.server.__main__ import _serve_admin
 from umeko.server.app import create_app
 from umeko.skills import script_runner
@@ -47,6 +48,43 @@ greet("世界")
 '''
 
 DIRECTORY_SAMPLE = 'workspace/\n├── fig7_2.png (22.7 KB)\n└── reports/\n    └── output.md'
+
+
+def inspection_records(service, store):
+    owner = store.create_user("ui-history", "fixture-history-only")
+    session = service.create_session(user_id=owner["id"], title="Saved conversation fixture")
+    store.add_message(session.id, "user", "Earlier message")
+    store.save_context_summary(session.id, "SAVED_CONTEXT_SUMMARY", 0)
+    store.add_message(session.id, "user", "Saved question", json.dumps(["pasted.png"]))
+    store.add_message(session.id, "assistant", MARKDOWN_SAMPLE)
+    store.add_tool_event(session.id, "main", "list_dir", json.dumps(json.dumps({"directory": "workspace"})),
+                         json.dumps(DIRECTORY_SAMPLE), "fixture-web-run")
+    service.evict_session(session.id)
+    account = service.identity_store.create("Inspection caller", sorted(SCOPES))
+    definition = service.agent_registry.save({"slug": "inspection-fixture", "name": "Inspection Agent",
+        "description": "Browser inspection fixture", "system_prompt": "SAVED_AGENT_INSTRUCTION", "skill_names": []})
+    principal = {"user_id": account["user_id"], "scopes": sorted(SCOPES), "agent_id": definition["id"],
+                 "agent_definition": definition}
+    task = service.task_service.submit(principal, {"prompt": "SAVED_MACHINE_INPUT"}, source="mcp", caller_ip="192.0.2.15")
+    snapshot = service.agent_registry.snapshot(definition)
+    execution = service.create_session(user_id=account["user_id"], title="Saved machine fixture", agent_snapshot=snapshot)
+    store.add_message(execution.id, "user", "SAVED_MACHINE_INPUT")
+    reply = "## Saved result\n\n**SAVED_MACHINE_OUTPUT**\n\n```python\nprint('hello')\n```"
+    store.add_message(execution.id, "assistant", reply)
+    store.add_tool_event(execution.id, "subagent", "list_dir", '{"directory":"workspace"}', json.dumps(DIRECTORY_SAMPLE), "fixture-machine-run")
+    with store.connect() as db:
+        db.execute("UPDATE agent_sessions SET purpose='task' WHERE id=?", (execution.id,))
+        db.execute("UPDATE service_tasks SET status='completed',session_id=?,run_id=?,reply=? WHERE id=?",
+                   (execution.id, "fixture-machine-run", reply, task["id"]))
+        service.task_service._event(db, task["id"], "task.completed", {"reply": reply})
+    service.evict_session(execution.id)
+    service.task_service._remove_staging(task["id"])
+    failed = service.task_service.submit(principal, {"prompt": "FAILED_MACHINE_INPUT"}, source="a2a")
+    with store.connect() as db:
+        db.execute("UPDATE service_tasks SET status='failed',error=? WHERE id=?", ("FIXTURE_EXECUTION_ERROR", failed["id"]))
+    service.task_service._remove_staging(failed["id"])
+    service.agent_registry.save({**definition, "system_prompt": "CHANGED_AFTER_SUBMISSION"}, definition["id"])
+    return {"session_id": session.id, "task_id": task["id"], "failed_task_id": failed["id"]}
 
 
 def main():
@@ -120,6 +158,7 @@ def main():
                 session.active_run_holder["run"] = None
 
     service._execute_run = execute
+    inspection = inspection_records(service, store)
     admin_app = admin_module.create_admin_app(settings, service, store,
                                              public_url=args.public_url or f"http://127.0.0.1:{args.port}{args.prefix}")
     (directory / "state.json").write_text(json.dumps({
@@ -127,6 +166,7 @@ def main():
         "text_model": text["id"], "vision_model": vision["id"],
         "markdown_sample": MARKDOWN_SAMPLE,
         "directory_sample": DIRECTORY_SAMPLE,
+        "inspection": inspection,
     }), encoding="utf-8")
     threading.Thread(target=_serve_admin, args=(admin_app, "127.0.0.1", args.admin_port), daemon=True).start()
     uvicorn.run(app, host="127.0.0.1", port=args.port, log_level="error", root_path=args.prefix)

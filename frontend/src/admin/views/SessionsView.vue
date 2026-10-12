@@ -5,11 +5,23 @@ import { ref, onMounted } from 'vue';
 import { admin, api, run, confirm, notify } from '../state.js';
 import { encode } from '../../shared/api.js';
 import HelpTip from '../../shared/HelpTip.vue';
+import UiIcon from '../../shared/UiIcon.vue';
+import RecordInspector from '../RecordInspector.vue';
 const users = ref([]),
   selected = ref(admin.sessionUser?.id || ''),
   sessions = ref([]),
   loading = ref(false),
   error = ref('');
+const inspectId = ref(''),
+  inspectOpen = ref(false);
+function inspect(session) {
+  inspectId.value = session.id;
+  inspectOpen.value = true;
+}
+function back() {
+  admin.sessionUser = null;
+  admin.tab = 'users';
+}
 let sequence = 0;
 async function load() {
   const id = selected.value,
@@ -63,9 +75,16 @@ async function remove(s) {
         <h2>{{ tr('用户会话') }}</h2>
         <HelpTip :text="tr('卸载内存会话会停止当前运行，但保留历史；删除会永久清理历史和文件。')" />
       </div>
-      <select v-model="selected" :aria-label="tr('选择用户')" style="width: 220px" @change="load">
-        <option v-for="u in users" :key="u.id" :value="u.id">{{ u.username }}</option>
-      </select>
+      <div class="row">
+        <button id="sessions-back" @click="back">
+          <UiIcon name="chevron" style="transform: rotate(180deg)" :size="16" />{{
+            tr('返回用户列表')
+          }}
+        </button>
+        <select v-model="selected" :aria-label="tr('选择用户')" style="width: 220px" @change="load">
+          <option v-for="u in users" :key="u.id" :value="u.id">{{ u.username }}</option>
+        </select>
+      </div>
     </header>
     <p v-if="error" class="feedback bad card-body">
       {{ error }} <button @click="load">{{ tr('重试') }}</button>
@@ -84,7 +103,9 @@ async function remove(s) {
         <tbody>
           <tr v-for="s in sessions" :key="s.id">
             <td>
-              <strong>{{ s.title || s.id.slice(-12) }}</strong>
+              <button class="session-link" @click="inspect(s)">
+                {{ s.title || s.id.slice(-12) }}
+              </button>
               <p>
                 <code>{{ s.id }}</code>
               </p>
@@ -98,6 +119,9 @@ async function remove(s) {
             <td>{{ date(s.updated_at) }}</td>
             <td>
               <div class="row">
+                <button @click="inspect(s)">
+                  <UiIcon name="eye" :size="16" />{{ tr('查看内容') }}
+                </button>
                 <button v-if="s.loaded" @click="evict(s)">{{ tr('卸载内存') }}</button
                 ><button class="danger" @click="remove(s)">{{ tr('删除') }}</button>
               </div>
@@ -108,4 +132,22 @@ async function remove(s) {
       <div v-else class="empty-state">{{ loading ? tr('正在读取…') : tr('当前用户没有会话') }}</div>
     </div>
   </section>
+  <RecordInspector v-model="inspectOpen" kind="session" :record-id="inspectId" />
 </template>
+<style scoped>
+.session-link {
+  border: 0;
+  background: none;
+  color: var(--accent);
+  padding: 4px 0;
+  font-size: 14px;
+  font-weight: 600;
+  text-align: left;
+}
+.session-link:hover {
+  text-decoration: underline;
+}
+.card-head > .row {
+  flex-wrap: wrap;
+}
+</style>

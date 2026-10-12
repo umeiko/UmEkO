@@ -335,6 +335,14 @@ def create_admin_app(settings: Settings, service: AgentService, store: Store, pu
             raise HTTPException(404, "任务不存在")
         return service.task_service.cancel({"user_id": row["user_id"], "agent_id": row["agent_id"], "scopes": sorted(SCOPES)}, task_id)
 
+    @app.get("/admin/v1/tasks/{task_id}", tags=["monitoring"])
+    def inspect_machine_task(task_id: str) -> dict:
+        from .inspection import task_detail
+        try:
+            return task_detail(service, task_id)
+        except KeyError as exc:
+            raise HTTPException(404, "任务不存在") from exc
+
     @app.get("/admin/v1/users")
     def users() -> list[dict]:
         return store.list_users()
@@ -378,6 +386,14 @@ def create_admin_app(settings: Settings, service: AgentService, store: Store, pu
     @app.get("/admin/v1/users/{user_id}/sessions")
     def user_sessions(user_id: str) -> list[dict]:
         return service.admin_sessions(user_id)
+
+    @app.get("/admin/v1/sessions/{session_id}", tags=["sessions"])
+    def inspect_session(session_id: str) -> dict:
+        from .inspection import session_detail
+        try:
+            return session_detail(service, session_id)
+        except KeyError as exc:
+            raise HTTPException(404, "会话不存在") from exc
 
     @app.delete("/admin/v1/sessions/{session_id}", status_code=204)
     def delete_session(session_id: str) -> None:

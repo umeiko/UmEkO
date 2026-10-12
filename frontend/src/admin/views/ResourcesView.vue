@@ -6,11 +6,18 @@ import { api, run, notify } from '../state.js';
 import { bytes, encode } from '../../shared/api.js';
 import HelpTip from '../../shared/HelpTip.vue';
 import UiIcon from '../../shared/UiIcon.vue';
+import RecordInspector from '../RecordInspector.vue';
 const snapshot = ref(null),
   tasks = ref([]),
   error = ref(''),
   loading = ref(false),
   current = computed(() => snapshot.value?.current);
+const inspectId = ref(''),
+  inspectOpen = ref(false);
+function inspect(task) {
+  inspectId.value = task.id;
+  inspectOpen.value = true;
+}
 let timer,
   alive = true;
 async function load() {
@@ -254,7 +261,13 @@ async function cancel(t) {
             <tbody>
               <tr v-for="t in tasks" :key="t.id">
                 <td :title="t.id">
-                  <code>{{ t.id.slice(-10) }}</code>
+                  <button
+                    class="record-link mono"
+                    :aria-label="tr('查看任务 {id}', { id: t.id })"
+                    @click="inspect(t)"
+                  >
+                    {{ t.id.slice(-10) }}
+                  </button>
                 </td>
                 <td>{{ t.agent_name }}</td>
                 <td>{{ t.caller }}</td>
@@ -274,12 +287,17 @@ async function cancel(t) {
                 </td>
                 <td>{{ date(t.created_at) }}</td>
                 <td>
-                  <button
-                    v-if="['queued', 'running', 'cancelling'].includes(t.status)"
-                    @click="cancel(t)"
-                  >
-                    {{ tr('停止') }}</button
-                  ><span v-else class="muted">—</span>
+                  <div class="row">
+                    <button @click="inspect(t)">
+                      <UiIcon name="eye" :size="16" />{{ tr('详情') }}
+                    </button>
+                    <button
+                      v-if="['queued', 'running', 'cancelling'].includes(t.status)"
+                      @click="cancel(t)"
+                    >
+                      {{ tr('停止') }}
+                    </button>
+                  </div>
                 </td>
               </tr>
             </tbody>
@@ -289,4 +307,18 @@ async function cancel(t) {
       </section></template
     >
   </section>
+  <RecordInspector v-model="inspectOpen" kind="task" :record-id="inspectId" />
 </template>
+<style scoped>
+.record-link {
+  border: 0;
+  background: none;
+  color: var(--accent);
+  padding: 4px 0;
+  font-size: 14px;
+  text-align: left;
+}
+.record-link:hover {
+  text-decoration: underline;
+}
+</style>
