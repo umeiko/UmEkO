@@ -149,6 +149,10 @@ def main():
             run.status = "running"
             run.emit("run.started")
             try:
+                if "FAST_SYNC_TEST" in user_input:
+                    store.add_message(session.id, "assistant", "FAST_SYNC_OK")
+                    run.finish("completed", reply="FAST_SYNC_OK")
+                    return
                 if "MARKDOWN_TEST" in user_input:
                     chunks = (MARKDOWN_SAMPLE[:120], MARKDOWN_SAMPLE[120:380], MARKDOWN_SAMPLE[380:])
                     for chunk in chunks:
@@ -177,11 +181,13 @@ def main():
                     result = DIRECTORY_SAMPLE if i == 0 else MARKDOWN_SAMPLE if i == 1 else json.dumps({"ok": True, "index": i})
                     store.complete_tool_event(event_id, json.dumps(result))
                     run.emit("tool.completed", name=name, result=result)
-                for text in ("STREAM_", "UI_", "OK"):
+                external = "EXTERNAL_SYNC_TEST" in user_input
+                reply = "EXTERNAL_STREAM_UI_OK" if external else "STREAM_UI_OK"
+                for text in ("EXTERNAL_STREAM_" if external else "STREAM_", "UI_", "OK"):
                     run.emit("assistant.delta", text=text)
                     time.sleep(.7)
-                store.add_message(session.id, "assistant", "STREAM_UI_OK")
-                run.finish("completed", reply="STREAM_UI_OK")
+                store.add_message(session.id, "assistant", reply)
+                run.finish("completed", reply=reply)
             except Exception as exc:
                 run.finish("failed", error=str(exc))
             finally:

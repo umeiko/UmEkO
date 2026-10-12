@@ -23,6 +23,15 @@ export function mountWorkspaceRuntime({ onTemporaryState = () => {} } = {}) {
   let temporaryTimer;
   let temporaryHeartbeat;
   let temporaryExpired = false;
+  let sessionWatch;
+  let observedSessionState;
+  let handledSessionState;
+  let renderedMessageVersion = '';
+  let renderedMessageCount = 0;
+  let followingMessageLimit = 0;
+  let localRunSubmitting = false;
+  let externalSyncBusy = false;
+  let externalSyncRetry;
   let lastTemporaryActivity = 0;
   function renderTemporaryExpiry(info) {
     const node = document.querySelector('#temporary-expiry');
@@ -60,6 +69,8 @@ export function mountWorkspaceRuntime({ onTemporaryState = () => {} } = {}) {
     clearInterval(temporaryHeartbeat);
     activeRunCleanup?.();
     activeStream?.close();
+    sessionWatch?.close();
+    clearTimeout(externalSyncRetry);
     document.querySelectorAll('dialog[open]').forEach((dialog) => dialog.close());
     onTemporaryState('expired');
   }
@@ -1089,6 +1100,101 @@ export function mountWorkspaceRuntime({ onTemporaryState = () => {} } = {}) {
       .forEach((node) => node.classList.add('hidden')),
   );
 
+  function renderSessionHistory(messages, toolEvents, activeRun) {
+    resetToolPresentation();
+    ui.messages.replaceChildren();
+    if (!messages.length) {
+      const welcomeNode = addMessage(t('message.welcome'));
+      welcomeNode.dataset.welcome = '1';
+    }
+    renderedMessageCount = messages.length;
+    renderedMessageVersion = `${messages.length}:${messages.at(-1)?.id || 0}`;
+    const timeline = [
+      ...messages.map((m) => ({ kind: 'message', at: m.created_at, m })),
+      ...toolEvents
+        .filter((e) => !activeRun || e.run_id !== activeRun.id)
+        .map((e) => ({ kind: 'tool', at: e.created_at, e })),
+    ].sort((a, b) => (a.at < b.at ? -1 : a.at > b.at ? 1 : 0));
+    let legacyTurn = 0;
+    for (const item of timeline) {
+      if (item.kind === 'message') {
+        const m = item.m;
+        if (m.role === 'user') legacyTurn++;
+        addMessage(
+          m.content,
+          m.role,
+          m.attachments.map((filename) => ({ filename })),
+        );
+      } else {
+        replayToolEvent(item.e, getToolHistory(item.e.run_id || `legacy-${legacyTurn}`));
+      }
+    }
+  }
+
+  async function syncExternalSession() {
+    if (
+      !temporary ||
+      temporaryExpired ||
+      lifecycle.signal.aborted ||
+      !observedSessionState ||
+      externalSyncBusy ||
+      localRunSubmitting ||
+      activeRunId
+    )
+      return;
+    const target = sessionId;
+    const frame = JSON.stringify(observedSessionState);
+    const version = `${observedSessionState.message_count}:${observedSessionState.message_id}`;
+    if (
+      frame === handledSessionState ||
+      (version === renderedMessageVersion && !observedSessionState.run_id)
+    )
+      return;
+    externalSyncBusy = true;
+    try {
+      const [messages, tools, run] = await Promise.all([
+        api(`/v1/sessions/${target}/messages`),
+        api(`/v1/sessions/${target}/tool-events`),
+        api(`/v1/sessions/${target}/active-run`),
+      ]);
+      if (target !== sessionId || temporaryExpired || localRunSubmitting || activeRunId) return;
+      // Only replace the conversation: drafts, attachments, file selection and preview stay intact.
+      renderSessionHistory(messages, tools, run);
+      handledSessionState = frame;
+      if (run) followRun(run.id, target);
+      else setRunControls(false);
+      await Promise.allSettled([refreshTree(target), refreshContext(target)]);
+    } catch (_) {
+      if (!temporaryExpired && !lifecycle.signal.aborted)
+        externalSyncRetry = setTimeout(() => void syncExternalSession(), 1000);
+    } finally {
+      externalSyncBusy = false;
+      if (frame !== JSON.stringify(observedSessionState) && !activeRunId && !localRunSubmitting)
+        void syncExternalSession();
+    }
+  }
+
+  function watchTemporarySession() {
+    sessionWatch?.close();
+    sessionWatch = new EventSource(appUrl('/v1/temporary/events'));
+    sessionWatch.addEventListener('session.expired', expireTemporaryWorkspace);
+    sessionWatch.addEventListener('session.changed', (event) => {
+      observedSessionState = JSON.parse(event.data);
+      if (activeRunId) {
+        if (
+          (!observedSessionState.run_id || observedSessionState.run_id === activeRunId) &&
+          observedSessionState.message_count <= followingMessageLimit
+        ) {
+          renderedMessageCount = observedSessionState.message_count;
+          renderedMessageVersion = `${observedSessionState.message_count}:${observedSessionState.message_id}`;
+          handledSessionState = JSON.stringify(observedSessionState);
+        }
+        return;
+      }
+      void syncExternalSession();
+    });
+  }
+
   async function loadSession(id) {
     const loadToken = ++sessionLoadToken;
     if (sessionId !== id) {
@@ -1122,11 +1228,6 @@ export function mountWorkspaceRuntime({ onTemporaryState = () => {} } = {}) {
     if (loadToken !== sessionLoadToken || sessionId !== id) return;
     selectedFile = null;
     selectedResource = null;
-    ui.messages.replaceChildren();
-    if (!messages.length) {
-      const welcomeNode = addMessage(t('message.welcome'));
-      welcomeNode.dataset.welcome = '1';
-    }
     // 回放工具调用历史：按时间归并到消息流（tool_events 与 messages 各自按时间排序）
     let toolEvents = [];
     try {
@@ -1137,28 +1238,7 @@ export function mountWorkspaceRuntime({ onTemporaryState = () => {} } = {}) {
     if (loadToken !== sessionLoadToken || sessionId !== id) return;
     const activeRun = await api(`/v1/sessions/${id}/active-run`);
     if (loadToken !== sessionLoadToken || sessionId !== id) return;
-    const timeline = [
-      ...messages.map((m) => ({ kind: 'message', at: m.created_at, m })),
-      // 当前任务的 SSE 从头回放；跳过同一任务的数据库快照，避免重复计数。
-      ...toolEvents
-        .filter((e) => !activeRun || e.run_id !== activeRun.id)
-        .map((e) => ({ kind: 'tool', at: e.created_at, e })),
-    ].sort((a, b) => (a.at < b.at ? -1 : a.at > b.at ? 1 : 0));
-    let legacyTurn = 0;
-    for (const item of timeline) {
-      if (item.kind === 'message') {
-        const m = item.m;
-        if (m.role === 'user') legacyTurn++;
-        addMessage(
-          m.content,
-          m.role,
-          m.attachments.map((filename) => ({ filename })),
-        );
-      } else {
-        const key = item.e.run_id || `legacy-${legacyTurn}`;
-        replayToolEvent(item.e, getToolHistory(key));
-      }
-    }
+    renderSessionHistory(messages, toolEvents, activeRun);
     await Promise.all([refreshTree(), refreshResources('skills'), refreshContext(id)]);
     if (loadToken !== sessionLoadToken || sessionId !== id) return;
     if (activeRun) followRun(activeRun.id, id);
@@ -1180,6 +1260,7 @@ export function mountWorkspaceRuntime({ onTemporaryState = () => {} } = {}) {
         await refreshModels();
         await loadSession(info.session_id);
         onTemporaryState('ready');
+        watchTemporarySession();
         temporaryHeartbeat = setInterval(
           () =>
             api('/v1/temporary')
@@ -3364,6 +3445,7 @@ export function mountWorkspaceRuntime({ onTemporaryState = () => {} } = {}) {
   }
 
   function followRun(runId, runSessionId = sessionId) {
+    followingMessageLimit = renderedMessageCount + (localRunSubmitting ? 2 : 1);
     if (activeRunCleanup) activeRunCleanup();
     else if (activeStream) activeStream.close();
     const stream = new EventSource(appUrl(`/v1/runs/${runId}/events`));
@@ -3718,6 +3800,7 @@ export function mountWorkspaceRuntime({ onTemporaryState = () => {} } = {}) {
         refreshSessionTabs(),
         ...(temporary ? [api('/v1/temporary').then(renderTemporaryExpiry)] : []),
       ]);
+      if (temporary) void syncExternalSession();
     };
     for (const status of ['completed', 'failed', 'cancelled']) {
       stream.addEventListener(`run.${status}`, (event) => {
@@ -3817,6 +3900,7 @@ export function mountWorkspaceRuntime({ onTemporaryState = () => {} } = {}) {
     }
     if (sessionId !== runSessionId || ui.send.disabled) return;
     const attachmentsForRun = [...pendingFiles];
+    localRunSubmitting = true;
     addMessage(input, 'user', attachmentsForRun);
     // 用户主动发消息：强制滚到底部（后续流式自动跟随由此解锁）
     ui.messages.scrollTop = ui.messages.scrollHeight;
@@ -3844,6 +3928,9 @@ export function mountWorkspaceRuntime({ onTemporaryState = () => {} } = {}) {
       addMessage(error.message, 'assistant');
       setRunControls(false);
       setStatus(t('run.submitFailed'));
+    } finally {
+      localRunSubmitting = false;
+      if (temporary) void syncExternalSession();
     }
   });
 
@@ -4007,6 +4094,8 @@ export function mountWorkspaceRuntime({ onTemporaryState = () => {} } = {}) {
     clearTimeout(treeFilterTimer);
     clearTimeout(temporaryTimer);
     clearInterval(temporaryHeartbeat);
+    sessionWatch?.close();
+    clearTimeout(externalSyncRetry);
     if (avatarPreviewUrl) URL.revokeObjectURL(avatarPreviewUrl);
   };
 }

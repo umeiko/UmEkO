@@ -55,6 +55,11 @@ MCP 的 `submit_task`、`get_task` 和任务列表直接返回这些字段；A2A
 按 `UMEKO_TASK_RETENTION_SECONDS` 默认继续保留 24 小时供管理员排查，到记录期限后一起删除。
 浏览器续聊仍使用原 REST/SSE 会话能力，MCP/A2A 的原任务标识与结果保持不变。
 
+外部 Agent 也可用 `workspace_url + /v1/temporary` 获取 `session_id`，再向
+`workspace_url + /v1/sessions/<session_id>/runs` 提交 `{"input": "继续处理", "attachments": []}`。
+已打开的临时工作台自动显示这次输入、流式回复和工具记录，无需刷新；仍限制一条会话同时只能有一个运行。
+这属于同一会话的 REST 续聊，不能向已完成的 A2A Task 追加消息；重新提交 MCP/A2A 任务会建立新的任务与临时工作台。
+
 重新申请时提交新任务，并使用新的幂等键或 A2A 消息 ID。同一幂等键在调用记录保留期内仍返回原任务，不恢复过期节点。
 
 ## 最小调用

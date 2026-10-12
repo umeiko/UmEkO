@@ -56,6 +56,43 @@ export async function checkTemporaryWorkspace(context, publicBase, state, prefix
   await page.reload();
   await page.getByText('Continue in temporary workspace', { exact: true }).waitFor();
   await page.getByText('STREAM_UI_OK', { exact: true }).waitFor();
+  assert.equal(await page.getByText('Continue in temporary workspace', { exact: true }).count(), 1);
+  assert.equal(await page.getByText('STREAM_UI_OK', { exact: true }).count(), 1);
+  // An external caller continues the same session while the browser stays open.
+  // Discovery must preserve a user's draft, pending attachment and file preview.
+  await page.locator('.tree-file[data-path="generate/preview.md"] .file-name').click();
+  await page.locator('#markdown-view h1').waitFor();
+  await page.locator('#attach-workspace-file').click();
+  await page.locator('#attachments .chip').waitFor();
+  const pending = await page.locator('#attachments').innerText();
+  await page.locator('#prompt').fill('UNSENT_USER_DRAFT');
+  const external = await context.request.post(publicBase + scope + '/runs', {
+    data: { input: 'EXTERNAL_SYNC_TEST', attachments: [] },
+  });
+  assert.equal(external.status(), 202, await external.text());
+  await page.getByText('EXTERNAL_SYNC_TEST', { exact: true }).waitFor();
+  await page.getByText('EXTERNAL_STREAM_', { exact: true }).waitFor();
+  assert.ok(await page.locator('#stop').isVisible());
+  assert.equal(await page.locator('#markdown-view h1').innerText(), '质检图片清单');
+  await page.getByText('EXTERNAL_STREAM_UI_OK', { exact: true }).waitFor();
+  await page.locator('#stop').waitFor({ state: 'hidden' });
+  await page.locator('#prompt').waitFor({ state: 'visible' });
+  assert.equal(await page.locator('#prompt').inputValue(), 'UNSENT_USER_DRAFT');
+  assert.equal(await page.locator('#attachments').innerText(), pending);
+  assert.equal(await page.locator('.tool-history').count(), 2);
+  assert.equal(await page.locator('.tool-history').last().locator('.agent-action').count(), 20);
+  // A run can finish before the browser discovers its ID; the saved reply still appears.
+  const fast = await context.request.post(publicBase + scope + '/runs', {
+    data: { input: 'FAST_SYNC_TEST', attachments: [] },
+  });
+  assert.equal(fast.status(), 202, await fast.text());
+  await page.getByText('FAST_SYNC_OK', { exact: true }).waitFor();
+  assert.equal(await page.getByText('EXTERNAL_SYNC_TEST', { exact: true }).count(), 1);
+  assert.equal(await page.getByText('EXTERNAL_STREAM_UI_OK', { exact: true }).count(), 1);
+  assert.equal(await page.getByText('FAST_SYNC_TEST', { exact: true }).count(), 1);
+  assert.equal(await page.getByText('FAST_SYNC_OK', { exact: true }).count(), 1);
+  assert.equal(await page.locator('#prompt').inputValue(), 'UNSENT_USER_DRAFT');
+  assert.equal(await page.locator('#markdown-view h1').innerText(), '质检图片清单');
   await screenshot(page, 'temporary-workspace', prefix);
   await page.setViewportSize({ width: 390, height: 844 });
   const expiryBox = await page.locator('#temporary-expiry').boundingBox();

@@ -1,7 +1,9 @@
 import base64
+import json
 import time
 from urllib.parse import urlsplit
 
+import httpx
 import pytest
 
 from conftest import wait_task
@@ -22,6 +24,75 @@ def completed(client, account, task, prefix):
             return result
         time.sleep(.02)
     raise AssertionError("Task did not complete")
+
+
+def next_workspace_event(lines):
+    event, data = None, None
+    for line in lines:
+        if line.startswith("event: "):
+            event = line[7:]
+        elif line.startswith("data: "):
+            data = json.loads(line[6:])
+        elif not line and event:
+            return event, data
+    raise AssertionError("Workspace event stream ended unexpectedly")
+
+
+@pytest.mark.parametrize("machine_app", ["", "/dept/doc-master/consistency"], indirect=True)
+def test_temporary_events_external_runs_and_expiry(machine_server):
+    base, app, account, _ = machine_server
+    headers = {"Authorization": "Bearer " + account["token"]}
+    with httpx.Client(trust_env=False, timeout=5) as client:
+        response = client.post(base + "/v1/tasks", headers=headers, json={"prompt": "initial event test"})
+        assert response.status_code == 202, response.text
+        task = response.json()
+        for _ in range(200):
+            result = client.get(base + "/v1/tasks/" + task["id"], headers=headers).json()
+            if result["status"] == "completed" and not app.state.task_service._active:
+                break
+            time.sleep(.02)
+        else:
+            raise AssertionError("Original task did not finish")
+        workspace = result["workspace_url"]
+        sid = client.get(workspace + "/v1/temporary").json()["session_id"]
+        with app.state.store.connect() as db:
+            lease = db.execute("SELECT workspace_expires_at FROM service_tasks WHERE id=?", (task["id"],)).fetchone()[0]
+        run_id = None
+        try:
+            with client.stream("GET", workspace + "/v1/temporary/events") as response:
+                assert response.status_code == 200
+                assert response.headers["content-type"].startswith("text/event-stream")
+                # NGINX consumes this upstream header rather than forwarding it.
+                if not app.root_path:
+                    assert response.headers["x-accel-buffering"] == "no"
+                assert response.headers["cache-control"] == "no-store"
+                lines = response.iter_lines()
+                event, initial = next_workspace_event(lines)
+                assert event == "session.changed" and initial["run_id"] is None
+                assert initial["message_count"] == 2
+                with app.state.store.connect() as db:
+                    assert db.execute("SELECT workspace_expires_at FROM service_tasks WHERE id=?", (task["id"],)).fetchone()[0] == lease
+                run = client.post(workspace + "/v1/sessions/" + sid + "/runs", json={"input": "hold external sync"})
+                assert run.status_code == 202, run.text
+                run_id = run.json()["id"]
+                event, update = next_workspace_event(lines)
+                assert event == "session.changed"
+                assert update["run_id"] == run_id
+                assert update["message_count"] == initial["message_count"] + 1
+                assert update["message_id"] > initial["message_id"]
+                assert client.post(workspace + "/v1/runs/" + run_id + "/cancel").status_code == 200
+                event, update = next_workspace_event(lines)
+                assert event == "session.changed" and update["run_id"] is None
+                assert update["message_count"] == initial["message_count"] + 2
+                run_id = None
+                with app.state.store.connect() as db:
+                    db.execute("UPDATE service_tasks SET workspace_expires_at='2000-01-01T00:00:00+00:00' WHERE id=?", (task["id"],))
+                assert next_workspace_event(lines) == ("session.expired", {})
+                assert list(lines) == []
+            assert client.get(workspace + "/v1/temporary/events").status_code == 410
+        finally:
+            if run_id:
+                client.post(workspace + "/v1/runs/" + run_id + "/cancel")
 
 
 @pytest.mark.parametrize("machine_app", ["", "/dept/doc-master/consistency"], indirect=True)

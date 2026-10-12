@@ -1,12 +1,21 @@
 """Capability-scoped browser workspaces over the existing session routes."""
+import asyncio
+import json
 import re
 
-from starlette.responses import HTMLResponse, JSONResponse
+from starlette.requests import Request
+from starlette.responses import HTMLResponse, JSONResponse, StreamingResponse
 
 from .ui import render_ui
 
 EXPIRED = {"detail": "该节点已过期，请重新申请", "code": "temporary_workspace_expired"}
 PRIVATE = {"Cache-Control": "no-store", "Referrer-Policy": "no-referrer"}
+
+
+def session_revision(store, sid):
+    with store.connect() as db:
+        row = db.execute("SELECT COUNT(*) AS count,COALESCE(MAX(id),0) AS last_id FROM messages WHERE session_id=?", (sid,)).fetchone()
+    return {"message_count": row["count"], "message_id": row["last_id"]}
 
 
 class TemporaryWorkspaceMiddleware:
@@ -46,6 +55,26 @@ class TemporaryWorkspaceMiddleware:
         if not sid:
             return await JSONResponse({"detail": "临时工作台正在准备", "code": "temporary_workspace_pending"}, status_code=409, headers=PRIVATE)(scope, receive, send)
         service, store = self.tasks.service, self.tasks.store
+        if rest == "/v1/temporary/events" and method == "GET":
+            request = Request(scope, receive)
+            async def changes():
+                previous, cursor = None, 0
+                while not await request.is_disconnected():
+                    if self.tasks.temporary_workspace(token) is None:
+                        yield 'event: session.expired\ndata: {}\n\n'
+                        return
+                    state = service.sessions.get(sid)
+                    run = state.active_run_holder["run"] if state else None
+                    active = run if run and not run.finished else None
+                    update = {**session_revision(store, sid), "run_id": active.id if active else None}
+                    if update != previous:
+                        previous, cursor = update, cursor + 1
+                        yield f'id: {cursor}\nevent: session.changed\ndata: {json.dumps(update)}\n\n'
+                    else:
+                        yield ': keep-alive\n\n'
+                    await asyncio.sleep(.5)
+            return await StreamingResponse(changes(), media_type="text/event-stream",
+                                           headers={**PRIVATE, "X-Accel-Buffering": "no"})(scope, receive, send)
         if rest == "/v1/sessions" and method == "GET":
             return await JSONResponse([store.session_by_id(sid)], headers=PRIVATE)(scope, receive, send)
         if rest == "/v1/models" and method == "GET":
