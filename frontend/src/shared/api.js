@@ -39,7 +39,12 @@ export const deploymentPrefix = () => {
   const value = document.querySelector('meta[name="umeko-base-path"]')?.content || '';
   return value.startsWith('__') ? '' : value;
 };
-export const appUrl = (path) => deploymentPrefix() + path;
+export const temporaryWorkspacePath = () =>
+  document.querySelector('meta[name="umeko-temporary-path"]')?.content || '';
+export const appUrl = (path) =>
+  typeof path === 'string' && path.startsWith('/') && !path.startsWith('//')
+    ? deploymentPrefix() + (path.startsWith('/v1/') ? temporaryWorkspacePath() : '') + path
+    : path;
 export const encode = encodeURIComponent;
 export function bytes(value = 0) {
   const units = ['B', 'KiB', 'MiB', 'GiB', 'TiB'];

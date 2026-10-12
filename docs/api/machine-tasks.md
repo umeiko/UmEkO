@@ -29,6 +29,34 @@ A2A 的等待、查询和流式操作需要 `tasks:read`，发送还需要 `task
 
 仅有提交或取消权限时，相关响应只提供任务状态和标识，回复、错误正文及产物列表为空；幂等重试也不会绕过读取权限。
 
+## 临时工作台 {#temporary-workspace}
+
+完整权限调用方的任务响应含 `workspace_url` 和 `workspace_hint`。地址为用户服务完整基址下的
+`/TMP/<Temp_session_id>`，包含 `UMEKO_BASE_PATH`，不包含管理前缀或 `/agent/<slug>`。
+MCP 的 `submit_task`、`get_task` 和任务列表直接返回这些字段；A2A 在 Task 的 `metadata.workspaceUrl`
+和 `metadata.workspaceHint` 返回。可以把链接交给用户，在浏览器继续同一会话，无需另外注册或登录。
+
+临时工作台复用聊天、工具记录、上传、文件树、预览、下载与 SSE。账号、新建会话、会话管理和模型选择不可操作；
+技能仅展示任务提交时该 Agent 下发的选定技能，全部勾选且只读。任务排队时显示准备页，准备好后自动打开；
+原任务未结束前不能启动第二次对话。浏览器后续对话保留原上下文、工作指引及 Agent 的模型设置，
+不改写原始机器任务的回复。后续产物和文件元数据会更新，管理员仍可在原任务下排查。
+
+链接使用不可猜测的随机标识，只能访问一条任务对应的会话；拥有此链接即可读写该会话，
+请仅交给预期使用者。它不会授予账号管理、其他会话、模型配置或其他协议入口的权限。
+仅当调用凭据同时有四项任务权限时才返回链接；只读或仅提交权限返回 `null`，不会通过链接提升权限。
+停用、删除或到期的服务账号会使已有链接失效；免鉴权的任务也各有独立的临时链接。
+
+纯机器节点在任务结束后默认 15 分钟回收，由 `UMEKO_MACHINE_IDLE_SECONDS` 配置；
+首次打开临时工作台后，改为网页闲置默认 1 小时，由 `UMEKO_TMP_IDLE_SECONDS` 配置。
+顶部展示到期时间。实际点击、键盘输入、滚动、提交任务会续期，心跳和被动轮询不会续期。
+运行中的原任务及后续对话不会被回收，结束后重新开始闲置计时。过期、删除会话或任务被回收后，
+新打开和已经打开的页面都显示“该节点已过期，请重新申请”。内存缓存释放不等同于删除节点，
+有效期内可从持久化历史恢复。节点回收释放 Agent、Run 缓冲和会话文件；调用记录、消息、工具记录和文件树快照
+按 `UMEKO_TASK_RETENTION_SECONDS` 默认继续保留 24 小时供管理员排查，到记录期限后一起删除。
+浏览器续聊仍使用原 REST/SSE 会话能力，MCP/A2A 的原任务标识与结果保持不变。
+
+重新申请时提交新任务，并使用新的幂等键或 A2A 消息 ID。同一幂等键在调用记录保留期内仍返回原任务，不恢复过期节点。
+
 ## 最小调用
 
 在调用方环境配置 `UMEKO_SERVICE_URL`；需要凭据时另外配置 `UMEKO_SERVICE_TOKEN`，后者不要放入仓库。免鉴权时不设置 Token。下面的 Python 示例使用 `httpx`，带前缀时无需改其他路径。
@@ -77,6 +105,10 @@ with httpx.Client(headers=headers, timeout=30) as client:
 | GET | `/v1/tasks/{task_id}/artifacts/{artifact_id}/content` | 授权下载 |
 
 状态为 `queued`、`running`、`cancelling`、`completed`、`failed`、`cancelled`。`expires_at` 在终态前为空；终态默认保留 24 小时。Task 中的 `artifacts` 含 `id`、`name`、`media_type`、`size`、`download_url`、`resource_uri`。
+
+`workspace_expires_at` 是节点和产物文件的回收期限，`workspace_state` 为 `available` 或 `expired`；
+此期限与调用记录的 `expires_at` 分开。节点过期后仍可查询原 Task 的回复与产物元数据，但文件下载与资源读取返回不存在。
+A2A 对应 `metadata.workspaceExpiresAt`、`metadata.workspaceState`。节点物理清理约每分钟执行一次；到期访问立即被拒绝。
 
 Task 的 `agent_id` 标记所属 Agent。查询、列表、事件、取消和产物均限制在当前 Agent 与账号内，换用另一个 Agent 路径会返回 404。新增 Agent 的排队任务保留提交时的工作指引和主 Skill 文本副本；快照及停用规则见[多智能体架构](../architecture/agents.md)。
 

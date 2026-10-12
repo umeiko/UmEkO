@@ -151,6 +151,10 @@ def create_app(
 
     @app.middleware("http")
     async def authenticate_request(request: Request, call_next):
+        if getattr(request.state, "temporary_user", None):
+            # The outer capability router has already limited every route to one session.
+            request.state.user = request.state.temporary_user
+            return await call_next(request)
         # ASGI path 包含 root_path 时先剥掉挂载前缀；鉴权匹配实际 API 路由。
         path = request.scope["path"]
         root_path = request.scope.get("root_path", "")
@@ -734,10 +738,14 @@ def create_app(
         status_code=202,
         tags=["runs"],
     )
-    def create_run(session_id: str, payload: RunCreate) -> RunView:
+    def create_run(session_id: str, payload: RunCreate, request: Request) -> RunView:
         get_session(session_id)
         try:
-            run = service.create_run(session_id, payload.input, payload.attachments)
+            temporary = getattr(request.state, "temporary_task", None)
+            run = (service.task_service.create_workspace_run(temporary["workspace_token"], payload.input, payload.attachments)
+                   if temporary else service.create_run(session_id, payload.input, payload.attachments))
+        except KeyError as exc:
+            raise HTTPException(410 if temporary else 404, str(exc)) from exc
         except ValueError as exc:
             raise HTTPException(400, str(exc)) from exc
         return _run_view(run, service)
@@ -1030,6 +1038,8 @@ def create_app(
 
     app.mount("/", mcp_app)
     app.add_middleware(AgentRoutingMiddleware, registry=service.agent_registry)
+    from .temporary import TemporaryWorkspaceMiddleware
+    app.add_middleware(TemporaryWorkspaceMiddleware, tasks=service.task_service, base_path=base_path)
     internal_openapi = app.openapi
     def agent_openapi():
         return publish_agent_schema(internal_openapi())

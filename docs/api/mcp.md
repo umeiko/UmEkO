@@ -61,4 +61,7 @@ asyncio.run(main())
 
 业务错误通过 MCP 工具错误返回，客户端检查 `is_error`。身份无效为 HTTP 401。调用方断开后，已经提交的业务任务继续运行；需要停止时调用 `cancel_task`。
 
+完整权限任务的响应还含 `workspace_url`、`workspace_hint`，调用 Agent 可把链接交给用户打开临时工作台继续处理。
+链接包含用户服务前缀，且只能访问该任务的原会话；权限、有效期与限制见[临时工作台](machine-tasks.md#temporary-workspace)。
+
 当前不提供 stdio 或 MCP 原生 Tasks 扩展。需要交互式 OAuth 的客户端不一定能直接使用本服务；先确认客户端支持自定义 Bearer Header 或 OAuth `client_credentials`。授权和生产代理配置见 [机器任务](machine-tasks.md)与[部署指南](../deployment.md)。

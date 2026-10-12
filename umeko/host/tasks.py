@@ -7,6 +7,7 @@ import hashlib
 import json
 import logging
 import mimetypes
+import secrets
 import shutil
 import threading
 import time
@@ -15,7 +16,7 @@ from concurrent.futures import ThreadPoolExecutor
 from datetime import datetime, timedelta, timezone
 from pathlib import Path
 
-from .identities import now, require_scope
+from .identities import SCOPES, now, require_scope
 
 TERMINAL = frozenset({"completed", "failed", "cancelled"})
 MAX_FILE_BYTES = 20 * 1024 * 1024
@@ -111,6 +112,16 @@ class TaskService:
                 db.execute("UPDATE service_tasks SET request_key=idempotency_key")
             if "file_manifest_json" not in columns:
                 db.execute("ALTER TABLE service_tasks ADD COLUMN file_manifest_json TEXT")
+            if "workspace_token" not in columns:
+                db.execute("ALTER TABLE service_tasks ADD COLUMN workspace_token TEXT")
+            for name in ("workspace_expires_at", "workspace_opened_at", "workspace_last_active_at", "workspace_evicted_at"):
+                if name not in columns:
+                    db.execute("ALTER TABLE service_tasks ADD COLUMN " + name + " TEXT")
+            for row in db.execute("SELECT id FROM service_tasks WHERE workspace_token IS NULL").fetchall():
+                db.execute("UPDATE service_tasks SET workspace_token=? WHERE id=?", (secrets.token_urlsafe(32), row["id"]))
+            db.execute("CREATE UNIQUE INDEX IF NOT EXISTS idx_task_workspace_token ON service_tasks(workspace_token)")
+            db.execute("UPDATE service_tasks SET workspace_expires_at=? WHERE workspace_expires_at IS NULL "
+                       "AND status IN ('completed','failed','cancelled')", (self.workspace_expiry(False),))
             db.execute("CREATE UNIQUE INDEX IF NOT EXISTS idx_task_request_key ON service_tasks(user_id,agent_id,request_key)")
 
     def start(self):
@@ -125,6 +136,8 @@ class TaskService:
                        "WHERE status IN ('running','cancelling')",
                        ("服务重启，任务执行已中断；请重新提交", now(), now(), expiry(self.settings)))
             for row in interrupted:
+                db.execute("UPDATE service_tasks SET workspace_expires_at=? WHERE id=?", (self.workspace_expiry(False), row["id"]))
+            for row in interrupted:
                 self._event(db, row["id"], "task.failed", {"error": "服务重启，任务执行已中断；请重新提交"})
         self._executor = ThreadPoolExecutor(max_workers=self.settings.task_workers, thread_name_prefix="umeko-task")
         self._thread = threading.Thread(target=self._schedule, name="umeko-task-scheduler", daemon=True)
@@ -133,6 +146,10 @@ class TaskService:
     def stop(self):
         self._stop.set()
         self._wake.set()
+        for run in list(self.service.runs.values()):
+            record = self.store.session_by_id(run.session_id)
+            if record and record.get("purpose") == "task" and not run.finished:
+                run.request_cancel()
         if self._thread:
             self._thread.join(timeout=5)
         if self._executor:
@@ -201,9 +218,9 @@ class TaskService:
                 for i, content in enumerate(contents):
                     (directory / str(i)).write_bytes(content)
                 db.execute("INSERT INTO service_tasks(id,user_id,source,context_id,status,input_json,"
-                           "request_hash,request_key,created_at,updated_at,expires_at,caller_ip,agent_id) "
-                           "VALUES(?,?,?,?,?,?,?,?,?,?,?,?,?)", (task_id, owner, source, context_id or "ctx_" + uuid.uuid4().hex,
-                            "queued", json.dumps(normalized, ensure_ascii=False), fingerprint, idempotency_key, stamp, stamp, expires, caller_ip, agent_id))
+                           "request_hash,request_key,created_at,updated_at,expires_at,caller_ip,agent_id,workspace_token) "
+                           "VALUES(?,?,?,?,?,?,?,?,?,?,?,?,?,?)", (task_id, owner, source, context_id or "ctx_" + uuid.uuid4().hex,
+                            "queued", json.dumps(normalized, ensure_ascii=False), fingerprint, idempotency_key, stamp, stamp, expires, caller_ip, agent_id, secrets.token_urlsafe(32)))
                 self._event(db, task_id, "task.queued", {})
             except BaseException:
                 self._remove_staging(task_id)
@@ -216,6 +233,7 @@ class TaskService:
 
     @staticmethod
     def _visible(result, principal):
+        result = {**result, "workspace_token": result.get("workspace_token") if SCOPES <= set(principal.get("scopes", [])) else None}
         # Submission and cancellation do not grant permission to read an old result.
         if "tasks:read" not in principal.get("scopes", []):
             return {**result, "reply": None, "error": None, "artifacts": []}
@@ -225,6 +243,9 @@ class TaskService:
         return {**{key: row[key] for key in ("id", "agent_id", "context_id", "source", "status", "created_at", "updated_at",
                                            "completed_at", "expires_at", "reply", "error")},
                 "expires_at": row["expires_at"] if row["status"] in TERMINAL else None,
+                "workspace_token": row["workspace_token"],
+                "workspace_expires_at": row["workspace_expires_at"],
+                "workspace_state": "expired" if self._workspace_expired(row) else "available",
                 "artifacts": [dict(a) for a in db.execute("SELECT id,name,media_type,size FROM service_task_artifacts WHERE task_id=?", (row["id"],))]}
 
     def _owned(self, db, task_id, owner, agent_id=""):
@@ -238,7 +259,7 @@ class TaskService:
     def get(self, principal, task_id) -> dict:
         owner = require_scope(principal, "tasks:read")
         with self.store.connect() as db:
-            return self._view(db, self._owned(db, task_id, owner, principal.get("agent_id", "")))
+            return self._visible(self._view(db, self._owned(db, task_id, owner, principal.get("agent_id", ""))), principal)
 
     def list(self, principal, *, limit=50, offset=0, context_id=None, status=None, updated_after=None) -> dict:
         owner = require_scope(principal, "tasks:read")
@@ -260,7 +281,87 @@ class TaskService:
             total = db.execute("SELECT COUNT(*) FROM service_tasks WHERE " + where, args).fetchone()[0]
             rows = db.execute("SELECT * FROM service_tasks WHERE " + where + " ORDER BY created_at DESC LIMIT ? OFFSET ?",
                               [*args, min(max(limit, 1), 100), max(offset, 0)]).fetchall()
-            return {"tasks": [self._view(db, r) for r in rows], "total": total}
+            return {"tasks": [self._visible(self._view(db, r), principal) for r in rows], "total": total}
+
+    def _workspace_expired(self, row):
+        if row["workspace_evicted_at"] or row["status"] in TERMINAL and not row["session_id"]:
+            return True
+        state = self.service.sessions.get(row["session_id"])
+        active = state.active_run_holder["run"] if state else None
+        if row["status"] not in TERMINAL or active and not active.finished:
+            return False
+        return row["expires_at"] <= now() or bool(row["workspace_expires_at"] and row["workspace_expires_at"] <= now())
+
+    def temporary_workspace(self, token: str) -> dict | None:
+        """Resolve a capability for one task only; never revive expired/deleted sessions."""
+        with self.store.connect() as db:
+            row = db.execute("SELECT * FROM service_tasks WHERE workspace_token=?", (token,)).fetchone()
+            if row is None or self._workspace_expired(row):
+                return None
+            account = db.execute("SELECT enabled,expires_at,scopes FROM service_accounts WHERE user_id=?", (row["user_id"],)).fetchone()
+            if account and (not account["enabled"] or account["expires_at"] <= now() or not SCOPES <= set(json.loads(account["scopes"]))):
+                return None
+            if row["session_id"] and self.store.session_by_id(row["session_id"]) is None:
+                return None
+            if row["session_id"] and not (self.service.data_root / "users" / row["user_id"] / "sessions" / row["session_id"]).is_dir():
+                return None
+            if not row["session_id"] and row["status"] in TERMINAL:
+                return None
+            return {**dict(row), "snapshot": json.loads(row["input_json"]).get("agent_snapshot") or {}}
+
+    def workspace_expiry(self, opened: bool):
+        seconds = self.settings.tmp_idle_seconds if opened else self.settings.machine_idle_seconds
+        return (datetime.now(timezone.utc) + timedelta(seconds=seconds)).isoformat()
+
+    def open_workspace(self, token, *, activity=False):
+        with self._lock:
+            task = self.temporary_workspace(token)
+            if task is None:
+                return None
+            # Only the first browser bootstrap and actual interaction renew the idle lease.
+            if activity or not task["workspace_opened_at"]:
+                with self.store.connect() as db:
+                    db.execute("UPDATE service_tasks SET workspace_opened_at=COALESCE(workspace_opened_at,?),"
+                               "workspace_last_active_at=?,workspace_expires_at=? WHERE id=?",
+                               (now(), now(), self.workspace_expiry(True), task["id"]))
+                task = self.temporary_workspace(token)
+            return task
+
+    def create_workspace_run(self, token, user_input, attachments):
+        with self._lock:
+            task = self.temporary_workspace(token)
+            if task is None or not task["session_id"]:
+                raise KeyError("该节点已过期，请重新申请")
+            if task["status"] not in TERMINAL:
+                raise ValueError("请等待当前机器任务结束后继续对话")
+            session = self.service.get_session(task["session_id"])
+            if session.lock.locked():
+                raise ValueError("当前 Session 已有任务正在运行")
+            with self.store.connect() as db:
+                db.execute("UPDATE service_tasks SET expires_at=?,workspace_expires_at=?,workspace_last_active_at=? WHERE id=?",
+                           (expiry(self.settings), self.workspace_expiry(True), now(), task["id"]))
+            # Release previous continuation event buffers; the persisted history remains.
+            for run in list(self.service.runs.values()):
+                if run.session_id == session.id and run.finished:
+                    self.service.run_manager.forget(run.id)
+            return self.service.create_run(session.id, user_input, attachments)
+
+    def workspace_finished(self, session, run):
+        with self._lock:
+            with self.store.connect() as db:
+                task = db.execute("SELECT id,run_id,status FROM service_tasks WHERE session_id=?", (session.id,)).fetchone()
+                if task is None or task["status"] not in TERMINAL or task["run_id"] == run.id:
+                    return
+                db.execute("UPDATE service_tasks SET expires_at=?,workspace_expires_at=?,workspace_last_active_at=? WHERE id=?",
+                           (expiry(self.settings), self.workspace_expiry(True), now(), task["id"]))
+                self._event(db, task["id"], "workspace.run." + run.status, {"run_id": run.id, "reply": run.reply, "error": run.error})
+                for item in self.service.artifacts(session.id):
+                    if Path(item["name"]).parts[0] not in {"generate", "workspace"} or not item["_path"].resolve().is_relative_to(session.root.resolve()):
+                        continue
+                    db.execute("INSERT OR REPLACE INTO service_task_artifacts VALUES(?,?,?,?,?,?)", (
+                        item["id"], task["id"], item["name"], item["name"], mimetypes.guess_type(item["name"])[0] or "application/octet-stream", item["size"]))
+            self.capture_files(task["id"])
+            self.service.evict_session(session.id)
 
     def cancel(self, principal, task_id) -> dict:
         owner = require_scope(principal, "tasks:cancel")
@@ -297,6 +398,8 @@ class TaskService:
         owner = require_scope(principal, "artifacts:read")
         with self.store.connect() as db:
             row = self._owned(db, task_id, owner, principal.get("agent_id", ""))
+            if self._workspace_expired(row):
+                raise KeyError("临时节点已过期，产物文件已不可读取")
             item = db.execute("SELECT * FROM service_task_artifacts WHERE task_id=? AND id=?", (task_id, artifact_id)).fetchone()
         if item is None or not row["session_id"]:
             raise KeyError("产物不存在")
@@ -312,8 +415,8 @@ class TaskService:
         while not self._stop.is_set():
             try:
                 if time.monotonic() - last_gc > 60:
-                    self.cleanup()
                     last_gc = time.monotonic()
+                    self.cleanup()
                 with self._lock:
                     available = self.settings.task_workers - len(self._active)
                 if available:
@@ -414,12 +517,16 @@ class TaskService:
                 self._event(db, task_id, "task.failed", {"error": error})
             logger.exception("Machine task failed: %s", task_id)
         finally:
+            with self.store.connect() as db:
+                row = db.execute("SELECT workspace_opened_at FROM service_tasks WHERE id=?", (task_id,)).fetchone()
+                if row:
+                    db.execute("UPDATE service_tasks SET workspace_expires_at=? WHERE id=?", (self.workspace_expiry(bool(row["workspace_opened_at"])), task_id))
             if session:
                 try:
                     self.capture_files(task_id)
                 except Exception:
                     logger.exception("Failed to capture task file metadata: %s", task_id)
-            if session and (run is None or run.finished):
+            if session and (run is None or run.finished) and not self.service.active_run(session.id):
                 self.service.evict_session(session.id)
             if run and run.finished:
                 self.service.run_manager.forget(run.id)
@@ -433,6 +540,7 @@ class TaskService:
                 self._wake.set()
 
     def cleanup(self) -> int:
+        self.cleanup_workspaces()
         with self.store.connect() as db:
             rows = db.execute("SELECT id,session_id FROM service_tasks WHERE expires_at<=? "
                               "AND status IN ('completed','failed','cancelled')", (now(),)).fetchall()
@@ -441,12 +549,53 @@ class TaskService:
             with self._lock:
                 if row["id"] in self._active:
                     continue
-            if row["session_id"] and self.store.session_by_id(row["session_id"]):
-                self.service.delete_session_admin(row["session_id"])
-            self._remove_staging(row["id"])
-            with self.store.connect() as db:
-                db.execute("DELETE FROM service_tasks WHERE id=?", (row["id"],))
-            count += 1
+                # Recheck the lease under the same lock used by browser continuation.
+                with self.store.connect() as db:
+                    current = db.execute("SELECT expires_at FROM service_tasks WHERE id=?", (row["id"],)).fetchone()
+                if current is None or current["expires_at"] > now():
+                    continue
+                state = self.service.sessions.get(row["session_id"])
+                if state and (state.lock.locked() or self.service.active_run(state.id)):
+                    continue
+                if row["session_id"] and self.store.session_by_id(row["session_id"]):
+                    self.service.delete_session_admin(row["session_id"])
+                for run in list(self.service.runs.values()):
+                    if run.session_id == row["session_id"] and run.finished:
+                        self.service.run_manager.forget(run.id)
+                self._remove_staging(row["id"])
+                with self.store.connect() as db:
+                    db.execute("DELETE FROM service_tasks WHERE id=?", (row["id"],))
+                count += 1
+        return count
+
+    def cleanup_workspaces(self) -> int:
+        """Reclaim temporary files and agents; keep database inspection records until task retention."""
+        from .file_manifest import session_root
+        with self.store.connect() as db:
+            rows = db.execute("SELECT id FROM service_tasks WHERE workspace_evicted_at IS NULL AND workspace_expires_at<=? "
+                              "AND status IN ('completed','failed','cancelled')", (now(),)).fetchall()
+        count = 0
+        for candidate in rows:
+            with self._lock:
+                with self.store.connect() as db:
+                    row = db.execute("SELECT * FROM service_tasks WHERE id=?", (candidate["id"],)).fetchone()
+                if row is None or row["id"] in self._active or row["workspace_evicted_at"] or row["workspace_expires_at"] > now():
+                    continue
+                state = self.service.sessions.get(row["session_id"])
+                if state and (state.lock.locked() or self.service.active_run(state.id)):
+                    continue
+                if row["session_id"]:
+                    self.capture_files(row["id"])
+                    self.service.evict_session(row["session_id"])
+                    root = session_root(self.service.data_root, row["user_id"], row["session_id"])
+                    if root is not None:
+                        shutil.rmtree(root)
+                    for run in list(self.service.runs.values()):
+                        if run.session_id == row["session_id"] and run.finished:
+                            self.service.run_manager.forget(run.id)
+                with self.store.connect() as db:
+                    db.execute("UPDATE service_tasks SET workspace_evicted_at=? WHERE id=?", (now(), row["id"]))
+                count += 1
         return count
 
     def _public_data(self, session_id, value):

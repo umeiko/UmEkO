@@ -30,6 +30,11 @@ def test_mcp_official_client(machine_server, mode):
                         break
                     await asyncio.sleep(.05)
                 assert task["status"] == "completed", task
+                assert task["workspace_url"].startswith(base.rsplit('/agent/', 1)[0] + '/TMP/')
+                async with httpx.AsyncClient(trust_env=False) as browser:
+                    assert (await browser.get(task["workspace_url"])).status_code == 200
+                    info = await browser.get(task["workspace_url"] + '/v1/temporary')
+                    assert info.status_code == 200 and info.json()['state'] == 'ready'
                 artifact = task["artifacts"][0]
                 assert artifact["download_url"].startswith(base + "/v1/tasks/")
                 info = await client.call_tool("get_agent_info", {})
@@ -61,6 +66,10 @@ def test_a2a_official_client(machine_server, streaming):
             task_id = next(e.task.id for e in events if e.HasField("task"))
             task = await client.get_task(a2a.GetTaskRequest(id=task_id,history_length=0))
             assert task.status.state == a2a.TaskState.TASK_STATE_COMPLETED, task
+            workspace = task.metadata['workspaceUrl']
+            assert workspace.startswith(base.rsplit('/agent/', 1)[0] + '/TMP/')
+            async with httpx.AsyncClient(trust_env=False) as browser:
+                assert (await browser.get(workspace + '/v1/temporary')).json()['state'] == 'ready'
             assert not task.history
             assert "A2A attachment" in task.artifacts[0].parts[0].text
             again = [e async for e in client.send_message(request)]

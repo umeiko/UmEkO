@@ -2,13 +2,13 @@
 // Vue owns component mounting; this module owns only the nodes inside them.
 import hljs from 'highlight.js/lib/common';
 import { t, currentLocale, setLocale, applyI18n } from './i18n.js';
-import { deploymentPrefix } from '../shared/api.js';
+import { appUrl, temporaryWorkspacePath } from '../shared/api.js';
 import { treeIcon } from './treeIcons.js';
 import { TreeSelection, topLevelEntries, copyEntryName } from './treeSelection.js';
 import { renderMarkdown as markdown, renderSkillMarkdown, codeHtml } from '../shared/markdown.js';
 import { copyText } from '../shared/clipboard.js';
 import { prettyToolData } from './toolData.js';
-export function mountWorkspaceRuntime() {
+export function mountWorkspaceRuntime({ onTemporaryState = () => {} } = {}) {
   const lifecycle = new AbortController();
   function listen(target, type, callback, options = {}) {
     target.addEventListener(type, callback, {
@@ -19,11 +19,49 @@ export function mountWorkspaceRuntime() {
   window.hljs = hljs;
   applyI18n();
   // 后端在运行时提供部署前缀；所有应用内部路径通过此入口生成。
-  const basePath = deploymentPrefix();
-  function appUrl(path) {
-    return typeof path === 'string' && path.startsWith('/') && !path.startsWith('//')
-      ? basePath + path
-      : path;
+  const temporary = Boolean(temporaryWorkspacePath());
+  let temporaryTimer;
+  let temporaryHeartbeat;
+  let temporaryExpired = false;
+  let lastTemporaryActivity = 0;
+  function renderTemporaryExpiry(info) {
+    const node = document.querySelector('#temporary-expiry');
+    node.classList.remove('hidden');
+    document.querySelector('#temporary-expiry-label').textContent = info.expires_at
+      ? t('temporary.expiry', {
+          minutes: Math.round(info.idle_seconds / 60),
+          time: new Date(info.expires_at).toLocaleTimeString(currentLocale(), {
+            hour: '2-digit',
+            minute: '2-digit',
+            hour12: false,
+          }),
+        })
+      : t('temporary.busy');
+    node.title = info.expires_at
+      ? new Date(info.expires_at).toLocaleString(currentLocale())
+      : t('temporary.busy');
+  }
+  function recordTemporaryActivity(event) {
+    if (
+      !temporary ||
+      temporaryExpired ||
+      !event.isTrusted ||
+      Date.now() - lastTemporaryActivity < 30000
+    )
+      return;
+    lastTemporaryActivity = Date.now();
+    api('/v1/temporary/activity', { method: 'POST' })
+      .then(renderTemporaryExpiry)
+      .catch(() => {});
+  }
+  function expireTemporaryWorkspace() {
+    temporaryExpired = true;
+    clearTimeout(temporaryTimer);
+    clearInterval(temporaryHeartbeat);
+    activeRunCleanup?.();
+    activeStream?.close();
+    document.querySelectorAll('dialog[open]').forEach((dialog) => dialog.close());
+    onTemporaryState('expired');
   }
 
   const ui = {
@@ -591,6 +629,7 @@ export function mountWorkspaceRuntime() {
   async function api(path, options = {}) {
     const response = await fetch(appUrl(path), options);
     if (!response.ok) {
+      if (temporary && response.status === 410) expireTemporaryWorkspace();
       const body = await response.json().catch(() => ({}));
       let detail = body.detail;
       if (Array.isArray(detail)) {
@@ -781,6 +820,7 @@ export function mountWorkspaceRuntime() {
   }
 
   async function selectSessionModel(modelId) {
+    if (temporary) return;
     closeModelMenu();
     if (!sessionId) return;
     try {
@@ -967,6 +1007,11 @@ export function mountWorkspaceRuntime() {
       label.className = 'session-label';
       label.textContent = item.title;
       button.append(label);
+      if (temporary) {
+        wrapper.append(button);
+        ui.sessionTabs.append(wrapper);
+        continue;
+      }
       button.addEventListener('click', () =>
         loadSession(item.id).catch((error) => setStatus(error.message)),
       );
@@ -1066,7 +1111,7 @@ export function mountWorkspaceRuntime() {
     pendingFiles = attachmentDrafts.get(id) || [];
     renderPendingAttachments();
     renderWorkspaceUploadFeedback();
-    localStorage.setItem('umeko:last-session', id);
+    if (!temporary) localStorage.setItem('umeko:last-session', id);
     clearPreview();
     const [sessionView, messages] = await Promise.all([
       api(`/v1/sessions/${id}`),
@@ -1122,6 +1167,31 @@ export function mountWorkspaceRuntime() {
   }
 
   async function boot() {
+    if (temporary) {
+      try {
+        const info = await api('/v1/temporary');
+        renderTemporaryExpiry(info);
+        if (info.state === 'pending') {
+          onTemporaryState('pending');
+          temporaryTimer = setTimeout(boot, 2000);
+          return;
+        }
+        renderCurrentUser({ username: t('temporary.user') });
+        await refreshModels();
+        await loadSession(info.session_id);
+        onTemporaryState('ready');
+        temporaryHeartbeat = setInterval(
+          () =>
+            api('/v1/temporary')
+              .then(renderTemporaryExpiry)
+              .catch(() => {}),
+          15000,
+        );
+      } catch (_) {
+        if (!temporaryExpired) onTemporaryState('error');
+      }
+      return;
+    }
     let user;
     try {
       user = await api('/v1/auth/me');
@@ -1337,7 +1407,7 @@ export function mountWorkspaceRuntime() {
     });
     importLabel.append(importInput);
     toolbar.append(create, importLabel);
-    panel.append(toolbar);
+    if (!temporary) panel.append(toolbar);
     if (!resources.length) {
       const empty = document.createElement('p');
       empty.className = 'resource-empty';
@@ -1366,6 +1436,7 @@ export function mountWorkspaceRuntime() {
         mounted.classList.toggle('attached', resource.mounted);
       };
       renderMounted();
+      mounted.disabled = temporary;
       mounted.addEventListener('click', async () => {
         mounted.disabled = true;
         const nextMounted = !resource.mounted;
@@ -1414,7 +1485,7 @@ export function mountWorkspaceRuntime() {
     const hint = document.createElement('div');
     hint.className = 'resource-drop-hint';
     hint.textContent = t('resource.dropHint', { kind: t('sidebar.skills') });
-    panel.append(hint);
+    if (!temporary) panel.append(hint);
   }
 
   function resourceTemplate(kind, name) {
@@ -1436,6 +1507,7 @@ export function mountWorkspaceRuntime() {
   }
 
   async function importResources(kind, files) {
+    if (temporary) return setStatus(t('temporary.locked'));
     if (!files.length) return;
     try {
       for (const file of files) await uploadResource(kind, file);
@@ -1511,6 +1583,7 @@ export function mountWorkspaceRuntime() {
     for (const eventName of ['dragenter', 'dragover']) {
       panel.addEventListener(eventName, (event) => {
         event.preventDefault();
+        if (temporary) return;
         panel.classList.add('dragging');
       });
     }
@@ -1544,6 +1617,11 @@ export function mountWorkspaceRuntime() {
     ui.previewTitle.title = name;
     ui.saveResource.classList.remove('hidden');
     ui.deleteResource.classList.toggle('hidden', resource.builtin);
+    if (temporary) {
+      ui.saveResource.classList.add('hidden');
+      ui.deleteResource.classList.add('hidden');
+      ui.resourceEditor.readOnly = true;
+    }
     ui.attachWorkspaceFile.classList.add('hidden');
     ui.downloadFile.classList.add('hidden');
     ui.resourceEditor.value = resource.content || '';
@@ -2587,8 +2665,8 @@ export function mountWorkspaceRuntime() {
     ui.codePanel.classList.toggle('hidden', rendered || previewSource.resource);
     ui.resourceEditor.classList.toggle('hidden', rendered || !previewSource.resource);
     if (previewSource.resource) {
-      ui.markdownSource.dataset.i18n = 'preview.edit';
-      ui.markdownSource.textContent = t('preview.edit');
+      ui.markdownSource.dataset.i18n = temporary ? 'preview.source' : 'preview.edit';
+      ui.markdownSource.textContent = t(temporary ? 'preview.source' : 'preview.edit');
       previewSource.text = ui.resourceEditor.value;
       if (rendered)
         ui.markdownView.innerHTML = renderSkillMarkdown(previewSource.text, { translate: t });
@@ -3638,6 +3716,7 @@ export function mountWorkspaceRuntime() {
         refreshTree(runSessionId),
         refreshContext(runSessionId),
         refreshSessionTabs(),
+        ...(temporary ? [api('/v1/temporary').then(renderTemporaryExpiry)] : []),
       ]);
     };
     for (const status of ['completed', 'failed', 'cancelled']) {
@@ -3661,8 +3740,13 @@ export function mountWorkspaceRuntime() {
         }
         // 后台任务仍在运行，保留停止按钮；直到拿到最终结果才结束。
         pollTimer = setTimeout(pollRun, 2500);
-      } catch (_) {
+      } catch (error) {
         if (disposed || sessionId !== runSessionId) return;
+        if (temporary && !temporaryExpired) {
+          cleanup();
+          await loadSession(runSessionId).catch(() => {});
+          return;
+        }
         cleanup();
         finishReasoning();
         updateMetrics();
@@ -3895,6 +3979,19 @@ export function mountWorkspaceRuntime() {
     }
   });
 
+  if (temporary) {
+    for (const event of ['pointerdown', 'keydown', 'wheel'])
+      listen(document, event, recordTemporaryActivity, { capture: true, passive: true });
+    ui.newSession.disabled = true;
+    ui.modelPicker.disabled = true;
+    ui.userMenu.classList.add('temporary-disabled');
+    ui.userMenu.querySelector('summary').setAttribute('aria-disabled', 'true');
+    ui.userMenu.querySelector('summary').tabIndex = -1;
+    ui.userMenu.addEventListener('click', (event) => {
+      event.preventDefault();
+      ui.userMenu.open = false;
+    });
+  }
   boot().catch((error) => {
     setStatus(t('status.connectFailed'));
     addMessage(t('session.createFailed', { error: error.message }), 'assistant');
@@ -3908,6 +4005,8 @@ export function mountWorkspaceRuntime() {
     activeStream?.close();
     clearTimeout(workspaceRefreshTimer);
     clearTimeout(treeFilterTimer);
+    clearTimeout(temporaryTimer);
+    clearInterval(temporaryHeartbeat);
     if (avatarPreviewUrl) URL.revokeObjectURL(avatarPreviewUrl);
   };
 }

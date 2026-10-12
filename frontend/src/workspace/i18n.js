@@ -2431,6 +2431,123 @@ const I18N_LOCALES = {
   },
 };
 
+const temporaryTexts = {
+  'zh-CN': [
+    '该节点已过期',
+    '请重新申请临时工作台。',
+    '正在准备临时工作台',
+    '任务已接收，工作台准备好后将自动打开。',
+    '暂时无法连接',
+    '请检查连接，刷新页面重试。',
+    '重新连接',
+    '临时访客',
+    '临时工作台的模型与技能由智能体配置。',
+  ],
+  'zh-TW': [
+    '該節點已過期',
+    '請重新申請臨時工作台。',
+    '正在準備臨時工作台',
+    '任務已接收，工作台準備好後將自動開啟。',
+    '暫時無法連線',
+    '請檢查連線，重新整理頁面再試。',
+    '重新連線',
+    '臨時訪客',
+    '臨時工作台的模型與技能由智慧體設定。',
+  ],
+  en: [
+    'This workspace has expired',
+    'Request a new temporary workspace.',
+    'Preparing your workspace',
+    'Your task was received. The workspace will open automatically when ready.',
+    'Unable to connect',
+    'Check your connection and reload to try again.',
+    'Reconnect',
+    'Temporary guest',
+    'The agent controls the models and skills in this workspace.',
+  ],
+  ko: [
+    '이 작업 공간이 만료되었습니다',
+    '새 임시 작업 공간을 요청하세요.',
+    '작업 공간 준비 중',
+    '작업이 접수되었습니다. 준비되면 자동으로 열립니다.',
+    '연결할 수 없습니다',
+    '연결을 확인한 후 새로고침하세요.',
+    '다시 연결',
+    '임시 게스트',
+    '이 작업 공간의 모델과 스킬은 에이전트가 설정합니다.',
+  ],
+  fr: [
+    'Cet espace de travail a expiré',
+    'Demandez un nouvel espace temporaire.',
+    'Préparation de votre espace',
+    'La tâche a été reçue. L’espace s’ouvrira automatiquement.',
+    'Connexion impossible',
+    'Vérifiez la connexion et rechargez la page.',
+    'Reconnecter',
+    'Invité temporaire',
+    'L’agent définit les modèles et les compétences de cet espace.',
+  ],
+  de: [
+    'Dieser Arbeitsbereich ist abgelaufen',
+    'Fordern Sie einen neuen temporären Arbeitsbereich an.',
+    'Arbeitsbereich wird vorbereitet',
+    'Die Aufgabe wurde empfangen. Der Arbeitsbereich öffnet sich automatisch.',
+    'Verbindung fehlgeschlagen',
+    'Prüfen Sie Ihre Verbindung und laden Sie die Seite neu.',
+    'Erneut verbinden',
+    'Temporärer Gast',
+    'Modelle und Skills werden vom Agenten festgelegt.',
+  ],
+  it: [
+    'Questo spazio di lavoro è scaduto',
+    'Richiedi un nuovo spazio temporaneo.',
+    'Preparazione dello spazio',
+    'Attività ricevuta. Lo spazio si aprirà automaticamente.',
+    'Connessione non disponibile',
+    'Controlla la connessione e ricarica la pagina.',
+    'Riconnetti',
+    'Ospite temporaneo',
+    'L’agente configura i modelli e le competenze di questo spazio.',
+  ],
+};
+const temporaryKeys = [
+  'expiredTitle',
+  'expiredHint',
+  'pendingTitle',
+  'pendingHint',
+  'errorTitle',
+  'errorHint',
+  'retry',
+  'user',
+  'locked',
+];
+for (const [locale, values] of Object.entries(temporaryTexts)) {
+  temporaryKeys.forEach((key, index) => {
+    I18N_LOCALES[locale]['temporary.' + key] = values[index];
+  });
+}
+const temporaryLeaseTexts = {
+  'zh-CN': ['闲置 {minutes} 分钟后清理 · 到期 {time}', '任务进行中，结束后开始计时'],
+  'zh-TW': ['閒置 {minutes} 分鐘後清理 · 到期 {time}', '任務進行中，結束後開始計時'],
+  en: [
+    'Expires at {time} · {minutes} min idle limit',
+    'Task running · idle timer starts when finished',
+  ],
+  ko: ['만료 {time} · 미사용 {minutes}분 제한', '작업 완료 후 미사용 시간 계산'],
+  fr: [
+    'Expire à {time} · limite d’inactivité : {minutes} min',
+    'Tâche en cours · délai après la fin',
+  ],
+  de: ['Läuft um {time} ab · {minutes} Min. Inaktivität', 'Aufgabe läuft · Frist beginnt danach'],
+  it: [
+    'Scade alle {time} · {minutes} min di inattività',
+    'Attività in corso · il tempo parte alla fine',
+  ],
+};
+for (const [locale, [expiry, busy]] of Object.entries(temporaryLeaseTexts)) {
+  I18N_LOCALES[locale]['temporary.expiry'] = expiry;
+  I18N_LOCALES[locale]['temporary.busy'] = busy;
+}
 const I18N_SUPPORTED = ['zh-CN', 'zh-TW', 'en', 'ko', 'fr', 'de', 'it'];
 let i18nCurrent = 'zh-CN';
 

@@ -62,6 +62,8 @@ class Settings:
     task_queue_limit: int = 100
     task_caller_limit: int = 20
     task_retention_seconds: int = 86400
+    tmp_idle_seconds: int = 3600
+    machine_idle_seconds: int = 900
     task_timeout_seconds: int = 3600
     # 管理面独立入口前缀；不继承用户面的 base_path。留空表示管理端口根路径。
     admin_base_path: str = ""
@@ -150,6 +152,8 @@ def load_settings(env_path: str | Path | None = None, data_root: str | Path | No
         task_queue_limit=max(1, int(os.getenv("UMEKO_TASK_QUEUE_LIMIT", "100"))),
         task_caller_limit=max(1, int(os.getenv("UMEKO_TASK_CALLER_LIMIT", "20"))),
         task_retention_seconds=max(60, int(os.getenv("UMEKO_TASK_RETENTION_SECONDS", "86400"))),
+        tmp_idle_seconds=max(60, int(os.getenv("UMEKO_TMP_IDLE_SECONDS", "3600"))),
+        machine_idle_seconds=max(60, int(os.getenv("UMEKO_MACHINE_IDLE_SECONDS", "900"))),
         task_timeout_seconds=max(1, int(os.getenv("UMEKO_TASK_TIMEOUT_SECONDS", "3600"))),
     )
     from .host.configuration import LEGACY_MODEL_KEYS, migrate_legacy_models, resolve_provider_settings

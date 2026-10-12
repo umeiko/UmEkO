@@ -43,7 +43,8 @@ def _mcp_call(fn, *args, **kwargs):
 def _mcp_server(settings, tasks):
     server = MCPServer("UMEKO", version=__version__, instructions=(
         "先 get_agent_info 了解当前智能体，再 submit_task 提交任务，使用 get_task 查询状态。"
-        "完成后使用 read_artifact 读取产物；取消用 cancel_task。"))
+        "完成后使用 read_artifact 读取产物；取消用 cancel_task。"
+        "任务返回 workspace_url，可交给用户打开临时工作台查看文件与继续同一会话。链接等同本会话访问凭据，请仅交给预期使用者。"))
     def principal(ctx):
         return ctx.request_context.request.state.principal
 
@@ -70,7 +71,8 @@ def _mcp_server(settings, tasks):
     async def submit_task(prompt: str, ctx: Context, files: list[dict[str, str]] | None = None,
                           model_id: str | None = None, idempotency_key: str | None = None) -> dict[str, Any]:
         """提交 Agent 任务并立即返回任务 ID。files 为 name/content_base64 列表，最多 10 个、合计 20 MiB；
-        不接受服务器路径。任务独立执行，默认保留 24 小时；幂等键防止重复提交。"""
+        不接受服务器路径。任务独立执行，默认保留 24 小时；幂等键防止重复提交。
+        返回 workspace_url，可在浏览器继续此会话。"""
         task = await asyncio.to_thread(_mcp_call, tasks.submit, principal(ctx),
                                       {"prompt": prompt, "files": files or [], "model_id": model_id},
                                       source="mcp", idempotency_key=idempotency_key,
@@ -91,7 +93,7 @@ def _mcp_server(settings, tasks):
     @server.tool(structured_output=True, annotations=ToolAnnotations(readOnlyHint=False, destructiveHint=True, openWorldHint=False))
     def cancel_task(task_id: str, ctx: Context) -> dict[str, Any]:
         """请求停止自己的任务。排队任务立即取消，正在执行的模型或工具协作式停止。"""
-        return _mcp_call(tasks.cancel, principal(ctx), task_id)
+        return task_view(_mcp_call(tasks.cancel, principal(ctx), task_id), public_base(settings, ctx.request_context.request))
 
     @server.tool(structured_output=True, annotations=ToolAnnotations(readOnlyHint=True, openWorldHint=False))
     def read_artifact(task_id: str, artifact_id: str, ctx: Context) -> dict[str, Any]:
@@ -178,7 +180,10 @@ class A2AHandler(RequestHandler):
             status.message.CopyFrom(a2a.Message(message_id=record["id"] + "-status", role=a2a.Role.ROLE_AGENT,
                                                 parts=[a2a.Part(text=record["error"])]))
         task = a2a.Task(id=record["id"], context_id=record["context_id"], status=status)
-        ParseDict({"expiresAt": record["expires_at"], "source": record["source"], "agentId": record["agent_id"]}, task.metadata)
+        view = task_view(record, base)
+        ParseDict({"expiresAt": record["expires_at"], "source": record["source"], "agentId": record["agent_id"],
+                   "workspaceExpiresAt": record.get("workspace_expires_at"), "workspaceState": record.get("workspace_state"),
+                   "workspaceUrl": view["workspace_url"], "workspaceHint": view["workspace_hint"]}, task.metadata)
         if include_artifacts:
             if record["reply"]:
                 task.artifacts.append(a2a.Artifact(artifact_id="response", name="Agent response", parts=[a2a.Part(text=record["reply"])]))

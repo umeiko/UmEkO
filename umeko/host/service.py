@@ -503,6 +503,12 @@ class AgentService:
             state.files.update(self.store.session_files(session_id))
         else:
             self.store.save_session(session_id, user_id, title)
+        if agent_snapshot is not None:
+            # An agent delivery fixes its disclosed skills; mirror that selection in the UI.
+            for name in builtin_resources["skills"]:
+                if name not in state.mounted_resources["skills"]:
+                    state.mounted_resources["skills"].add(name)
+                    self.store.set_resource_mount(session_id, "skills", name, True)
         return state
 
     def get_session(self, session_id: str) -> SessionState:
@@ -515,7 +521,9 @@ class AgentService:
             snapshot = None
             if record.get("purpose") == "task":
                 with self.store.connect() as db:
-                    task = db.execute("SELECT input_json FROM service_tasks WHERE session_id=?", (session_id,)).fetchone()
+                    task = db.execute("SELECT input_json,workspace_evicted_at,workspace_expires_at,status FROM service_tasks WHERE session_id=?", (session_id,)).fetchone()
+                if task and (task["workspace_evicted_at"] or task["status"] in TERMINAL_STATUSES and task["workspace_expires_at"] and task["workspace_expires_at"] <= _now()):
+                    raise KeyError("该节点已过期，请重新申请")
                 snapshot = json.loads(task["input_json"]).get("agent_snapshot") if task else None
             return self.create_session(
                 user_id=record["user_id"], title=record["title"],
@@ -566,6 +574,8 @@ class AgentService:
         with session.lock:
             if run.cancel_requested():
                 self._finish_cancelled(session, run)
+                if hasattr(self, "task_service"):
+                    self.task_service.workspace_finished(session, run)
                 return
             run.status = "running"
             run.emit("run.started")
@@ -596,6 +606,12 @@ class AgentService:
             finally:
                 if session.active_run_holder["run"] is run:
                     session.active_run_holder["run"] = None
+                if hasattr(self, "task_service"):
+                    try:
+                        self.task_service.workspace_finished(session, run)
+                    except Exception:
+                        import logging
+                        logging.getLogger(__name__).exception("Failed to retain temporary workspace metadata")
 
     def _finish_cancelled(self, session: SessionState, run: Run) -> None:
         reply = "任务已停止。"

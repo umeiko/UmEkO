@@ -9,6 +9,7 @@ import path from 'node:path';
 import { startProxy } from './proxy.mjs';
 import { checkRecordInspection } from './admin-inspection.mjs';
 import { checkAgentDisclosure } from './agent-disclosure.mjs';
+import { checkTemporaryWorkspace } from './temporary-workspace.mjs';
 const require = createRequire(import.meta.url);
 const { chromium } = require(process.env.UMEKO_PLAYWRIGHT || 'playwright');
 const root = fileURLToPath(new URL('../../', import.meta.url));
@@ -1013,6 +1014,20 @@ try {
       const locale = prefix ? 'en-US' : 'zh-CN';
       const appearance = prefix ? 'dark' : 'light';
       context = await browser.newContext({ viewport: { width: 1440, height: 1000 }, locale });
+      if (process.env.UMEKO_UI_FOCUS === 'temporary') {
+        await context.addInitScript(
+          ({ language, theme }) => {
+            localStorage.setItem('umeko:locale', language);
+            localStorage.setItem('umeko:theme', theme);
+          },
+          { language: prefix ? 'en' : 'zh-CN', theme: appearance },
+        );
+        await checkTemporaryWorkspace(context, publicBase, state, prefix, screenshot);
+        console.log(
+          `Passed temporary workspace: ${prefix || '/'} (continuation, scope, skills, expiry, desktop/mobile)`,
+        );
+        continue;
+      }
       const page = await context.newPage(),
         errors = [];
       const adminRequests = [],
@@ -1281,6 +1296,7 @@ try {
       // Both prefixed apps share an origin, so choose the saved locale for the workspace too.
       await page.locator('[data-language-select]').selectOption(prefix ? 'en' : 'zh-CN');
       await checkRecordInspection(page, context, adminBase, state, prefix, screenshot);
+      await checkTemporaryWorkspace(context, publicBase, state, prefix, screenshot);
       // Browser registration, files, module assets, SSE increments, tool folding and cancellation.
       const work = await context.newPage(),
         requests = [],

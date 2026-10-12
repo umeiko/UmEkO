@@ -71,6 +71,10 @@ asyncio.run(main())
 
 SDK `streaming=False` 使用非流式发送。任务很长时可用 `return_immediately`，拿到 ID 后轮询或订阅，避免代理请求超时。
 
+完整权限调用方收到的 Task 在 `metadata.workspaceUrl`、`metadata.workspaceHint` 中提供临时工作台地址与提示。
+可把地址交给用户，在网页中继续同一会话。流式初始 Task、查询与任务列表均携带此信息；限制与有效期见
+[临时工作台](machine-tasks.md#temporary-workspace)。
+
 ## 查询、列表、取消与流式
 
 - `GetTask`：`id` 与可选 `historyLength`，0 不返回历史，负数无效。

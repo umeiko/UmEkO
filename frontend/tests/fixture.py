@@ -13,6 +13,7 @@ import uvicorn
 from umeko.config import ModelConfig, Settings
 from umeko.server import admin as admin_module
 from umeko.host.identities import SCOPES
+from umeko.host.identities import now
 from umeko.server.__main__ import _serve_admin
 from umeko.server.app import create_app
 from umeko.skills import script_runner
@@ -95,6 +96,27 @@ def inspection_records(service, store):
     return {"session_id": session.id, "task_id": task["id"], "failed_task_id": failed["id"]}
 
 
+def temporary_record(service, store):
+    account = service.identity_store.create("Temporary workspace fixture", sorted(SCOPES))
+    definition = service.agent_registry.save({"slug": "temporary-fixture", "name": "Temporary Agent",
+        "description": "Temporary workspace browser fixture", "skill_names": ["doc-image-qc.md"]})
+    principal = {"user_id": account["user_id"], "scopes": sorted(SCOPES), "agent_id": definition["id"], "agent_definition": definition}
+    task = service.task_service.submit(principal, {"prompt": "TEMPORARY_INPUT"}, source="a2a")
+    session = service.create_session(user_id=account["user_id"], title="Temporary conversation", agent_snapshot=service.agent_registry.snapshot(definition))
+    store.add_message(session.id, "user", "TEMPORARY_INPUT")
+    store.add_message(session.id, "assistant", "TEMPORARY_RESULT")
+    (session.root / "generate" / "preview.md").write_text(MARKDOWN_SAMPLE, encoding="utf-8")
+    (session.root / "attachments" / "sample.txt").write_text("UPLOADED_TEMPORARY_FILE", encoding="utf-8")
+    with store.connect() as db:
+        db.execute("UPDATE agent_sessions SET purpose='task' WHERE id=?", (session.id,))
+        db.execute("UPDATE service_tasks SET status='completed',session_id=?,run_id='temporary-original-run',completed_at=?,reply=? WHERE id=?",
+                   (session.id, now(), "TEMPORARY_RESULT", task["id"]))
+    service.task_service.capture_files(task["id"])
+    service.evict_session(session.id)
+    service.task_service._remove_staging(task["id"])
+    return {"path": "/TMP/" + task["workspace_token"], "session_id": session.id, "task_id": task["id"]}
+
+
 def main():
     parser = argparse.ArgumentParser()
     parser.add_argument("--port", type=int, required=True)
@@ -164,9 +186,11 @@ def main():
                 run.finish("failed", error=str(exc))
             finally:
                 session.active_run_holder["run"] = None
+                service.task_service.workspace_finished(session, run)
 
     service._execute_run = execute
     inspection = inspection_records(service, store)
+    temporary = temporary_record(service, store)
     admin_app = admin_module.create_admin_app(settings, service, store,
                                              public_url=args.public_url or f"http://127.0.0.1:{args.port}{args.prefix}")
     (directory / "state.json").write_text(json.dumps({
@@ -175,6 +199,7 @@ def main():
         "markdown_sample": MARKDOWN_SAMPLE,
         "directory_sample": DIRECTORY_SAMPLE,
         "inspection": inspection,
+        "temporary": temporary,
     }), encoding="utf-8")
     threading.Thread(target=_serve_admin, args=(admin_app, "127.0.0.1", args.admin_port), daemon=True).start()
     uvicorn.run(app, host="127.0.0.1", port=args.port, log_level="error", root_path=args.prefix)

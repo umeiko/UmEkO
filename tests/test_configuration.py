@@ -27,6 +27,16 @@ def test_prefix_normalization(value, expected):
     assert normalize_base_path(value) == expected
 
 
+def test_temporary_idle_limits_from_deployment_env(deployment_env, monkeypatch, tmp_path):
+    monkeypatch.setenv("UMEKO_DATA_ROOT", str(tmp_path / "temporary-data"))
+    monkeypatch.delenv("UMEKO_TMP_IDLE_SECONDS", raising=False)
+    monkeypatch.delenv("UMEKO_MACHINE_IDLE_SECONDS", raising=False)
+    deployment_env.write_text("UMEKO_TMP_IDLE_SECONDS=600\nUMEKO_MACHINE_IDLE_SECONDS=120\n", encoding="utf-8")
+    settings = load_settings(deployment_env)
+    assert settings.tmp_idle_seconds == 600
+    assert settings.machine_idle_seconds == 120
+
+
 @pytest.mark.parametrize("value", ["relative", "https://example.com/app", "//host/app", "/a//b", "/a/../b", "/a/./b", "/a?x=1", "/a#b", "/a\\b", "/a space"])
 def test_invalid_prefix_fails_early(value):
     with pytest.raises(RuntimeError, match="UMEKO_BASE_PATH"):
