@@ -38,9 +38,13 @@ flowchart TB
 | Event | 每个任务最多保存最近 500 条，单条引擎事件内容最多 16 KiB |
 | Artifact | 工作区与生成目录中的文件；下载时重新检查归属、路径边界和到期时间 |
 
-`service_tasks`、`service_task_events`、`service_task_artifacts` 保存业务结果。Session、Run、Agent 的内存对象在机器任务结束后释放，模型连接也关闭；后续查询和下载读取数据库与磁盘，不重新加载 Agent。
+`service_tasks`、`service_task_events`、`service_task_artifacts` 保存业务结果。原机器任务结束后释放 Session、Run、Agent 的内存对象并关闭模型连接；通过机器任务 API 查询和下载读取数据库与磁盘，不重新加载 Agent。
+
+临时续聊按需恢复会话，结束后再次释放 Agent 和模型连接；最近一次续聊 Run 的事件缓冲保留，供网页接入流式。启动下一次续聊或节点过期时回收旧 Run 缓冲，持久化消息与工具记录继续按调用记录期限保留。
 
 原有 `/v1/sessions` 和 `/v1/proxy/sessions` 继续使用网页 Cookie 与普通 Session。它们没有机器任务的自动过期机制，旧 Run 状态仍在内存中。新调用方建议使用 [机器任务 API](../api/machine-tasks.md)。
+
+机器 Task 还可提供能力受限的临时工作台。浏览器和外部 Agent 通过 `/TMP/<随机标识>/v1/sessions/{id}/runs` 创建后续 Run，复用原 Session 的上下文与文件；不会改写原始 Task 的回复和状态。会话变化通知帮助已经打开的网页接上新的运行，调用与生命周期见[临时工作台与续聊](../api/temporary-workspace.md)。
 
 ## 两级排队
 
@@ -60,6 +64,6 @@ flowchart TB
 - 任务调用记录默认保留 24 小时；纯机器节点在结束后默认 15 分钟回收，打开临时工作台后改为网页闲置 1 小时回收。页面心跳不续期，真实交互续期。每 60 秒检查清理，跳过活跃任务；节点到期立即不可访问，磁盘清理可能稍后完成。文件树快照、消息和工具记录独立保留到调用记录期限。
 - 输入暂存目录在任务结束或排队取消后清理。尚未到期的产物继续可下载。
 
-部署参数见 [部署指南](../deployment.md)。目前是**一个应用进程、一个持久化数据目录**。未实现分布式 Worker 租约、跨进程模型额度、对象存储、公平调度或多轮补充输入；扩容时需要共享队列和执行协调，不能直接增加 Uvicorn 进程数。
+部署参数见 [部署指南](../deployment.md)。目前是**一个应用进程、一个持久化数据目录**。未实现分布式 Worker 租约、跨进程模型额度、对象存储、公平调度或通过 MCP/A2A 给原 Task 追加输入；多轮处理使用临时会话 REST。扩容时需要共享队列和执行协调，不能直接增加 Uvicorn 进程数。
 
 源码：`umeko/host/identities.py`、`tasks.py`、`umeko/server/task_api.py`、`protocols.py`。

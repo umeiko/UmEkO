@@ -63,5 +63,7 @@ asyncio.run(main())
 
 完整权限任务的响应还含 `workspace_url`、`workspace_hint`，调用 Agent 可把链接交给用户打开临时工作台继续处理。
 链接包含用户服务前缀，且只能访问该任务的原会话；权限、有效期与限制见[临时工作台](machine-tasks.md#temporary-workspace)。
+外部 Agent 可通过临时会话 REST 接口继续原上下文，已经打开的网页会自动同步输入、流式回复和工具记录。
+再次 `submit_task` 使用新幂等键会建立新会话；沿用原会话的示例见[临时工作台与续聊](temporary-workspace.md)。
 
 当前不提供 stdio 或 MCP 原生 Tasks 扩展。需要交互式 OAuth 的客户端不一定能直接使用本服务；先确认客户端支持自定义 Bearer Header 或 OAuth `client_credentials`。授权和生产代理配置见 [机器任务](machine-tasks.md)与[部署指南](../deployment.md)。

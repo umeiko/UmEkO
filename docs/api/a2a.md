@@ -74,6 +74,8 @@ SDK `streaming=False` 使用非流式发送。任务很长时可用 `return_imme
 完整权限调用方收到的 Task 在 `metadata.workspaceUrl`、`metadata.workspaceHint` 中提供临时工作台地址与提示。
 可把地址交给用户，在网页中继续同一会话。流式初始 Task、查询与任务列表均携带此信息；限制与有效期见
 [临时工作台](machine-tasks.md#temporary-workspace)。
+外部 Agent 也可通过临时会话 REST 接口继续原上下文，并实时同步到已打开的网页；这不会向原 A2A Task 追加消息。
+具体调用步骤见[临时工作台与续聊](temporary-workspace.md)。
 
 ## 查询、列表、取消与流式
 

@@ -83,6 +83,7 @@ nav:
       - 文件与技能: api/files-skills.md
       - 一次性调用: api/proxy.md
       - 机器任务与凭据: api/machine-tasks.md
+      - 临时工作台与续聊: api/temporary-workspace.md
       - 智能体管理: api/agents.md
       - MCP: api/mcp.md
       - A2A: api/a2a.md

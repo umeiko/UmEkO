@@ -30,6 +30,7 @@ GET BASE_URL/v1/sessions
 | 工作区、附件、产物、会话技能 | [文件与技能](files-skills.md) |
 | 一个请求上传文件并发起任务 | [一次性调用](proxy.md) |
 | 无网页账号的有界任务与服务凭据 | [机器任务](machine-tasks.md) |
+| 从 MCP/A2A 打开工作台、同会话续聊与实时同步 | [临时工作台](temporary-workspace.md) |
 | 多个 Agent 的配置、技能与独立路径 | [智能体管理](agents.md) |
 | 工具发现、提交、查询与产物资源 | [MCP](mcp.md) |
 | Agent Card、发送、订阅与流式产物 | [A2A](a2a.md) |

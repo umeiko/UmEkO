@@ -43,6 +43,7 @@
 | MCP 服务 | 已实现，Streamable HTTP 与七个工具 | [MCP](api/mcp.md) |
 | A2A 服务 | 已实现，1.0 JSON-RPC、Agent Card 与流式 | [A2A](api/a2a.md) |
 | 机器身份、持久化任务队列、自动过期清理 | 已实现，单进程 | [机器任务](api/machine-tasks.md) |
+| MCP/A2A 临时工作台、同会话续聊与网页实时同步 | 已实现 | [临时工作台](api/temporary-workspace.md) |
 | 管理员资源监控与服务凭据管理 | 已实现 | [资源监控](api/monitoring.md) |
 
 !!! note "文档站与 Agent 服务"

@@ -31,6 +31,8 @@ A2A 的等待、查询和流式操作需要 `tasks:read`，发送还需要 `task
 
 ## 临时工作台 {#temporary-workspace}
 
+网页使用方式、外部 Agent 续聊示例与接口范围见[临时工作台与续聊](temporary-workspace.md)。
+
 完整权限调用方的任务响应含 `workspace_url` 和 `workspace_hint`。地址为用户服务完整基址下的
 `/TMP/<Temp_session_id>`，包含 `UMEKO_BASE_PATH`，不包含管理前缀或 `/agent/<slug>`。
 MCP 的 `submit_task`、`get_task` 和任务列表直接返回这些字段；A2A 在 Task 的 `metadata.workspaceUrl`
