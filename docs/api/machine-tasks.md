@@ -16,6 +16,8 @@
 
 下面所有路径相对具体 Agent 的完整基址，例如 `https://example.internal/doc-master/consistency/image-text/agent/image-qc`。每个 Agent 使用自己的工作指引、所选 Skill 和默认模型；调用者显式指定的 `model_id` 优先。配置方法见[智能体管理](agents.md)。
 
+显式 `model_id` 必须属于该 Agent 的主模型披露范围。默认主模型始终允许，其他模型从 MCP `list_models` 的结果选择；REST 和 A2A 同样检查，未披露模型被拒绝。`disclosed_model_ids=null` 保持全部模式，`[]` 仅允许默认主模型，数组开放对应模型。
+
 | scope | 用途 |
 | --- | --- |
 | `tasks:create` | 提交任务与 MCP 模型发现 |

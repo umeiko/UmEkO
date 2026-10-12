@@ -10,6 +10,7 @@ import { startProxy } from './proxy.mjs';
 import { checkRecordInspection } from './admin-inspection.mjs';
 import { checkAgentDisclosure } from './agent-disclosure.mjs';
 import { checkTemporaryWorkspace } from './temporary-workspace.mjs';
+import { checkModelDisclosure, checkModelDisclosureControls } from './model-disclosure.mjs';
 const require = createRequire(import.meta.url);
 const { chromium } = require(process.env.UMEKO_PLAYWRIGHT || 'playwright');
 const root = fileURLToPath(new URL('../../', import.meta.url));
@@ -1075,6 +1076,19 @@ try {
       );
       const adminCookie = (await context.cookies()).find((c) => c.name === 'umeko_admin');
       assert.equal(adminCookie.path, adminPrefix || '/');
+      if (process.env.UMEKO_UI_FOCUS === 'model-disclosure') {
+        await checkModelDisclosure(page, context, adminBase, state, prefix, screenshot);
+        assert.deepEqual(errors, []);
+        if (adminPrefix)
+          assert.ok(
+            adminRequests.every((p) => p.startsWith(adminPrefix + '/') || p === '/favicon.ico'),
+          );
+        await context.close();
+        console.log(
+          `Passed model disclosure: ${prefix || '/'} (selection, search, persistence, bilingual, desktop/mobile)`,
+        );
+        continue;
+      }
       // Account validation, one-off secret, a cancelled deletion and a blocked deletion.
       const builtins = await (await context.request.get(adminBase + '/admin/v1/agents')).json();
       const imageQc = builtins.agents.find((agent) => agent.slug === 'image-qc');
@@ -1263,6 +1277,7 @@ try {
       await page.locator('#agent-definition-description').fill('Generic agent fixture');
       await page.locator('#agent-definition-prompt').fill('PRIVATE_FIXTURE');
       await page.locator('#agent-definition-vision-model').selectOption(state.vision_model);
+      await checkModelDisclosureControls(page, state, prefix, screenshot);
       await page.locator('#agent-definition-skills input').first().check();
       await page.locator('#agent-definition-save').click();
       await page.locator('#agent-definition-feedback').filter({ hasText: '已保存' }).waitFor();
@@ -1270,6 +1285,13 @@ try {
         await (await context.request.get(adminBase + '/admin/v1/agents')).json()
       ).agents.find((a) => a.slug === 'ui-agent');
       assert.equal(agent.default_vision_model_id, state.vision_model);
+      assert.deepEqual(agent.disclosed_model_ids, [state.vision_model]);
+      await page.locator('#agent-definition-model-disclosure summary').click();
+      await page.locator('#agent-definition-model-disclosure').press('Escape');
+      assert.equal(
+        await page.locator('#agent-definition-model-disclosure').getAttribute('open'),
+        null,
+      );
       const card = await (await context.request.get(agent.endpoints.agent_card)).json();
       assert.equal(card.name, 'UI Agent');
       assert.ok(!JSON.stringify(card).includes('PRIVATE_FIXTURE'));

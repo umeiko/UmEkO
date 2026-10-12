@@ -150,6 +150,7 @@ class _AgentIn(BaseModel):
     system_prompt: str = Field(default="", max_length=100000)
     default_model_id: str | None = None
     default_vision_model_id: str | None = None
+    disclosed_model_ids: list[str] | None = None
     skill_names: list[str] = Field(default_factory=list)
     enabled: bool = True
     documentationUrl: str | None = None
@@ -244,6 +245,7 @@ def create_admin_app(settings: Settings, service: AgentService, store: Store, pu
                                "description": pack.description, "enabled": bool(item["enabled"])})
         return {"agents": [agent_view(item) for item in service.agent_registry.list()], "skills": skills, "default_version": __version__,
                 "public_url_configured": bool(settings.public_url),
+                "active_model_id": (store.active_model() or {}).get("model_id"),
                 "models": [{"id": model["id"], "name": model["name"], "provider": provider["name"], "vision": bool(model["vision"])}
                            for provider in store.list_providers() for model in provider["models"]]}
 

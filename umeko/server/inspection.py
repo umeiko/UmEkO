@@ -79,7 +79,7 @@ def task_detail(service, task_id):
         snapshot = payload.get("agent_snapshot")
         context["agent_snapshot"] = ({key: snapshot[key] for key in (
             "id", "slug", "name", "description", "version", "system_prompt", "default_model_id",
-            "default_vision_model_id", "skill_names", "dispatched_skills",
+            "default_vision_model_id", "disclosed_model_ids", "skill_names", "dispatched_skills",
         ) if key in snapshot} if isinstance(snapshot, dict) else None)
         artifacts = [dict(r) for r in db.execute(
             "SELECT id,name,media_type,size FROM service_task_artifacts WHERE task_id=?", (task_id,),

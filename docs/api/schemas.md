@@ -1251,6 +1251,20 @@
       "title": "Description",
       "type": "string"
     },
+    "disclosed_model_ids": {
+      "anyOf": [
+        {
+          "items": {
+            "type": "string"
+          },
+          "type": "array"
+        },
+        {
+          "type": "null"
+        }
+      ],
+      "title": "Disclosed Model Ids"
+    },
     "documentationUrl": {
       "anyOf": [
         {

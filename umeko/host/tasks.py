@@ -182,9 +182,12 @@ class TaskService:
         fingerprint = hashlib.sha256(json.dumps({**normalized, "context_id": context_id},
                                                 sort_keys=True, ensure_ascii=False).encode()).hexdigest()
         definition = principal.get("agent_definition")
+        model_allowed = True
         if agent_id:
             if not definition or definition["id"] != agent_id:
                 raise ValueError("智能体配置无效")
+            if normalized["model_id"]:
+                model_allowed = self.service.agent_registry.allows_model(definition, normalized["model_id"])
             normalized["agent_snapshot"] = self.service.agent_registry.snapshot(definition)
             normalized["model_id"] = normalized["model_id"] or definition.get("default_model_id")
         if message_id:
@@ -204,6 +207,8 @@ class TaskService:
                     if row["request_hash"] != fingerprint:
                         raise IdempotencyConflict("同一幂等键对应的输入不同")
                     return self._visible(self._view(db, row), principal)
+            if not model_allowed:
+                raise PermissionError("该智能体未披露此主模型，请使用默认模型或已披露模型")
             if context_id and db.execute("SELECT 1 FROM service_tasks WHERE context_id=? AND user_id=? AND agent_id=?",
                                          (context_id, owner, agent_id)).fetchone() is None:
                 raise KeyError("Context 不存在或无权访问")

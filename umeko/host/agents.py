@@ -24,6 +24,7 @@ class AgentRegistry:
     def _view(row):
         value = json.loads(row["definition_json"])
         value.setdefault("default_vision_model_id", None)
+        value.setdefault("disclosed_model_ids", None)
         return {**value, "id": row["id"],
                 "created_at": row["created_at"], "updated_at": row["updated_at"]}
 
@@ -58,6 +59,7 @@ class AgentRegistry:
         value.setdefault("system_prompt", "")
         value.setdefault("default_model_id", None)
         value.setdefault("default_vision_model_id", None)
+        value.setdefault("disclosed_model_ids", None)
         value.setdefault("skill_names", [])
         value.setdefault("enabled", True)
         if not isinstance(value["system_prompt"], str) or len(value["system_prompt"]) > 100_000:
@@ -70,6 +72,12 @@ class AgentRegistry:
             raise ValueError("所选技能不存在或格式无效，请从默认 Skill 中选择")
         if len(names) != len(set(names)):
             raise ValueError("技能不能重复选择")
+        model_ids = value["disclosed_model_ids"]
+        if model_ids is not None:
+            if (not isinstance(model_ids, list) or any(not isinstance(mid, str) or self.store.model_by_id(mid) is None for mid in model_ids)):
+                raise ValueError("所选披露模型不存在，请从当前模型列表中选择")
+            if len(model_ids) != len(set(model_ids)):
+                raise ValueError("披露模型不能重复选择")
         if value["default_model_id"] and self.store.model_by_id(value["default_model_id"]) is None:
             raise ValueError("默认模型不存在")
         if value["default_vision_model_id"]:
@@ -98,7 +106,7 @@ class AgentRegistry:
         stamp = datetime.now(timezone.utc).isoformat()
         agent_id = agent_id or "agt_" + uuid.uuid4().hex
         # Store only the definition, never IDs or timestamps supplied by a client.
-        allowed = {"slug", "name", "description", "version", "system_prompt", "default_model_id", "default_vision_model_id", "skill_names", "enabled", "documentationUrl", "iconUrl", "provider"}
+        allowed = {"slug", "name", "description", "version", "system_prompt", "default_model_id", "default_vision_model_id", "disclosed_model_ids", "skill_names", "enabled", "documentationUrl", "iconUrl", "provider"}
         value = {key: val for key, val in value.items() if key in allowed}
         with self.store.connect() as db:
             db.execute("BEGIN IMMEDIATE")
@@ -117,6 +125,23 @@ class AgentRegistry:
 
     def snapshot(self, definition):
         return {**definition, "dispatched_skills": self.dispatched(definition)}
+
+    def disclosed_models(self, definition=None):
+        definition = definition or {}
+        active = self.store.active_model()
+        default = definition.get("default_model_id") or (active["model_id"] if active else None)
+        selection = definition.get("disclosed_model_ids")
+        allowed = None if selection is None else set(selection) | {default}
+        models = [{"id": m["id"], "name": m["name"], "vision": m["vision"], "provider": p["name"]}
+                  for p in self.store.list_providers() for m in p["models"]
+                  if allowed is None or m["id"] in allowed]
+        visible = {m["id"] for m in models}
+        vision = definition.get("default_vision_model_id")
+        return {"default_model_id": default if default in visible else None,
+                "default_vision_model_id": vision if vision in visible else None, "models": models}
+
+    def allows_model(self, definition, model_id):
+        return any(m["id"] == model_id for m in self.disclosed_models(definition)["models"])
 
     def delete(self, agent_id):
         with self.store.connect() as db:

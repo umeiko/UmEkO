@@ -60,21 +60,18 @@ def _mcp_server(settings, tasks):
 
     @server.tool(structured_output=True, annotations=ToolAnnotations(readOnlyHint=True, openWorldHint=False))
     def list_models(ctx: Context) -> dict[str, Any]:
-        """列出可选模型 ID 与名称，不包含模型地址或密钥。未指定模型时使用管理员默认模型。"""
+        """列出当前智能体允许披露和选择的主模型 ID 与名称，包含默认主模型；不包含模型地址或密钥。
+        默认视觉模型 ID 仅在该模型也已披露时返回。submit_task.model_id 必须从此列表选择。"""
         _mcp_call(require_scope, principal(ctx), "tasks:create")
-        active = tasks.store.active_model()
         definition = principal(ctx).get("agent_definition")
-        default = (definition or {}).get("default_model_id") or (active["model_id"] if active else None)
-        return {"default_model_id": default,
-                "default_vision_model_id": (definition or {}).get("default_vision_model_id"),
-                "models": [{"id": m["id"], "name": m["name"], "vision": m["vision"], "provider": p["name"]}
-                           for p in tasks.store.list_providers() for m in p["models"]]}
+        return tasks.service.agent_registry.disclosed_models(definition)
 
     @server.tool(structured_output=True, annotations=ToolAnnotations(readOnlyHint=False, destructiveHint=False, openWorldHint=True))
     async def submit_task(prompt: str, ctx: Context, files: list[dict[str, str]] | None = None,
                           model_id: str | None = None, idempotency_key: str | None = None) -> dict[str, Any]:
         """提交 Agent 任务并立即返回任务 ID。files 为 name/content_base64 列表，最多 10 个、合计 20 MiB；
         不接受服务器路径。任务独立执行，默认保留 24 小时；幂等键防止重复提交。
+        model_id 仅允许当前智能体 list_models 返回的主模型，省略时使用默认主模型。
         返回 workspace_url，可在浏览器继续此会话。"""
         task = await asyncio.to_thread(_mcp_call, tasks.submit, principal(ctx),
                                       {"prompt": prompt, "files": files or [], "model_id": model_id},

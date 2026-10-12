@@ -34,6 +34,8 @@ Agent Card：`BASE_URL/.well-known/agent-card.json`；协议入口：`BASE_URL/a
 
 `raw` 在 JSON 中为 base64，SDK 对象中为 bytes。也可发送 `data` 对象。URL 文件仅接受本服务、同一账号有权读取的任务产物；其他文件用 raw 上传。支持 `metadata.umeko.model_id` 选择模型，未设置时使用默认模型。
 
+显式模型 ID 必须属于该 Agent 的“主模型披露”范围，规则与 MCP `list_models` 和 REST 一致；不可直接传入未披露的模型 ID。默认主模型始终可用，配置方法见[智能体管理](agents.md)。
+
 `messageId` 必须非空且不超过 150 字符，默认用于幂等。自定义幂等键使用 `metadata.umeko.idempotency_key`。已有任务暂不接受补充输入；`contextId` 只分组自己已有的任务，不继承模型记忆。
 
 ## 官方客户端
