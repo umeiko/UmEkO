@@ -24,6 +24,7 @@ from ..cancellation import (
 from ..config import ModelConfig
 from ..images import image_data_url
 from .concurrency import ModelCallQueue, model_call_queue
+from .tool_compat import parse_text_message, text_messages, unsupported_tools
 
 logger = logging.getLogger(__name__)
 
@@ -114,12 +115,13 @@ def _log_request(stream: bool, **kwargs) -> None:
     )
     tools = kwargs.get("tools") or []
     logger.info(
-        "[llm] 请求 model=%s 流式=%s 消息数=%d%s%s",
+        "[llm] 请求 model=%s 流式=%s 消息数=%d%s%s tool_choice=%s",
         kwargs.get("model"),
         stream,
         len(messages),
         f" 工具数={len(tools)}" if tools else "",
         f" 图片数={n_images}" if n_images else "",
+        kwargs.get("tool_choice", "server-default") if tools else "none",
     )
 
 
@@ -414,6 +416,10 @@ class LLMClient:
         except Exception as e:
             if should_cancel is not None and should_cancel():
                 raise OperationCancelled("用户已停止模型请求") from e
+            if kwargs.get("tools") and unsupported_tools(e):
+                # A deterministic native-tool rejection cannot be fixed by replaying
+                # the same request with stream=False. Let the tool wrapper adapt it.
+                raise
             logger.warning("流式请求失败，退回非流式：%s", e)
             # 流式名额已释放；回退调用重新入队，避免上限为 1 时自锁。
             resp = self._completion(should_cancel=should_cancel, **kwargs)
@@ -460,8 +466,43 @@ class LLMClient:
         kwargs = dict(model=self._model.name, messages=messages, tools=tools)
         if tool_choice is not None:
             kwargs["tool_choice"] = tool_choice
-        resp = self._completion(should_cancel=should_cancel, **kwargs)
-        return resp.choices[0].message
+        return self._tools_or_compat(kwargs, should_cancel=should_cancel)
+
+    def _tools_or_compat(self, kwargs, on_delta=None, on_tick=None, on_reasoning=None, should_cancel=None):
+        tools, choice = kwargs["tools"], kwargs.get("tool_choice")
+        # Always try native first, even after a previous request needed adaptation.
+        try:
+            resp = (self._stream_or_fallback(on_delta=on_delta, on_tick=on_tick,
+                    on_reasoning=on_reasoning, should_cancel=should_cancel, **kwargs)
+                    if on_delta is not None else self._completion(should_cancel=should_cancel, **kwargs))
+            return resp.choices[0].message
+        except Exception as exc:
+            if not tools or not unsupported_tools(exc):
+                raise
+            raise_if_cancelled(should_cancel)
+            logger.warning("[llm] 模型 %s 返回工具协议不支持的 400，本次请求回退文本 JSON 工具模式", self.model_name)
+        messages = text_messages(kwargs["messages"], tools, choice)
+        for attempt in range(2):
+            raise_if_cancelled(should_cancel)
+            # Buffer the envelope: internal tool JSON must never appear as a chat
+            # answer. Reasoning and usage still report progress while collecting.
+            resp = (self._stream_or_fallback(on_delta=on_tick, on_reasoning=on_reasoning,
+                    should_cancel=should_cancel, model=self.model_name, messages=messages)
+                    if on_delta is not None else self._completion(should_cancel=should_cancel,
+                                                                 model=self.model_name, messages=messages))
+            raw = resp.choices[0].message
+            try:
+                message = parse_text_message(raw, tools, choice)
+            except (ValueError, TypeError) as exc:
+                if attempt:
+                    raise ValueError("模型工具兼容回复格式错误，已纠正一次仍未返回有效 JSON；请检查模型工具能力") from exc
+                messages.extend([{"role": "assistant", "content": raw.content or ""},
+                                 {"role": "user", "content": "[工具协议格式纠正] " + str(exc) +
+                                  '。重新输出单一 JSON 对象：{"tool_calls":[{"name":"已披露工具","arguments":{}}]} 或 {"final":"回复"}。'}])
+                continue
+            if on_delta is not None and message.content:
+                on_delta(message.content)
+            return message
 
     def chat_with_tools_stream(
         self, messages: list[dict], tools: list[dict], on_delta,
@@ -472,12 +513,9 @@ class LLMClient:
         on_tick 接收 tool_calls 参数增量（界面估算 token 用量用）。
         on_reasoning 接收推理模型的思考流增量（仅界面提示用）。
         """
-        resp = self._stream_or_fallback(
-            on_delta=on_delta, on_tick=on_tick, on_reasoning=on_reasoning,
-            should_cancel=should_cancel,
-            model=self._model.name, messages=messages, tools=tools
-        )
-        return resp.choices[0].message
+        return self._tools_or_compat(dict(model=self._model.name, messages=messages, tools=tools),
+                                     on_delta=on_delta, on_tick=on_tick, on_reasoning=on_reasoning,
+                                     should_cancel=should_cancel)
 
     @staticmethod
     def with_images(messages: list[dict], image_paths: list[str | Path]) -> list[dict]:
