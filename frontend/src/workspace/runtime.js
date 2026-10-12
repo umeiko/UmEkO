@@ -503,12 +503,17 @@ export function mountWorkspaceRuntime() {
     renderToolImages(action);
     ui.toolDetailRequest.textContent = prettyToolData(action.request, t('tool.noParams'));
     let liveResult = '';
-    const isSubagentTask = action.name === 'subagent_task';
+    const liveSource =
+      action.name === 'subagent_task'
+        ? 'Sub'
+        : action.name === 'image_reasoning'
+          ? 'Vision'
+          : 'Generic';
     if (action.liveReasoning) {
-      liveResult += `【${isSubagentTask ? t('tool.liveReasoningSub') : t('tool.liveReasoningVision')}】\n${action.liveReasoning}\n\n`;
+      liveResult += `【${t(`tool.liveReasoning${liveSource}`)}】\n${action.liveReasoning}\n\n`;
     }
     if (action.liveOutput) {
-      liveResult += `【${isSubagentTask ? t('tool.liveOutputSub') : t('tool.liveOutputVision')}】\n${action.liveOutput}`;
+      liveResult += `【${t(`tool.liveOutput${liveSource}`)}】\n${action.liveOutput}`;
     }
     if (action.result === null) {
       ui.toolDetailResult.textContent = liveResult || t('tool.stillRunning');
