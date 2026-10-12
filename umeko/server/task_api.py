@@ -46,7 +46,7 @@ def task_view(task: dict, base: str) -> dict:
     service_base = base.rsplit("/agent/", 1)[0]
     return {**{key: value for key, value in task.items() if key != "workspace_token"},
             "workspace_url": service_base + "/TMP/" + token if token else None,
-            "workspace_hint": "可打开临时工作台查看本次任务并继续同一会话；链接持有者可访问本会话，到期后请重新提交任务。" if token else None,
+            "workspace_hint": "可打开临时工作台查看本次任务并继续同一会话；若缺少必要图片、文档或需人工处理，请外层 Agent 及时提供此链接和待补事项，邀请用户进入工作台处理，不要空等。链接持有者可访问本会话，到期后请重新提交任务。" if token else None,
             "artifacts": [{**a, "download_url": base + f"/v1/tasks/{task['id']}/artifacts/{a['id']}/content",
                                   "resource_uri": f"umeko://tasks/{task['id']}/artifacts/{a['id']}"}
                                  for a in task["artifacts"]]}

@@ -44,7 +44,10 @@ def _mcp_server(settings, tasks):
     server = MCPServer("UMEKO", version=__version__, instructions=(
         "先 get_agent_info 了解当前智能体，再 submit_task 提交任务，使用 get_task 查询状态。"
         "完成后使用 read_artifact 读取产物；取消用 cancel_task。"
-        "任务返回 workspace_url，可交给用户打开临时工作台查看文件与继续同一会话。链接等同本会话访问凭据，请仅交给预期使用者。"))
+        "任务返回 workspace_url，可交给用户打开临时工作台查看文件与继续同一会话。"
+        "若回复说明缺少必要图片、文档或需要人工处理，立即提供真实 workspace_url 和待补事项，邀请用户进入工作台处理；"
+        "不要一直 get_task 等待补传文件，后续通过工作台或其会话 REST 接口继续。"
+        "链接等同本会话访问凭据，请仅交给预期使用者。"))
     def principal(ctx):
         return ctx.request_context.request.state.principal
 
