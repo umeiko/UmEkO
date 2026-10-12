@@ -8,6 +8,7 @@ import { fileURLToPath } from 'node:url';
 import path from 'node:path';
 import { startProxy } from './proxy.mjs';
 import { checkRecordInspection } from './admin-inspection.mjs';
+import { checkAgentDisclosure } from './agent-disclosure.mjs';
 const require = createRequire(import.meta.url);
 const { chromium } = require(process.env.UMEKO_PLAYWRIGHT || 'playwright');
 const root = fileURLToPath(new URL('../../', import.meta.url));
@@ -131,6 +132,7 @@ async function checkAdminLanguages(page, context, adminBase) {
     'Default vision model',
   );
   const warning = page.locator('#public-url-warning .help-trigger');
+  await page.locator('#agent-editor-tab-endpoints').click();
   assert.equal(await warning.innerText(), '!');
   await warning.hover();
   await page
@@ -1257,6 +1259,7 @@ try {
       assert.equal(card.name, 'UI Agent');
       assert.ok(!JSON.stringify(card).includes('PRIVATE_FIXTURE'));
       assert.ok(card.skills.length === 1);
+      await checkAgentDisclosure(page, context, adminBase, agent, prefix, screenshot);
       assert.equal(
         await page.locator('#agent-definition-slug').evaluate((el) => el.readOnly),
         true,

@@ -2,6 +2,8 @@
 
 在管理端打开“服务接入”下的“智能体管理”，点击“新建智能体”，填写名称、访问路径和介绍，勾选需要的默认 Skill，然后保存。可选填内部工作指引、默认模型和默认视觉模型。弹窗会显示该 Agent 的完整调用地址与只读 Card 预览，配置立即生效并在重启后保留。URL 中的 `<name>` 对应这里填写的访问路径 `slug`，与用于展示的中文名称分开。
 
+“配置与入口”弹窗分为“配置”“调用入口”“MCP 披露”和“Agent Card”。切换标签保留未保存的配置；公开卡片与披露详情展示已保存的服务定义。MCP 下可查看工具、资源、提示词及原始 JSON，工具详情包含说明、参数、必填项、默认值、`inputSchema`、`outputSchema` 和协议标注。停用 Agent 仍可在管理端查看定义，但实际外部调用返回 `404`。
+
 <a id="builtin-image-qc"></a>
 
 ## 自带的图像质检智能体
@@ -44,6 +46,7 @@ REST Task   <Agent 基址>/v1/tasks
 | PUT | `/admin/v1/agents/{agent_id}` | 完整替换配置；未提交的可选字段恢复默认值 |
 | DELETE | `/admin/v1/agents/{agent_id}` | 无保留任务时删除，成功为 204 |
 | GET | `/admin/v1/agents/{agent_id}/card` | 管理员预览 Card；停用时也可预览 |
+| GET | `/admin/v1/agents/{agent_id}/mcp` | 查看同一 SDK 注册产生的工具、资源模板与提示词定义，不执行工具或调用模型 |
 
 保存响应包含 `id`、`created_at`、`updated_at` 和 `endpoints`。这些只读字段不要放入创建 / 更新请求，未知字段返回 422。
 

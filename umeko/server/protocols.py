@@ -40,7 +40,7 @@ def _mcp_call(fn, *args, **kwargs):
         raise ToolError(str(exc)) from exc
 
 
-def build_mcp(settings, tasks):
+def _mcp_server(settings, tasks):
     server = MCPServer("UMEKO", version=__version__, instructions=(
         "先 get_agent_info 了解当前智能体，再 submit_task 提交任务，使用 get_task 查询状态。"
         "完成后使用 read_artifact 读取产物；取消用 cancel_task。"))
@@ -118,6 +118,24 @@ def build_mcp(settings, tasks):
             raise ResourceError("产物超过 256 KiB，请使用受保护的 HTTP 下载入口")
         return path.read_bytes()
 
+    return server
+
+
+async def mcp_disclosure(settings, tasks):
+    """Use the same SDK registrations as tools/list, without calling tools or HTTP."""
+    server = _mcp_server(settings, tasks)
+    tools, resources, templates, prompts = await asyncio.gather(
+        server.list_tools(), server.list_resources(), server.list_resource_templates(), server.list_prompts(),
+    )
+    def wire(items):
+        return [item.model_dump(mode="json", by_alias=True, exclude_none=True) for item in items]
+    return {"server": {"name": server.name, "version": server.version, "instructions": server.instructions},
+            "transport": "Streamable HTTP", "tools": wire(tools), "resources": wire(resources),
+            "resourceTemplates": wire(templates), "prompts": wire(prompts)}
+
+
+def build_mcp(settings, tasks):
+    server = _mcp_server(settings, tasks)
     hosts = ["127.0.0.1", "127.0.0.1:*", "localhost", "localhost:*", "[::1]", "[::1]:*"]
     origins = ["http://127.0.0.1:*", "http://localhost:*", "http://[::1]:*"]
     if settings.public_url:

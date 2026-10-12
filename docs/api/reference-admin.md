@@ -2,7 +2,7 @@
 
 > 自动生成：请修改源码或生成器，不直接编辑本文件。
 
-共 **58** 个 HTTP 操作。[下载 OpenAPI](openapi-admin.json) · [数据结构](schemas.md)
+共 **59** 个 HTTP 操作。[下载 OpenAPI](openapi-admin.json) · [数据结构](schemas.md)
 
 路径为应用内部路由；带前缀部署时在公共 URL 前加 `UMEKO_ADMIN_BASE_PATH`。登录、原始字节体与 SSE 契约由生成器显式补充。
 
@@ -27,6 +27,7 @@
 | GET | `/admin/v1/agents/{agent_id}` | Get Agent |
 | DELETE | `/admin/v1/agents/{agent_id}` | Delete Agent |
 | GET | `/admin/v1/agents/{agent_id}/card` | Managed Agent Card |
+| GET | `/admin/v1/agents/{agent_id}/mcp` | Managed Mcp Disclosure |
 | PATCH | `/admin/v1/service-accounts/{account_id}` | Update Service Account |
 | DELETE | `/admin/v1/service-accounts/{account_id}` | Delete Service Account |
 | GET | `/admin/v1/tasks` | Monitored Tasks |
@@ -253,6 +254,21 @@ Delete Agent
 ## GET /admin/v1/agents/{agent_id}/card
 
 Managed Agent Card
+
+认证：`umeko_admin` Cookie。
+
+| 参数 | 位置 | 必填 | 类型与约束 |
+| --- | --- | --- | --- |
+| `agent_id` | path | 是 | `{"title": "Agent Id", "type": "string"}` |
+
+| 响应码 | 内容 |
+| --- | --- |
+| 200 | application/json: object |
+| 422 | application/json: HTTPValidationError |
+
+## GET /admin/v1/agents/{agent_id}/mcp
+
+Managed Mcp Disclosure
 
 认证：`umeko_admin` Cookie。
 

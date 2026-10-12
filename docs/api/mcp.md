@@ -22,6 +22,10 @@
 
 资源模板：`umeko://tasks/{task_id}/artifacts/{artifact_id}`。模板读取返回二进制资源（blob）；需要文本内容可直接使用 `read_artifact`。
 
+管理端“服务接入 → 智能体管理 → 配置与入口 → MCP 披露”可查看这些接口的实际定义，包括输入、返回 JSON Schema、只读等标注、资源模板和原始 JSON。该视图与对外 MCP 服务复用同一套 SDK 注册，读取定义不产生任务，不要求从管理服务器连回公网，也不需要额外提供调用凭据。管理 API 为 `GET /admin/v1/agents/{agent_id}/mcp`，响应含 `endpoint`、`auth_mode`、`enabled`、`server`、`transport`、`tools`、`resources`、`resourceTemplates`、`prompts`；仅接受管理员 Cookie。
+
+`tools/list` 是 JSON-RPC 方法，向 `/agent/{slug}/mcp` 发送 POST；不存在 `/mcp/tools/list` HTTP 路由。不同 Agent 共用这些服务接口，执行任务时才应用各自的配置。Agent 内部文件、图像工具和所选 Skill 不自动成为独立 MCP 工具；具体能力由 `get_agent_info` 返回的 Agent Card 披露。当前返回 Schema 采用通用对象结构，完整字段约定仍见各专题文档，不把未声明的字段当成 SDK 校验保证。
+
 ## 官方 Python 客户端示例
 
 下面使用 `mcp` 2.x 和它所使用的 `httpx2`。调用方的 URL 与服务凭据由其安全配置提供。

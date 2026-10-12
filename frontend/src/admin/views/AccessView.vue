@@ -1,12 +1,15 @@
 <script setup>
 import { useAdminI18n } from '../../shared/adminI18n.js';
 const { tr, date } = useAdminI18n();
-import { ref, reactive, computed, onMounted } from 'vue';
+import { ref, reactive, computed, onMounted, nextTick } from 'vue';
 import HelpTip from '../../shared/HelpTip.vue';
 import UiModal from '../../shared/UiModal.vue';
 import UiIcon from '../../shared/UiIcon.vue';
 import { api, notify, run, confirm, admin } from '../state.js';
 import { encode } from '../../shared/api.js';
+import { copyText } from '../../shared/clipboard.js';
+import UiTabs from '../../shared/UiTabs.vue';
+import McpDisclosure from '../McpDisclosure.vue';
 const accounts = ref([]),
   mode = ref('required'),
   data = ref({ agents: [], skills: [], models: [] }),
@@ -27,6 +30,25 @@ const editor = ref(false),
   bad = ref(false),
   card = ref(''),
   endpoints = ref({});
+const editorTab = ref('config'),
+  revision = ref(0),
+  cardLoading = ref(false),
+  cardError = ref('');
+const editorTabs = computed(() => [
+  { id: 'config', label: tr('配置'), icon: 'edit' },
+  { id: 'endpoints', label: tr('调用入口'), icon: 'link' },
+  { id: 'mcp', label: tr('MCP 披露'), icon: 'terminal' },
+  { id: 'card', label: 'Agent Card', icon: 'code' },
+]);
+let cardSequence = 0;
+async function copy(value) {
+  try {
+    await copyText(value);
+    notify(tr('已复制'));
+  } catch {
+    notify(tr('复制失败'), true);
+  }
+}
 const form = reactive({});
 const visionModels = computed(() => data.value.models.filter((m) => m.vision));
 const authHelp = computed(() =>
@@ -158,7 +180,11 @@ async function remove(a) {
   });
 }
 async function edit(a = null) {
+  editorTab.value = 'config';
+  revision.value++;
+  cardSequence++;
   card.value = '';
+  cardError.value = '';
   feedback.value = '';
   await run(async () => {
     data.value = await api('GET', '/admin/v1/agents');
@@ -202,8 +228,18 @@ async function edit(a = null) {
   });
 }
 async function loadCard() {
-  const value = await api('GET', `/admin/v1/agents/${encode(editing.value)}/card`);
-  card.value = JSON.stringify(value.card, null, 2);
+  if (!editing.value) return;
+  const seq = ++cardSequence;
+  cardLoading.value = true;
+  cardError.value = '';
+  try {
+    const value = await api('GET', `/admin/v1/agents/${encode(editing.value)}/card`);
+    if (seq === cardSequence) card.value = JSON.stringify(value.card, null, 2);
+  } catch (e) {
+    if (seq === cardSequence) cardError.value = e.message;
+  } finally {
+    if (seq === cardSequence) cardLoading.value = false;
+  }
 }
 async function saveAgent() {
   if (saving.value) return;
@@ -216,6 +252,8 @@ async function saveAgent() {
   ]) {
     if (!form[key].trim()) {
       feedback.value = tr('请填写') + label;
+      editorTab.value = 'config';
+      await nextTick();
       document.querySelector('#agent-definition-' + key)?.focus();
       return;
     }
@@ -251,6 +289,7 @@ async function saveAgent() {
     );
     editing.value = saved.id;
     endpoints.value = saved.endpoints;
+    revision.value++;
     await loadCard();
     await refresh();
     feedback.value = tr('已保存。新请求立即使用此配置。');
@@ -527,229 +566,304 @@ function manageSkills() {
           "
           :label="tr('智能体配置说明')"
       /></template>
-      <form id="agent-definition-form" class="field-grid" @submit.prevent="saveAgent" novalidate>
-        <div class="field">
-          <label for="agent-definition-name">{{ tr('名称') }}</label
-          ><input
-            id="agent-definition-name"
-            v-model="form.name"
-            :placeholder="tr('例如：我的智能体')"
-            maxlength="200"
-            :disabled="saving"
-          />
-        </div>
-        <div class="field">
-          <div class="heading-line">
-            <label for="agent-definition-slug">{{ tr('访问路径') }}</label
-            ><HelpTip
-              :text="
-                tr(
-                  '使用小写字母、数字和连字符，最多 63 位。创建后固定，用于 /agent/<name>/ 下的调用入口。',
-                )
-              "
-              :label="tr('访问路径说明')"
+      <UiTabs
+        v-model="editorTab"
+        :items="editorTabs"
+        id-prefix="agent-editor"
+        :label="tr('智能体配置标签')"
+      />
+      <section
+        id="agent-editor-panel-config"
+        v-show="editorTab === 'config'"
+        role="tabpanel"
+        aria-labelledby="agent-editor-tab-config"
+      >
+        <form id="agent-definition-form" class="field-grid" @submit.prevent="saveAgent" novalidate>
+          <div class="field">
+            <label for="agent-definition-name">{{ tr('名称') }}</label
+            ><input
+              id="agent-definition-name"
+              v-model="form.name"
+              :placeholder="tr('例如：我的智能体')"
+              maxlength="200"
+              :disabled="saving"
             />
           </div>
-          <input
-            id="agent-definition-slug"
-            v-model="form.slug"
-            :placeholder="tr('例如：my-agent')"
-            :readonly="!!editing"
-            :disabled="saving"
-          />
-        </div>
-        <div class="field full">
-          <label for="agent-definition-description">{{ tr('介绍') }}</label
-          ><textarea
-            id="agent-definition-description"
-            v-model="form.description"
-            rows="3"
-            :placeholder="tr('说明智能体提供的能力和适用场景')"
-            :disabled="saving"
-          />
-        </div>
-        <div class="field">
-          <label for="agent-definition-version">{{ tr('版本') }}</label
-          ><input id="agent-definition-version" v-model="form.version" :disabled="saving" />
-        </div>
-        <label class="check"
-          ><input
-            id="agent-definition-enabled"
-            v-model="form.enabled"
-            type="checkbox"
-            :disabled="saving"
-          />{{ tr('启用智能体') }}</label
-        >
-        <div class="field">
-          <label for="agent-definition-model">{{ tr('默认主模型') }}</label
-          ><select id="agent-definition-model" v-model="form.default_model_id" :disabled="saving">
-            <option value="">{{ tr('跟随平台默认模型') }}</option>
-            <option v-for="m in data.models" :key="m.id" :value="m.id">
-              {{ m.provider }} / {{ m.name }}
-            </option>
-            <option
-              v-if="
-                form.default_model_id && !data.models.some((m) => m.id === form.default_model_id)
-              "
-              :value="form.default_model_id"
-            >
-              {{ tr('原模型已删除，请重新选择') }}
-            </option>
-          </select>
-        </div>
-        <div class="field">
-          <div class="heading-line">
-            <label for="agent-definition-vision-model">{{ tr('默认视觉模型') }}</label
-            ><HelpTip
-              :text="
-                tr(
-                  '图像推理工具使用的模型。自动选择时跟随平台视觉模型；只列出标记为具备视觉能力的模型。',
-                )
-              "
-              :label="tr('默认视觉模型说明')"
-            />
-          </div>
-          <select
-            id="agent-definition-vision-model"
-            v-model="form.default_vision_model_id"
-            :disabled="saving"
-          >
-            <option value="">{{ tr('自动选择视觉模型') }}</option>
-            <option v-for="m in visionModels" :key="m.id" :value="m.id">
-              {{ m.provider }} / {{ m.name }}
-            </option>
-            <option
-              v-if="
-                form.default_vision_model_id &&
-                !visionModels.some((m) => m.id === form.default_vision_model_id)
-              "
-              :value="form.default_vision_model_id"
-            >
-              {{ tr('原视觉模型不可用，请重新选择') }}
-            </option>
-          </select>
-        </div>
-        <div class="field full">
-          <div class="heading-line">
-            <label for="agent-definition-prompt">{{ tr('执行指令') }}</label
-            ><HelpTip
-              :text="tr('仅在服务端执行，不会公开到 Agent Card。为这个智能体补充角色和工作规则。')"
-            />
-          </div>
-          <textarea
-            id="agent-definition-prompt"
-            v-model="form.system_prompt"
-            rows="5"
-            :placeholder="tr('定义角色、工作方式和输出要求（可选）')"
-            :disabled="saving"
-          />
-        </div>
-        <div class="field full">
-          <div class="row between">
+          <div class="field">
             <div class="heading-line">
-              <label>{{ tr('Skills 披露与下发') }}</label
+              <label for="agent-definition-slug">{{ tr('访问路径') }}</label
               ><HelpTip
                 :text="
                   tr(
-                    '选择平台技能。已启用技能才会下发；停用技能仍可保留选择，重新启用后恢复下发。公开 Card 与实际下发使用同一组选项。',
+                    '使用小写字母、数字和连字符，最多 63 位。创建后固定，用于 /agent/<name>/ 下的调用入口。',
                   )
+                "
+                :label="tr('访问路径说明')"
+              />
+            </div>
+            <input
+              id="agent-definition-slug"
+              v-model="form.slug"
+              :placeholder="tr('例如：my-agent')"
+              :readonly="!!editing"
+              :disabled="saving"
+            />
+          </div>
+          <div class="field full">
+            <label for="agent-definition-description">{{ tr('介绍') }}</label
+            ><textarea
+              id="agent-definition-description"
+              v-model="form.description"
+              rows="3"
+              :placeholder="tr('说明智能体提供的能力和适用场景')"
+              :disabled="saving"
+            />
+          </div>
+          <div class="field">
+            <label for="agent-definition-version">{{ tr('版本') }}</label
+            ><input id="agent-definition-version" v-model="form.version" :disabled="saving" />
+          </div>
+          <label class="check"
+            ><input
+              id="agent-definition-enabled"
+              v-model="form.enabled"
+              type="checkbox"
+              :disabled="saving"
+            />{{ tr('启用智能体') }}</label
+          >
+          <div class="field">
+            <label for="agent-definition-model">{{ tr('默认主模型') }}</label
+            ><select id="agent-definition-model" v-model="form.default_model_id" :disabled="saving">
+              <option value="">{{ tr('跟随平台默认模型') }}</option>
+              <option v-for="m in data.models" :key="m.id" :value="m.id">
+                {{ m.provider }} / {{ m.name }}
+              </option>
+              <option
+                v-if="
+                  form.default_model_id && !data.models.some((m) => m.id === form.default_model_id)
+                "
+                :value="form.default_model_id"
+              >
+                {{ tr('原模型已删除，请重新选择') }}
+              </option>
+            </select>
+          </div>
+          <div class="field">
+            <div class="heading-line">
+              <label for="agent-definition-vision-model">{{ tr('默认视觉模型') }}</label
+              ><HelpTip
+                :text="
+                  tr(
+                    '图像推理工具使用的模型。自动选择时跟随平台视觉模型；只列出标记为具备视觉能力的模型。',
+                  )
+                "
+                :label="tr('默认视觉模型说明')"
+              />
+            </div>
+            <select
+              id="agent-definition-vision-model"
+              v-model="form.default_vision_model_id"
+              :disabled="saving"
+            >
+              <option value="">{{ tr('自动选择视觉模型') }}</option>
+              <option v-for="m in visionModels" :key="m.id" :value="m.id">
+                {{ m.provider }} / {{ m.name }}
+              </option>
+              <option
+                v-if="
+                  form.default_vision_model_id &&
+                  !visionModels.some((m) => m.id === form.default_vision_model_id)
+                "
+                :value="form.default_vision_model_id"
+              >
+                {{ tr('原视觉模型不可用，请重新选择') }}
+              </option>
+            </select>
+          </div>
+          <div class="field full">
+            <div class="heading-line">
+              <label for="agent-definition-prompt">{{ tr('执行指令') }}</label
+              ><HelpTip
+                :text="
+                  tr('仅在服务端执行，不会公开到 Agent Card。为这个智能体补充角色和工作规则。')
                 "
               />
             </div>
-            <button type="button" @click="manageSkills" :disabled="saving">
-              {{ tr('管理技能库') }}
-            </button>
-          </div>
-          <div id="agent-definition-skills" class="skill-choices">
-            <div v-for="s in data.skills" :key="s.filename" class="skill-choice">
-              <label
-                ><input
-                  v-model="form.skill_names"
-                  type="checkbox"
-                  :value="s.filename"
-                  :disabled="saving"
-                /><span
-                  ><b>{{ s.name }}</b
-                  ><small
-                    >{{ s.filename }} ·
-                    {{ s.enabled ? tr('已启用') : tr('已停用，当前不下发') }}</small
-                  ></span
-                ></label
-              ><HelpTip :text="s.description" :label="s.name + tr(' 技能说明')" />
-            </div>
-            <p v-if="!data.skills.length" class="muted">{{ tr('暂无默认 Skill') }}</p>
-          </div>
-        </div>
-        <details class="full">
-          <summary class="muted" style="cursor: pointer">{{ tr('公开资料（可选）') }}</summary>
-          <div class="field-grid" style="margin-top: 18px">
-            <div class="field">
-              <label for="agent-definition-documentation">{{ tr('文档网址') }}</label
-              ><input
-                id="agent-definition-documentation"
-                v-model="form.documentationUrl"
-                :disabled="saving"
-                placeholder="https://…"
-              />
-            </div>
-            <div class="field">
-              <label for="agent-definition-icon">{{ tr('图标网址') }}</label
-              ><input
-                id="agent-definition-icon"
-                v-model="form.iconUrl"
-                :disabled="saving"
-                placeholder="https://…"
-              />
-            </div>
-            <div class="field">
-              <label for="agent-definition-provider-name">{{ tr('提供方名称') }}</label
-              ><input
-                id="agent-definition-provider-name"
-                v-model="form.organization"
-                :disabled="saving"
-              />
-            </div>
-            <div class="field">
-              <label for="agent-definition-provider-url">{{ tr('提供方网址') }}</label
-              ><input
-                id="agent-definition-provider-url"
-                v-model="form.providerUrl"
-                :disabled="saving"
-                placeholder="https://…"
-              />
-            </div>
-          </div>
-        </details>
-        <div class="full">
-          <hr style="margin: 4px 0 18px" />
-          <div class="heading-line">
-            <h3>{{ tr('调用入口') }}</h3>
-            <HelpTip
-              v-if="data.public_url_configured === false"
-              id="public-url-warning"
-              warning
-              :label="tr('公开地址未配置')"
-              :text="tr('未配置 UMEKO_PUBLIC_URL，是否已上线？')"
+            <textarea
+              id="agent-definition-prompt"
+              v-model="form.system_prompt"
+              rows="5"
+              :placeholder="tr('定义角色、工作方式和输出要求（可选）')"
+              :disabled="saving"
             />
           </div>
-          <div id="agent-definition-endpoints" class="endpoint-list">
-            <div v-for="(url, key) in endpoints" :key="key" class="endpoint">
-              <span>{{ key === 'agent_card' ? 'Agent Card' : key.toUpperCase() }}</span
-              ><a :href="url" target="_blank" rel="noopener">{{ url }}</a>
+          <div class="field full">
+            <div class="row between">
+              <div class="heading-line">
+                <label>{{ tr('Skills 披露与下发') }}</label
+                ><HelpTip
+                  :text="
+                    tr(
+                      '选择平台技能。已启用技能才会下发；停用技能仍可保留选择，重新启用后恢复下发。公开 Card 与实际下发使用同一组选项。',
+                    )
+                  "
+                />
+              </div>
+              <button type="button" @click="manageSkills" :disabled="saving">
+                {{ tr('管理技能库') }}
+              </button>
             </div>
-            <p v-if="!Object.keys(endpoints).length" class="muted">
-              {{ tr('保存后显示完整调用入口。') }}
-            </p>
+            <div id="agent-definition-skills" class="skill-choices">
+              <div v-for="s in data.skills" :key="s.filename" class="skill-choice">
+                <label
+                  ><input
+                    v-model="form.skill_names"
+                    type="checkbox"
+                    :value="s.filename"
+                    :disabled="saving"
+                  /><span
+                    ><b>{{ s.name }}</b
+                    ><small
+                      >{{ s.filename }} ·
+                      {{ s.enabled ? tr('已启用') : tr('已停用，当前不下发') }}</small
+                    ></span
+                  ></label
+                ><HelpTip :text="s.description" :label="s.name + tr(' 技能说明')" />
+              </div>
+              <p v-if="!data.skills.length" class="muted">{{ tr('暂无默认 Skill') }}</p>
+            </div>
+          </div>
+          <details class="full">
+            <summary class="muted" style="cursor: pointer">{{ tr('公开资料（可选）') }}</summary>
+            <div class="field-grid" style="margin-top: 18px">
+              <div class="field">
+                <label for="agent-definition-documentation">{{ tr('文档网址') }}</label
+                ><input
+                  id="agent-definition-documentation"
+                  v-model="form.documentationUrl"
+                  :disabled="saving"
+                  placeholder="https://…"
+                />
+              </div>
+              <div class="field">
+                <label for="agent-definition-icon">{{ tr('图标网址') }}</label
+                ><input
+                  id="agent-definition-icon"
+                  v-model="form.iconUrl"
+                  :disabled="saving"
+                  placeholder="https://…"
+                />
+              </div>
+              <div class="field">
+                <label for="agent-definition-provider-name">{{ tr('提供方名称') }}</label
+                ><input
+                  id="agent-definition-provider-name"
+                  v-model="form.organization"
+                  :disabled="saving"
+                />
+              </div>
+              <div class="field">
+                <label for="agent-definition-provider-url">{{ tr('提供方网址') }}</label
+                ><input
+                  id="agent-definition-provider-url"
+                  v-model="form.providerUrl"
+                  :disabled="saving"
+                  placeholder="https://…"
+                />
+              </div>
+            </div>
+          </details>
+        </form>
+      </section>
+      <section
+        id="agent-editor-panel-endpoints"
+        v-show="editorTab === 'endpoints'"
+        role="tabpanel"
+        aria-labelledby="agent-editor-tab-endpoints"
+      >
+        <div class="heading-line">
+          <h3>{{ tr('调用入口') }}</h3>
+          <HelpTip
+            v-if="data.public_url_configured === false"
+            id="public-url-warning"
+            warning
+            :label="tr('公开地址未配置')"
+            :text="tr('未配置 UMEKO_PUBLIC_URL，是否已上线？')"
+          />
+        </div>
+        <div id="agent-definition-endpoints" class="endpoint-list">
+          <div v-for="(url, key) in endpoints" :key="key" class="endpoint">
+            <span>{{ key === 'agent_card' ? 'Agent Card' : key.toUpperCase() }}</span
+            ><a v-if="key === 'agent_card'" :href="url" target="_blank" rel="noopener">{{ url }}</a
+            ><code v-else>{{ url }}</code
+            ><button
+              type="button"
+              class="icon-button"
+              :aria-label="
+                tr('复制 {name} 地址', {
+                  name: key === 'agent_card' ? 'Agent Card' : key.toUpperCase(),
+                })
+              "
+              @click="copy(url)"
+            >
+              <UiIcon name="copy" :size="16" />
+            </button>
+          </div>
+          <p v-if="!Object.keys(endpoints).length" class="muted">
+            {{ tr('保存后显示完整调用入口。') }}
+          </p>
+        </div>
+      </section>
+      <section
+        id="agent-editor-panel-mcp"
+        v-show="editorTab === 'mcp'"
+        role="tabpanel"
+        aria-labelledby="agent-editor-tab-mcp"
+      >
+        <McpDisclosure
+          :agent-id="editing || ''"
+          :active="editor && editorTab === 'mcp'"
+          :revision="revision"
+        />
+      </section>
+      <section
+        id="agent-editor-panel-card"
+        v-show="editorTab === 'card'"
+        role="tabpanel"
+        aria-labelledby="agent-editor-tab-card"
+      >
+        <div class="row between">
+          <div class="heading-line">
+            <h3>Agent Card</h3>
+            <HelpTip
+              :text="
+                tr(
+                  '这里预览已保存配置生成的公开 A2A Agent Card。未保存的修改不会出现在卡片或 MCP 披露中。',
+                )
+              "
+            />
+          </div>
+          <div class="row">
+            <button type="button" :disabled="!editing || cardLoading" @click="loadCard">
+              <UiIcon name="refresh" :size="16" />{{ tr('刷新') }}</button
+            ><button type="button" :disabled="!card" @click="copy(card)">
+              <UiIcon name="copy" :size="16" />{{ tr('复制 JSON') }}
+            </button>
           </div>
         </div>
-        <details id="agent-definition-card-preview" class="full">
-          <summary style="cursor: pointer" class="muted">{{ tr('查看 Agent Card') }}</summary>
-          <pre id="agent-definition-card" class="json-view">{{ card }}</pre>
-        </details>
-        <p id="agent-definition-feedback" class="feedback full" :class="{ bad }" role="status">
-          {{ feedback }}
+        <p v-if="cardError" class="feedback bad" role="alert">
+          {{ cardError }} <button type="button" @click="loadCard">{{ tr('重试') }}</button>
         </p>
-      </form>
+        <pre v-if="card" id="agent-definition-card" class="json-view agent-card-json">{{
+          card
+        }}</pre>
+        <div v-else class="empty-state">
+          {{ cardLoading ? tr('正在读取…') : tr('保存后显示 Agent Card。') }}
+        </div>
+      </section>
+      <p id="agent-definition-feedback" class="feedback full" :class="{ bad }" role="status">
+        {{ feedback }}
+      </p>
       <template #footer
         ><button :disabled="saving" @click="editor = false">{{ tr('关闭') }}</button
         ><button
@@ -764,3 +878,26 @@ function manageSkills() {
     >
   </section>
 </template>
+<style scoped>
+.endpoint code {
+  font-size: 14px;
+  overflow-wrap: anywhere;
+  min-width: 0;
+}
+.endpoint > a,
+.endpoint > code {
+  flex: 1;
+}
+.endpoint {
+  flex-wrap: wrap;
+}
+.endpoint > .icon-button {
+  flex: 0 0 auto;
+}
+.agent-card-json {
+  font-size: 14px;
+  line-height: 1.65;
+  max-height: 540px;
+  overflow: auto;
+}
+</style>

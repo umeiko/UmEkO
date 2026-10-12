@@ -289,6 +289,18 @@ def create_admin_app(settings: Settings, service: AgentService, store: Store, pu
         return {"card": service.agent_card.render(base, service.identity_store.auth_mode(), definition),
                 "public_url": base + "/.well-known/agent-card.json"}
 
+    @app.get("/admin/v1/agents/{agent_id}/mcp", tags=["agents"])
+    async def managed_mcp_disclosure(agent_id: str) -> dict:
+        from .protocols import mcp_disclosure
+        try:
+            definition = service.agent_registry.get(agent_id)
+        except KeyError as exc:
+            raise HTTPException(404, "智能体不存在") from exc
+        return {**await mcp_disclosure(settings, service.task_service),
+                "agent_id": definition["id"], "enabled": definition["enabled"],
+                "endpoint": agent_view(definition)["endpoints"]["mcp"],
+                "auth_mode": service.identity_store.auth_mode()}
+
     @app.post("/admin/v1/service-accounts", status_code=201, tags=["service access"])
     def create_service_account(payload: _ServiceAccountIn, response: Response) -> dict:
         response.headers["Cache-Control"] = "no-store"

@@ -914,6 +914,55 @@
         ]
       }
     },
+    "/admin/v1/agents/{agent_id}/mcp": {
+      "get": {
+        "operationId": "managed_mcp_disclosure_admin_v1_agents__agent_id__mcp_get",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "agent_id",
+            "required": true,
+            "schema": {
+              "title": "Agent Id",
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "additionalProperties": true,
+                  "title": "Response Managed Mcp Disclosure Admin V1 Agents  Agent Id  Mcp Get",
+                  "type": "object"
+                }
+              }
+            },
+            "description": "Successful Response"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            },
+            "description": "Validation Error"
+          }
+        },
+        "security": [
+          {
+            "umeko_admin": []
+          }
+        ],
+        "summary": "Managed Mcp Disclosure",
+        "tags": [
+          "agents"
+        ]
+      }
+    },
     "/admin/v1/default-skills": {
       "get": {
         "operationId": "list_default_skills_admin_v1_default_skills_get",
