@@ -87,7 +87,15 @@ import WorkspaceHelp from './WorkspaceHelp.vue';
         <progress id="workspace-upload-progress" max="1" value="0" class="hidden"></progress>
         <ul id="workspace-upload-details"></ul>
       </div>
-      <div id="file-tree" class="file-tree">
+      <div
+        id="file-tree"
+        class="file-tree"
+        role="tree"
+        aria-multiselectable="true"
+        tabindex="0"
+        data-i18n-aria="sidebar.files"
+        aria-label="文件"
+      >
         <p class="tree-empty" data-i18n="tree.loading">正在读取文件…</p>
       </div>
       <div class="drop-hint" data-i18n="drop.hint">拖入文件，保存到当前 Session</div>

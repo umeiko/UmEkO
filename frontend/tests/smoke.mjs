@@ -223,6 +223,323 @@ async function dropFiles(page, selector, files, { folder = false, hover = null }
   }
 }
 
+async function treeSelectionWorkflow(page, context, publicBase, originalSid, prefix) {
+  await page.locator('#new-session').click();
+  await page.locator('#new-session:enabled').waitFor();
+  const sid = await page.evaluate(() => localStorage.getItem('umeko:last-session'));
+  const base = publicBase + `/v1/sessions/${sid}/workspace`;
+  const row = (path) => page.locator(`.tree-file[data-path="${path}"]`);
+  const folder = (path) => page.locator(`summary[data-path="${path}"]`);
+  const selected = () =>
+    page
+      .locator('#file-tree [aria-selected=true]')
+      .evaluateAll((nodes) => nodes.map((node) => node.dataset.path));
+  const menu = page.locator('#file-context-menu');
+  const action = (name) => menu.locator(`[data-file-action="${name}"]`);
+  const dialogs = [];
+  const onDialog = async (dialog) => {
+    dialogs.push(dialog.message());
+    await dialog.accept();
+  };
+  page.on('dialog', onDialog);
+  let otherSid;
+  try {
+    for (const directory of ['workspace/dest', 'workspace/folder']) {
+      assert.equal(
+        (
+          await context.request.post(base + '/entries', {
+            data: { path: directory, type: 'directory' },
+          })
+        ).status(),
+        201,
+      );
+    }
+    for (const file of [
+      'workspace/a.txt',
+      'workspace/b.txt',
+      'workspace/c.txt',
+      'workspace/folder/child.txt',
+    ]) {
+      const at = file.lastIndexOf('/');
+      assert.equal(
+        (
+          await context.request.post(
+            base +
+              `/files?path=${encodeURIComponent(file.slice(0, at))}&filename=${encodeURIComponent(file.slice(at + 1))}`,
+            { data: Buffer.from('fixture: ' + file) },
+          )
+        ).status(),
+        201,
+      );
+    }
+    await page.locator('#refresh-tree').click();
+    await row('workspace/c.txt').waitFor();
+    const treeTop = (await page.locator('#file-tree').boundingBox()).y;
+    await row('workspace/a.txt').click();
+    await row('workspace/c.txt').click({ modifiers: ['Shift'] });
+    assert.deepEqual(await selected(), ['workspace/a.txt', 'workspace/b.txt', 'workspace/c.txt']);
+    await row('workspace/b.txt').click({ modifiers: ['Shift'] });
+    assert.deepEqual(await selected(), ['workspace/a.txt', 'workspace/b.txt']);
+    await row('workspace/c.txt').click({ modifiers: ['Control'] });
+    await row('workspace/b.txt').click({ modifiers: ['Control'] });
+    assert.deepEqual(await selected(), ['workspace/a.txt', 'workspace/c.txt']);
+    await row('workspace/b.txt').click({ modifiers: ['Control', 'Shift'] });
+    assert.equal((await selected()).length, 3);
+    assert.equal(await page.locator('.tree-sel-bar').count(), 0);
+    assert.equal(
+      (await page.locator('#file-tree').boundingBox()).y,
+      treeTop,
+      'Selection does not add a panel or shift the tree',
+    );
+    await row('workspace/c.txt').click({ button: 'right' });
+    assert.equal((await selected()).length, 3);
+    assert.match(await menu.locator('.file-menu-selection').innerText(), /3/);
+    for (const item of ['rename', 'new-file', 'download', 'extract'])
+      assert.ok(await action(item).isHidden());
+    assert.ok(await action('copy').isEnabled());
+    assert.ok(await action('attach').isVisible());
+    await screenshot(page, 'tree-multi-selection', prefix);
+    await page.keyboard.press('Escape');
+    assert.equal((await selected()).length, 3, 'Escape closes the menu without clearing selection');
+    await folder('workspace/dest').click({ button: 'right' });
+    assert.deepEqual(await selected(), ['workspace/dest']);
+    assert.equal(
+      await folder('workspace/dest').evaluate((node) => node.parentElement.open),
+      false,
+      'Right click does not expand a directory',
+    );
+    await page.keyboard.press('Escape');
+
+    // All selected files are attached from the same menu, without a separate multi-select bar.
+    await row('workspace/a.txt').click();
+    await row('workspace/c.txt').click({ modifiers: ['Control'] });
+    await row('workspace/c.txt').click({ button: 'right' });
+    await action('attach').click();
+    await page.locator('#attachments .chip-name').getByText('c.txt', { exact: true }).waitFor();
+    assert.equal(await page.locator('#attachments .chip-name').count(), 2);
+    assert.equal(
+      await page.locator('#prompt').evaluate((node) => document.activeElement === node),
+      true,
+    );
+    await row('workspace/a.txt').click();
+    await row('workspace/c.txt').click({ modifiers: ['Control'] });
+    await page.keyboard.press('Control+c');
+    await folder('workspace/dest').click({ button: 'right' });
+    await action('paste').click();
+    await row('workspace/dest/c.txt').waitFor();
+    for (const name of ['a', 'c'])
+      assert.equal(
+        await (await context.request.get(base + `/files/raw/workspace/dest/${name}.txt`)).text(),
+        `fixture: workspace/${name}.txt`,
+      );
+
+    // Keyboard paste on a file uses its parent; same-folder copies become new files.
+    await row('workspace/dest/a.txt').click();
+    await row('workspace/dest/c.txt').click({ modifiers: ['Control'] });
+    await page.keyboard.press('Control+c');
+    await page.keyboard.press('Control+v');
+    await row('workspace/dest/c_copy.txt').waitFor();
+    assert.equal(
+      await (await context.request.get(base + '/files/raw/workspace/dest/a_copy.txt')).text(),
+      'fixture: workspace/a.txt',
+    );
+    await row('workspace/dest/a_copy.txt').click();
+    await row('workspace/dest/c_copy.txt').click({ modifiers: ['Control'] });
+    await page.keyboard.press('Control+x');
+    assert.equal(await page.locator('.tree-file.clipboard-cut').count(), 2);
+    await folder('generate').click({ button: 'right' });
+    await action('paste').click();
+    await row('generate/c_copy.txt').waitFor();
+    assert.equal(
+      (await context.request.get(base + '/files/raw/workspace/dest/a_copy.txt')).status(),
+      404,
+    );
+    assert.equal(await page.locator('.clipboard-cut').count(), 0);
+
+    // Rename a cut file: clipboard paths and keyboard focus follow the new name.
+    await row('generate/a_copy.txt').click();
+    await page.keyboard.press('Control+x');
+    await page.keyboard.press('F2');
+    await page.locator('#file-entry-dialog[open]').waitFor();
+    await page.locator('#file-entry-name').fill('a_renamed.txt');
+    await page.locator('#file-entry-form button[type=submit]').click();
+    await page.locator('#file-entry-dialog').waitFor({ state: 'hidden' });
+    assert.equal(
+      await row('generate/a_renamed.txt').evaluate((node) => node === document.activeElement),
+      true,
+    );
+    await folder('workspace/dest').click({ button: 'right' });
+    await action('paste').click();
+    await row('workspace/dest/a_renamed.txt').waitFor();
+    assert.equal(
+      (await context.request.get(base + '/files/raw/generate/a_renamed.txt')).status(),
+      404,
+    );
+
+    // A parent and its child are a single copy/delete operation, with one confirmation.
+    await folder('workspace/folder').click();
+    await row('workspace/folder/child.txt').click({ modifiers: ['Control'] });
+    await row('workspace/folder/child.txt').click({ button: 'right' });
+    assert.ok(
+      await action('attach').isHidden(),
+      'Directories are not silently treated as attachments',
+    );
+    await action('copy').click();
+    await folder('workspace/dest').click({ button: 'right' });
+    await action('paste').click();
+    await folder('workspace/dest/folder').waitFor();
+    await folder('workspace/dest/folder').click();
+    await row('workspace/dest/folder/child.txt').click({ modifiers: ['Control'] });
+    const before = dialogs.length;
+    await page.keyboard.press('Delete');
+    await folder('workspace/dest/folder').waitFor({ state: 'detached' });
+    assert.equal(dialogs.length, before + 1);
+    assert.equal(
+      (await context.request.get(base + '/files/raw/workspace/dest/folder/child.txt')).status(),
+      404,
+    );
+
+    // Keyboard ranges exclude folded children, and modifier keys preserve the normal editor behavior.
+    await folder('workspace/folder').click(); // Fold it without losing a visible row.
+    await row('workspace/a.txt').click();
+    await page.keyboard.press('Shift+ArrowDown');
+    assert.deepEqual(await selected(), ['workspace/a.txt', 'workspace/b.txt']);
+    await page.keyboard.press('Shift+F10');
+    assert.ok(await menu.isVisible());
+    await page.keyboard.press('Escape');
+    assert.equal((await selected()).length, 2);
+    await page.locator('#prompt').focus();
+    await page.keyboard.press('Escape');
+    assert.equal(
+      (await selected()).length,
+      2,
+      'Typing in the composer does not clear tree selection',
+    );
+
+    await row('workspace/a.txt').focus();
+    await page.keyboard.press('Control+a');
+    const all = await selected();
+    assert.ok(all.length > 3 && all.every((path) => path.includes('/')));
+    assert.ok(!all.includes('workspace/folder/child.txt'), 'Select all only includes visible rows');
+    const box = await page.locator('#file-tree').boundingBox();
+    await page.locator('#file-tree').click({ position: { x: box.width - 5, y: box.height - 5 } });
+    assert.equal((await selected()).length, 0);
+    await page.keyboard.press('ArrowDown');
+    assert.deepEqual(await selected(), ['workspace']);
+    const confirms = dialogs.length;
+    await page.keyboard.press('Delete');
+    assert.equal(dialogs.length, confirms, 'The protected workspace root cannot be deleted');
+
+    // Drag a group: the drop acts on both selected paths, not only the drag origin.
+    await row('workspace/a.txt').click();
+    await row('workspace/c.txt').click({ modifiers: ['Control'] });
+    const drag = await page.evaluateHandle(() => new DataTransfer());
+    try {
+      await row('workspace/a.txt').dispatchEvent('dragstart', { dataTransfer: drag });
+      const payload = await drag.evaluate((data) =>
+        JSON.parse(data.getData('application/x-umeko-paths')),
+      );
+      assert.deepEqual(payload.paths, ['workspace/a.txt', 'workspace/c.txt']);
+      await folder('attachments').dispatchEvent('drop', { dataTransfer: drag, ctrlKey: true });
+      await row('attachments/c.txt').waitFor();
+      assert.equal((await context.request.get(base + '/files/raw/workspace/a.txt')).status(), 200);
+    } finally {
+      await drag.dispose();
+    }
+
+    // Partial failures retain the failed selection, and do not hide the successful delete.
+    const entriesUrl = base + '/entries?*';
+    await page.route(entriesUrl, (route) =>
+      new URL(route.request().url()).searchParams.get('path') === 'workspace/a.txt'
+        ? route.fulfill({ status: 403, json: { detail: 'Fixture delete failure' } })
+        : route.continue(),
+    );
+    try {
+      await row('workspace/a.txt').click();
+      await row('workspace/c.txt').click({ modifiers: ['Control'] });
+      await page.keyboard.press('Delete');
+      await row('workspace/c.txt').waitFor({ state: 'detached' });
+      assert.deepEqual(await selected(), ['workspace/a.txt']);
+      await page.locator('#status').filter({ hasText: 'Fixture delete failure' }).waitFor();
+    } finally {
+      await page.unroute(entriesUrl);
+    }
+
+    // Switching during a queued batch pins every request to the original session.
+    await row('workspace/a.txt').click();
+    await row('workspace/b.txt').click({ modifiers: ['Control'] });
+    await page.keyboard.press('Control+c');
+    let release;
+    let sawTransfer;
+    const held = new Promise((resolve) => {
+      release = resolve;
+    });
+    const started = new Promise((resolve) => {
+      sawTransfer = resolve;
+    });
+    const transfers = [];
+    const transferUrl = base + '/transfer';
+    await page.route(transferUrl, async (route) => {
+      transfers.push(route.request().postDataJSON().source);
+      if (transfers.length === 1) {
+        sawTransfer();
+        await held;
+      }
+      await route.continue();
+    });
+    try {
+      await folder('generate').click({ button: 'right' });
+      await action('paste').click();
+      await Promise.race([
+        started,
+        wait(10000).then(() => {
+          throw new Error('Batch paste did not start');
+        }),
+      ]);
+      await page.locator('#new-session').click();
+      await page.locator('#new-session:enabled').waitFor();
+      otherSid = await page.evaluate(() => localStorage.getItem('umeko:last-session'));
+      assert.notEqual(otherSid, sid);
+      assert.equal((await selected()).length, 0);
+      await folder('workspace').click({ button: 'right' });
+      assert.ok(await action('paste').isDisabled(), 'The file clipboard never crosses sessions');
+      await page.keyboard.press('Escape');
+      release();
+      for (
+        let i = 0;
+        i < 50 && (await context.request.get(base + '/files/raw/generate/b.txt')).status() !== 200;
+        i++
+      )
+        await wait(50);
+      assert.deepEqual(transfers, ['workspace/a.txt', 'workspace/b.txt']);
+      assert.equal(
+        (
+          await context.request.get(
+            publicBase + `/v1/sessions/${otherSid}/workspace/files/raw/generate/b.txt`,
+          )
+        ).status(),
+        404,
+      );
+    } finally {
+      release();
+      await page.unroute(transferUrl);
+    }
+  } finally {
+    page.off('dialog', onDialog);
+    await page.locator(`.session-tab[data-session-id="${originalSid}"]`).click();
+    await page.waitForFunction(
+      (id) => localStorage.getItem('umeko:last-session') === id,
+      originalSid,
+    );
+    await page.locator('#status-dot.ready').waitFor();
+    for (const id of [sid, otherSid].filter(Boolean))
+      await context.request.delete(publicBase + '/v1/sessions/' + id);
+    // API cleanup must also remove the fixture's tabs before subsequent browser workflows.
+    await page.reload();
+    await page.locator('#status-dot.ready').waitFor();
+  }
+}
+
 async function workspaceDrops(page, context, publicBase, sid, prefix) {
   const base = publicBase + `/v1/sessions/${sid}/workspace`;
   const feedback = page.locator('#workspace-upload-feedback');
@@ -328,7 +645,6 @@ async function workspaceDrops(page, context, publicBase, sid, prefix) {
   await page.locator(row('generate/blank-area.txt')).waitFor();
   assert.equal(await page.locator(row('workspace/blank-area.txt')).count(), 0);
   // A held request checks progress and prevents a session switch from redirecting the batch.
-  const originalTitle = await page.locator('.session-tab.active').getAttribute('title');
   let release, started;
   const gate = new Promise((resolve) => {
     release = resolve;
@@ -362,10 +678,7 @@ async function workspaceDrops(page, context, publicBase, sid, prefix) {
     const otherSid = await page.evaluate(() => localStorage.getItem('umeko:last-session'));
     release();
     // Returning to the original chat restores its feedback and uploaded files.
-    await page
-      .locator('.session-tab')
-      .filter({ has: page.locator('.session-label', { hasText: originalTitle }) })
-      .click();
+    await page.locator(`.session-tab[data-session-id="${sid}"]`).click();
     await completed();
     await page.locator(row('attachments/batch-second.txt')).waitFor();
     assert.equal(destinations.length, 2);
@@ -424,7 +737,6 @@ async function pasteFiles(page, files, text = '') {
 }
 
 async function clipboardAttachments(page, context, publicBase, originalSid) {
-  const originalTitle = await page.locator('.session-tab.active').getAttribute('title');
   await page.locator('#new-session').click();
   await page.locator('#new-session:enabled').waitFor();
   await page.locator('#status-dot.ready').waitFor();
@@ -564,10 +876,7 @@ async function clipboardAttachments(page, context, publicBase, originalSid) {
         await context.request.get(publicBase + `/v1/sessions/${sid}/messages`)
       ).json();
       assert.equal(runsAfter.length, runsBefore.length);
-      await page
-        .locator('.session-tab')
-        .filter({ has: page.locator('.session-label', { hasText: originalTitle }) })
-        .click();
+      await page.locator(`.session-tab[data-session-id="${originalSid}"]`).click();
       await page.waitForFunction(
         (id) => localStorage.getItem('umeko:last-session') === id,
         originalSid,
@@ -595,12 +904,7 @@ async function clipboardAttachments(page, context, publicBase, originalSid) {
         ).status(),
         404,
       );
-      const sessions = await (await context.request.get(publicBase + '/v1/sessions')).json();
-      const clipboardSession = sessions.find((session) => session.id === sid);
-      await page
-        .locator('.session-tab')
-        .filter({ has: page.locator('.session-label', { hasText: clipboardSession.title }) })
-        .click();
+      await page.locator(`.session-tab[data-session-id="${sid}"]`).click();
       await page
         .locator('#attachments .chip-name')
         .getByText('switch-second.txt', { exact: true })
@@ -616,14 +920,11 @@ async function clipboardAttachments(page, context, publicBase, originalSid) {
         await (await context.request.get(raw + 'switch-first_1.txt')).text(),
         'another paste',
       );
-      await page
-        .locator('.session-tab')
-        .filter({ has: page.locator('.session-label', { hasText: originalTitle }) })
-        .click();
+      await page.locator(`.session-tab[data-session-id="${originalSid}"]`).click();
       await page.locator('#status-dot.ready').waitFor();
     } finally {
       release();
-      await page.unroute(uploadUrl);
+      await page.unrouteAll({ behavior: 'wait' });
     }
   } finally {
     page.off('response', onResponse);
@@ -1430,6 +1731,7 @@ try {
       assert.match(await work.locator('#messages').innerText(), /任务已停止/);
       assert.ok(requests.some((p) => p.startsWith(prefix + '/v1/runs/') && p.endsWith('/cancel')));
       await workspaceDrops(work, context, publicBase, session.id, prefix);
+      await treeSelectionWorkflow(work, context, publicBase, session.id, prefix);
       await clipboardAttachments(work, context, publicBase, session.id);
       await work.setViewportSize({ width: 390, height: 844 });
       await work.locator('.workbench-title [data-theme-toggle]').click();
@@ -1464,7 +1766,7 @@ try {
       );
       assert.deepEqual(errors, []);
       console.log(
-        `Passed browser workflows: ${prefix || '/'} (${locale}, ${appearance}, Markdown preview/source, live rendering, highlighted code and clipboard, consistent preview toggle, skill tree/Markdown/edit/save/member files, long titles, file tree, composer, admin, files, external file drops/root/nested/blank/duplicates/partial failure/progress/session switching/internal move, 20 folded tools, cancellation, desktop/mobile)`,
+        `Passed browser workflows: ${prefix || '/'} (${locale}, ${appearance}, Markdown preview/source, live rendering, highlighted code and clipboard, consistent preview toggle, skill tree/Markdown/edit/save/member files, long titles, file tree multi-selection/keyboard/context menu/batch copy-cut-paste-delete/drag/partial failure/session isolation, composer, admin, files, external file drops/root/nested/blank/duplicates/partial failure/progress/session switching/internal move, 20 folded tools, cancellation, desktop/mobile)`,
       );
     } catch (e) {
       if (diagnostics) console.error(diagnostics);

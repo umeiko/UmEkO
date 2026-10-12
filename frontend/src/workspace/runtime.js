@@ -4,6 +4,7 @@ import hljs from 'highlight.js/lib/common';
 import { t, currentLocale, setLocale, applyI18n } from './i18n.js';
 import { deploymentPrefix } from '../shared/api.js';
 import { treeIcon } from './treeIcons.js';
+import { TreeSelection, topLevelEntries, copyEntryName } from './treeSelection.js';
 import { renderMarkdown as markdown, renderSkillMarkdown, codeHtml } from '../shared/markdown.js';
 import { copyText } from '../shared/clipboard.js';
 import { prettyToolData } from './toolData.js';
@@ -157,7 +158,12 @@ export function mountWorkspaceRuntime() {
   let managingSession = null;
   let sessionLoadToken = 0;
   let fileMenuTarget = null;
+  let fileMenuTargets = [];
   let fileClipboard = null;
+  let fileOperationBusy = false;
+  const treeState = new TreeSelection();
+  const treeSelection = treeState.selected;
+  const treeEntries = new Map();
   let pendingFileDialog = null;
   const resourceLoadTokens = { skills: 0 };
   const pendingResourceMutations = new Set();
@@ -949,6 +955,7 @@ export function mountWorkspaceRuntime() {
       const button = document.createElement('button');
       button.type = 'button';
       button.className = `session-tab${item.id === sessionId ? ' active' : ''}`;
+      button.dataset.sessionId = item.id;
       button.title = item.title;
       button.setAttribute('aria-label', item.title);
       const label = document.createElement('span');
@@ -1034,6 +1041,12 @@ export function mountWorkspaceRuntime() {
 
   async function loadSession(id) {
     const loadToken = ++sessionLoadToken;
+    if (sessionId !== id) {
+      clearTreeSelection();
+      closeFileMenu();
+      fileClipboard = null;
+      fileMenuTargets = [];
+    }
     if (activeRunCleanup) activeRunCleanup();
     else if (activeStream) activeStream.close();
     if (workspaceRefreshTimer) clearTimeout(workspaceRefreshTimer);
@@ -1564,24 +1577,54 @@ export function mountWorkspaceRuntime() {
   // 可解压的压缩包后缀（与后端 ARCHIVE_SUFFIXES 对齐）
   const ARCHIVE_RE = /\.(zip|7z|rar|tar|gz|bz2|xz|tgz)$/i;
 
-  function openFileMenu(target, x, y) {
+  function fileActionAvailable(action, target, targets) {
+    const multi = targets.length > 1;
+    const protectedEntry = targets.some((entry) => isWorkspaceRoot(entry.path));
+    if (['copy', 'cut', 'delete'].includes(action))
+      return targets.length && !protectedEntry && (!fileOperationBusy || action === 'copy');
+    if (action === 'attach')
+      return (
+        targets.length && targets.every((entry) => entry.type === 'file') && !fileOperationBusy
+      );
+    if (multi) return false;
+    if (['new-file', 'new-directory'].includes(action))
+      return target.type === 'directory' && !fileOperationBusy;
+    if (action === 'paste')
+      return Boolean(fileClipboard?.sessionId === sessionId) && !fileOperationBusy;
+    if (action === 'rename') return !protectedEntry && !fileOperationBusy;
+    if (action === 'extract')
+      return target.type === 'file' && ARCHIVE_RE.test(target.name) && !fileOperationBusy;
+    return action === 'download';
+  }
+
+  function openFileMenu(target, x, y, targets = [target]) {
     fileMenuTarget = target;
-    const root = isWorkspaceRoot(target.path);
+    fileMenuTargets = targets;
+    const count = ui.fileContextMenu.querySelector('.file-menu-selection');
+    count.hidden = targets.length <= 1;
+    count.textContent = t('tree.selCount', { count: targets.length });
     for (const button of ui.fileContextMenu.querySelectorAll('button[data-file-action]')) {
       const action = button.dataset.fileAction;
-      button.disabled =
-        (['new-file', 'new-directory', 'paste'].includes(action) && target.type !== 'directory') ||
-        (action === 'paste' && !fileClipboard) ||
-        (['copy', 'cut', 'rename', 'delete'].includes(action) && root) ||
-        (action === 'download' && !['file', 'directory'].includes(target.type)) ||
-        (action === 'extract' && !(target.type === 'file' && ARCHIVE_RE.test(target.name)));
+      button.disabled = !fileActionAvailable(action, target, targets);
+      button.hidden = targets.length > 1 && !['copy', 'cut', 'delete', 'attach'].includes(action);
+      if (action === 'attach' && targets.some((entry) => entry.type !== 'file'))
+        button.hidden = true;
       if (action === 'download') {
         button.textContent =
           target.type === 'directory' ? t('file.downloadDir') : t('file.downloadFile');
       }
     }
+    for (const separator of ui.fileContextMenu.querySelectorAll('hr')) {
+      let previous = separator.previousElementSibling;
+      let hasPrevious = false;
+      while (previous && previous.tagName !== 'HR') {
+        if (previous.matches('button:not([hidden])')) hasPrevious = true;
+        previous = previous.previousElementSibling;
+      }
+      separator.hidden = !hasPrevious;
+    }
     ui.fileContextMenu.classList.remove('hidden');
-    const width = 168;
+    const width = ui.fileContextMenu.offsetWidth;
     const height = ui.fileContextMenu.offsetHeight;
     ui.fileContextMenu.style.left = `${Math.max(6, Math.min(x, innerWidth - width - 6))}px`;
     ui.fileContextMenu.style.top = `${Math.max(6, Math.min(y, innerHeight - height - 6))}px`;
@@ -1609,18 +1652,43 @@ export function mountWorkspaceRuntime() {
     ui.fileEntryName.select();
   }
 
-  async function transferWorkspace(source, target, operation) {
+  async function transferWorkspace(
+    source,
+    target,
+    operation,
+    targetSessionId = sessionId,
+    refresh = true,
+  ) {
     if (source === target) return;
-    await api(`/v1/sessions/${sessionId}/workspace/transfer`, {
+    await api(`/v1/sessions/${targetSessionId}/workspace/transfer`, {
       method: 'POST',
       headers: { 'Content-Type': 'application/json' },
       body: JSON.stringify({ source, target, operation }),
     });
+    if (targetSessionId !== sessionId) return;
     const selectedAffected =
       operation === 'move' &&
       selectedFile &&
       (selectedFile === source || selectedFile.startsWith(`${source}/`));
     if (operation === 'move') {
+      const movedSelection = [...treeSelection].map((path) =>
+        path === source || path.startsWith(source + '/')
+          ? target + path.slice(source.length)
+          : path,
+      );
+      treeSelection.clear();
+      for (const path of movedSelection) treeSelection.add(path);
+      for (const key of ['anchor', 'focus'])
+        if (treeState[key] === source || treeState[key]?.startsWith(source + '/'))
+          treeState[key] = target + treeState[key].slice(source.length);
+      treeState.rangeBase = null;
+      if (fileClipboard?.sessionId === targetSessionId) {
+        fileClipboard.entries = fileClipboard.entries.map((entry) => {
+          if (entry.path !== source && !entry.path.startsWith(source + '/')) return entry;
+          const path = target + entry.path.slice(source.length);
+          return { ...entry, path, name: entryName(path) };
+        });
+      }
       for (const file of pendingFiles) {
         if (file.workspacePath === source || file.workspacePath?.startsWith(`${source}/`)) {
           file.workspacePath = `${target}${file.workspacePath.slice(source.length)}`;
@@ -1631,34 +1699,102 @@ export function mountWorkspaceRuntime() {
       selectedFile = null;
       clearPreview();
     }
-    await refreshTree();
+    if (!refresh) return;
+    await refreshTree(targetSessionId);
     setStatus(
       t(operation === 'move' ? 'file.moved' : 'file.copiedTo', { name: entryName(target) }),
       true,
     );
   }
 
-  async function executeFileAction(action, target) {
+  async function workspaceBatch(entries, operation, messageKey) {
+    if (fileOperationBusy) return;
+    const targetSessionId = sessionId;
+    fileOperationBusy = true;
+    const failures = [];
+    let done = 0;
+    try {
+      for (const entry of entries) {
+        try {
+          await operation(entry, targetSessionId);
+          done++;
+        } catch (error) {
+          failures.push(`${entry.name}: ${error.message}`);
+        }
+      }
+    } finally {
+      fileOperationBusy = false;
+      await refreshTree(targetSessionId);
+    }
+    if (targetSessionId !== sessionId) return;
+    if (failures.length)
+      setStatus(
+        t('file.batchFailed', { done, failed: failures.length, errors: failures.join('; ') }),
+      );
+    else
+      setStatus(
+        t(messageKey, {
+          name: entries.length === 1 ? entries[0].name : t('tree.selCount', { count: done }),
+          count: done,
+        }),
+        true,
+      );
+  }
+
+  function removeEntryState(path) {
+    for (const selected of treeSelection)
+      if (selected === path || selected.startsWith(path + '/')) treeSelection.delete(selected);
+    if (selectedFile === path || selectedFile?.startsWith(path + '/')) {
+      selectedFile = null;
+      clearPreview();
+    }
+    if (fileClipboard) {
+      fileClipboard.entries = fileClipboard.entries.filter(
+        (entry) => entry.path !== path && !entry.path.startsWith(path + '/'),
+      );
+      if (!fileClipboard.entries.length) fileClipboard = null;
+    }
+    pendingFiles = pendingFiles.filter(
+      (file) => file.workspacePath !== path && !file.workspacePath?.startsWith(path + '/'),
+    );
+    attachmentDrafts.set(sessionId, pendingFiles);
+    renderPendingAttachments();
+  }
+
+  async function executeFileAction(action, target, targets = [target]) {
     closeFileMenu();
+    if (!fileActionAvailable(action, target, targets)) return;
+    treeRow(treeState.focus)?.focus({ preventScroll: true });
+    const actionSessionId = sessionId;
     if (['new-file', 'new-directory', 'rename'].includes(action))
       return openFileEntryDialog(action, target);
     if (action === 'copy' || action === 'cut') {
       fileClipboard = {
-        path: target.path,
-        type: target.type,
+        entries: topLevelEntries(targets).map(({ path, name, type }) => ({ path, name, type })),
+        sessionId,
         operation: action === 'copy' ? 'copy' : 'move',
       };
-      await refreshTree();
+      applyTreeSelection();
       return setStatus(
-        t(action === 'copy' ? 'file.copied' : 'file.cut', { name: target.name }),
+        t(action === 'copy' ? 'file.copied' : 'file.cut', {
+          name: targets.length === 1 ? target.name : t('tree.selCount', { count: targets.length }),
+        }),
         true,
       );
     }
     if (action === 'paste') {
-      if (!fileClipboard) return;
-      const targetPath = entryJoin(target.path, entryName(fileClipboard.path));
-      await transferWorkspace(fileClipboard.path, targetPath, fileClipboard.operation);
-      if (fileClipboard.operation === 'move') fileClipboard = null;
+      const clipboard = fileClipboard;
+      const directory = target.type === 'directory' ? target.path : entryParent(target.path);
+      const targetSessionId = sessionId;
+      return pasteTreeEntries(clipboard, directory, targetSessionId);
+    }
+    if (action === 'attach') {
+      await workspaceBatch(
+        targets,
+        (entry, sid) => attachWorkspacePath(entry.path, null, { sessionId: sid, batch: true }),
+        'file.batchCompleted',
+      );
+      if (sessionId === actionSessionId) ui.prompt.focus();
       return;
     }
     if (action === 'extract') {
@@ -1690,25 +1826,72 @@ export function mountWorkspaceRuntime() {
       return;
     }
     if (action === 'delete') {
+      const entries = topLevelEntries(targets);
       const description =
-        target.type === 'directory' ? t('file.dirAndContents') : t('file.fileNoun');
-      if (!confirm(t('file.deleteConfirm', { description, name: target.name }))) return;
-      await api(
-        `/v1/sessions/${sessionId}/workspace/entries?path=${encodeURIComponent(target.path)}`,
-        { method: 'DELETE' },
+        entries[0].type === 'directory' ? t('file.dirAndContents') : t('file.fileNoun');
+      if (
+        !confirm(
+          entries.length > 1
+            ? t('file.deleteConfirmMulti', { count: entries.length })
+            : t('file.deleteConfirm', { description, name: entries[0].name }),
+        )
+      )
+        return;
+      return workspaceBatch(
+        entries,
+        async (entry, sid) => {
+          await api(
+            `/v1/sessions/${sid}/workspace/entries?path=${encodeURIComponent(entry.path)}`,
+            { method: 'DELETE' },
+          );
+          if (sid === sessionId) removeEntryState(entry.path);
+        },
+        'file.deletedMulti',
       );
-      if (selectedFile === target.path) {
-        selectedFile = null;
-        clearPreview();
-      }
-      if (fileClipboard?.path === target.path || fileClipboard?.path.startsWith(`${target.path}/`))
-        fileClipboard = null;
-      await refreshTree();
-      setStatus(t('file.deleted', { name: target.name }), true);
+    }
+  }
+
+  async function pasteTreeEntries(clipboard, directory, targetSessionId = sessionId) {
+    const nodes = await api(`/v1/sessions/${targetSessionId}/workspace/tree`);
+    if (targetSessionId !== sessionId || fileOperationBusy) return;
+    const occupied = new Set();
+    const collect = (entries) =>
+      entries.forEach((entry) => {
+        occupied.add(entry.path);
+        if (entry.children) collect(entry.children);
+      });
+    collect(nodes);
+    await workspaceBatch(
+      clipboard.entries,
+      async (entry, sid) => {
+        let destination = entryJoin(directory, entry.name);
+        if (clipboard.operation === 'copy') {
+          let index = 1;
+          while (occupied.has(destination))
+            destination = entryJoin(directory, copyEntryName(entry, index++));
+        }
+        await transferWorkspace(entry.path, destination, clipboard.operation, sid, false);
+        occupied.add(destination);
+        if (clipboard.operation === 'move' && fileClipboard === clipboard) {
+          clipboard.entries = clipboard.entries.filter(
+            (item) => item.path !== entry.path && item.path !== destination,
+          );
+          if (!clipboard.entries.length) fileClipboard = null;
+        }
+      },
+      clipboard.operation === 'copy' ? 'file.copiedTo' : 'file.moved',
+    );
+    if (targetSessionId === sessionId) {
+      const directoryRow = treeRow(directory);
+      if (directoryRow) directoryRow.parentElement.open = true;
+      applyTreeSelection();
     }
   }
 
   ui.fileEntryCancel.addEventListener('click', () => ui.fileEntryDialog.close());
+  ui.fileEntryDialog.addEventListener('close', () =>
+    treeRow(treeState.focus)?.focus({ preventScroll: true }),
+  );
   ui.fileEntryForm.addEventListener('submit', async (event) => {
     event.preventDefault();
     if (!pendingFileDialog) return;
@@ -1736,7 +1919,7 @@ export function mountWorkspaceRuntime() {
   ui.fileContextMenu.addEventListener('click', (event) => {
     const button = event.target.closest('button[data-file-action]');
     if (!button || button.disabled || !fileMenuTarget) return;
-    executeFileAction(button.dataset.fileAction, fileMenuTarget).catch((error) =>
+    executeFileAction(button.dataset.fileAction, fileMenuTarget, fileMenuTargets).catch((error) =>
       setStatus(error.message),
     );
   });
@@ -1779,6 +1962,7 @@ export function mountWorkspaceRuntime() {
   ui.tree.addEventListener('contextmenu', (event) => {
     if (event.target.closest('.tree-file, .tree-dir > summary')) return;
     event.preventDefault();
+    clearTreeSelection();
     openFileMenu(
       { path: 'workspace', name: 'workspace', type: 'directory' },
       event.clientX,
@@ -1786,151 +1970,248 @@ export function mountWorkspaceRuntime() {
     );
   });
 
-  // ---------- 文件树多选（Ctrl 点选 / Shift 连选） ----------
-  const treeSelection = new Set();
-  let treeSelAnchor = null;
-  let treeSelBar = null;
+  // ---------- 文件树选择、焦点与键盘：所有操作共用当前选中集合 ----------
+  function treeRows() {
+    return [...ui.tree.querySelectorAll('.tree-file, .tree-dir > summary')];
+  }
 
-  function visibleTreeFiles() {
-    // 可见（未折叠）文件按钮，按 DOM 顺序
-    return [...ui.tree.querySelectorAll('.tree-file')].filter(
-      (b) => !b.closest('details:not([open])'),
-    );
+  function visibleTreeRows() {
+    return treeRows().filter((row) => {
+      // Native <details> may still return child geometry while its content is folded.
+      const ancestors = row.matches('summary')
+        ? row.parentElement.parentElement
+        : row.parentElement;
+      return !ancestors.closest('details:not([open])') && row.getClientRects().length > 0;
+    });
+  }
+
+  function selectedTreeEntries() {
+    return [...treeEntries.values()].filter((entry) => treeSelection.has(entry.path));
+  }
+
+  function treeRow(path) {
+    return treeRows().find((row) => row.dataset.path === path);
   }
 
   function applyTreeSelection() {
-    const present = new Set();
-    for (const b of ui.tree.querySelectorAll('.tree-file')) {
-      const on = treeSelection.has(b.dataset.path);
-      b.closest('.tree-file-row')?.classList.toggle('selected', on);
-      if (on) present.add(b.dataset.path);
+    const rows = treeRows();
+    treeState.retain(rows.map((row) => row.dataset.path));
+    const cut = new Set(
+      fileClipboard?.operation === 'move' ? fileClipboard.entries.map((entry) => entry.path) : [],
+    );
+    const visible = visibleTreeRows();
+    const focus =
+      visible.find((row) => row.dataset.path === treeState.focus) ||
+      visible.find((row) => treeSelection.has(row.dataset.path)) ||
+      visible[0];
+    if (!treeState.focus && treeSelection.size) treeState.focus = focus?.dataset.path || null;
+    if (!treeState.anchor && treeSelection.size) treeState.anchor = treeState.focus;
+    ui.tree.tabIndex = focus ? -1 : 0;
+    for (const row of rows) {
+      const selected = treeSelection.has(row.dataset.path);
+      (row.closest('.tree-file-row') || row).classList.toggle('selected', selected);
+      row.setAttribute('aria-selected', String(selected));
+      row.classList.toggle('clipboard-cut', cut.has(row.dataset.path));
+      row.tabIndex = row === focus ? 0 : -1;
     }
-    //  prune 已不存在的路径
-    for (const p of [...treeSelection]) if (!present.has(p)) treeSelection.delete(p);
-    renderTreeSelBar();
   }
 
-  function renderTreeSelBar() {
-    if (!treeSelection.size) {
-      treeSelBar?.remove();
-      treeSelBar = null;
-      return;
-    }
-    if (!treeSelBar) {
-      treeSelBar = document.createElement('div');
-      treeSelBar.className = 'tree-sel-bar';
-      const count = document.createElement('span');
-      count.className = 'sel-count';
-      const attachBtn = document.createElement('button');
-      attachBtn.type = 'button';
-      attachBtn.dataset.act = 'attach';
-      const delBtn = document.createElement('button');
-      delBtn.type = 'button';
-      delBtn.className = 'danger';
-      delBtn.dataset.act = 'delete';
-      const clearBtn = document.createElement('button');
-      clearBtn.type = 'button';
-      clearBtn.dataset.act = 'clear';
-      treeSelBar.append(count, attachBtn, delBtn, clearBtn);
-      treeSelBar.addEventListener('click', (event) => {
-        const act = event.target.closest('button')?.dataset.act;
-        if (act === 'attach') attachSelectedFiles().catch((e) => setStatus(e.message));
-        else if (act === 'delete') deleteSelectedFiles().catch((e) => setStatus(e.message));
-        else if (act === 'clear') clearTreeSelection();
-      });
-      ui.tree.parentElement.insertBefore(treeSelBar, ui.tree);
-    }
-    treeSelBar.querySelector('.sel-count').textContent = t('tree.selCount', {
-      count: treeSelection.size,
-    });
-    treeSelBar.querySelector('[data-act="attach"]').textContent = t('tree.attachSel');
-    treeSelBar.querySelector('[data-act="delete"]').textContent = t('tree.deleteSel');
-    treeSelBar.querySelector('[data-act="clear"]').textContent = t('tree.selClear');
-  }
-
-  function toggleTreeSelect(path) {
-    if (treeSelection.has(path)) treeSelection.delete(path);
-    else treeSelection.add(path);
-    treeSelAnchor = path;
-    applyTreeSelection();
-  }
-
-  function selectTreeRange(path) {
-    const files = visibleTreeFiles().map((b) => b.dataset.path);
-    const anchorIdx = treeSelAnchor ? files.indexOf(treeSelAnchor) : -1;
-    const targetIdx = files.indexOf(path);
-    if (anchorIdx < 0 || targetIdx < 0) {
-      toggleTreeSelect(path);
-      return;
-    }
-    const [a, b] = anchorIdx < targetIdx ? [anchorIdx, targetIdx] : [targetIdx, anchorIdx];
-    treeSelection.clear();
-    for (let i = a; i <= b; i++) treeSelection.add(files[i]);
+  function selectTreeEntry(path, event = {}) {
+    treeState.select(
+      path,
+      {
+        toggle: (event.ctrlKey || event.metaKey) && !event.shiftKey,
+        range: Boolean(event.shiftKey),
+        additive: Boolean(event.ctrlKey || event.metaKey),
+      },
+      visibleTreeRows().map((row) => row.dataset.path),
+    );
     applyTreeSelection();
   }
 
   function clearTreeSelection() {
-    treeSelection.clear();
-    treeSelAnchor = null;
+    treeState.clear();
     applyTreeSelection();
   }
 
-  async function attachSelectedFiles() {
-    const paths = [...treeSelection];
-    clearTreeSelection();
-    for (const p of paths) await attachWorkspacePath(p);
-  }
-
-  async function deleteSelectedFiles() {
-    const paths = [...treeSelection];
-    if (!paths.length) return;
-    if (!confirm(t('file.deleteConfirmMulti', { count: paths.length }))) return;
-    let lastError = null,
-      done = 0;
-    for (const p of paths) {
-      try {
-        await api(`/v1/sessions/${sessionId}/workspace/entries?path=${encodeURIComponent(p)}`, {
-          method: 'DELETE',
-        });
-        treeSelection.delete(p);
-        done++;
-        if (selectedFile === p) {
-          selectedFile = null;
-          clearPreview();
-        }
-        if (fileClipboard?.path === p || fileClipboard?.path.startsWith(`${p}/`))
-          fileClipboard = null;
-      } catch (error) {
-        lastError = error;
+  function focusTreeEntry(path, event = null) {
+    const row = treeRow(path);
+    if (!row) return;
+    if (event?.ctrlKey || event?.metaKey) {
+      if (event.shiftKey) selectTreeEntry(path, event);
+      else {
+        treeState.focus = path;
+        applyTreeSelection();
       }
-    }
-    clearTreeSelection();
-    await refreshTree();
-    if (lastError) setStatus(lastError.message);
-    else setStatus(t('file.deletedMulti', { count: done }), true);
+    } else selectTreeEntry(path, event || {});
+    row.focus({ preventScroll: true });
+    row.scrollIntoView({ block: 'nearest' });
   }
 
-  listen(document, 'keydown', (event) => {
-    if (event.key === 'Escape' && treeSelection.size) clearTreeSelection();
+  function contextTreeEntry(node, x, y) {
+    treeState.context(node.path);
+    applyTreeSelection();
+    treeRow(node.path)?.focus({ preventScroll: true });
+    openFileMenu(node, x, y, selectedTreeEntries());
+  }
+
+  listen(ui.tree, 'click', (event) => {
+    if (!event.target.closest('.tree-file, .tree-dir > summary, .tree-attach')) {
+      clearTreeSelection();
+      ui.tree.focus({ preventScroll: true });
+    }
   });
 
-  // ---------- 多选结束 ----------
+  listen(ui.tree, 'keydown', (event) => {
+    if (event.altKey) return;
+    const rows = visibleTreeRows();
+    const path = event.target.closest('[data-path]')?.dataset.path || treeState.focus;
+    const entry = treeEntries.get(path);
+    const modifier = event.ctrlKey || event.metaKey;
+    if (modifier && event.key.toLowerCase() === 'a') {
+      event.preventDefault();
+      treeState.clear();
+      for (const row of rows)
+        if (!isWorkspaceRoot(row.dataset.path)) treeSelection.add(row.dataset.path);
+      treeState.anchor = treeState.focus = path || rows[0]?.dataset.path;
+      applyTreeSelection();
+      return;
+    }
+    if (modifier && ['c', 'x', 'v'].includes(event.key.toLowerCase())) {
+      const target = entry || treeEntries.get('workspace');
+      if (!target) return;
+      event.preventDefault();
+      const action = { c: 'copy', x: 'cut', v: 'paste' }[event.key.toLowerCase()];
+      executeFileAction(
+        action,
+        target,
+        action === 'paste' ? [target] : selectedTreeEntries(),
+      ).catch((error) => setStatus(error.message));
+      return;
+    }
+    if (event.key === 'Escape') {
+      event.preventDefault();
+      if (!ui.fileContextMenu.classList.contains('hidden')) closeFileMenu();
+      else clearTreeSelection();
+      return;
+    }
+    if (!entry) {
+      if (rows.length && ['ArrowDown', 'ArrowUp', 'Home', 'End'].includes(event.key)) {
+        event.preventDefault();
+        focusTreeEntry(rows[event.key === 'End' ? rows.length - 1 : 0].dataset.path, event);
+      }
+      return;
+    }
+    if (event.key === 'ContextMenu' || (event.shiftKey && event.key === 'F10')) {
+      event.preventDefault();
+      const box = treeRow(path).getBoundingClientRect();
+      contextTreeEntry(entry, box.left + 20, box.bottom);
+      ui.fileContextMenu.querySelector('button:not([hidden]):not(:disabled)')?.focus();
+      return;
+    }
+    if (event.key === 'Delete') {
+      event.preventDefault();
+      executeFileAction('delete', entry, selectedTreeEntries()).catch((error) =>
+        setStatus(error.message),
+      );
+      return;
+    }
+    if (event.key === 'F2') {
+      event.preventDefault();
+      executeFileAction('rename', entry, selectedTreeEntries()).catch((error) =>
+        setStatus(error.message),
+      );
+      return;
+    }
+    const index = rows.findIndex((row) => row.dataset.path === path);
+    let next;
+    if (event.key === 'ArrowDown') next = Math.min(rows.length - 1, index + 1);
+    if (event.key === 'ArrowUp') next = Math.max(0, index - 1);
+    if (event.key === 'Home') next = 0;
+    if (event.key === 'End') next = rows.length - 1;
+    if (next !== undefined) {
+      event.preventDefault();
+      focusTreeEntry(rows[next].dataset.path, event);
+      return;
+    }
+    if (event.key === 'ArrowRight') {
+      event.preventDefault();
+      if (entry.type === 'directory') {
+        const details = treeRow(path).parentElement;
+        if (!details.open) details.open = true;
+        else if (rows[index + 1]?.dataset.path.startsWith(path + '/'))
+          focusTreeEntry(rows[index + 1].dataset.path);
+      }
+      return;
+    }
+    if (event.key === 'ArrowLeft') {
+      event.preventDefault();
+      if (entry.type === 'directory' && treeRow(path).parentElement.open)
+        treeRow(path).parentElement.open = false;
+      else focusTreeEntry(entryParent(path));
+      return;
+    }
+    if (event.key === 'Enter') {
+      event.preventDefault();
+      if (entry.type === 'file') previewFile(path, treeRow(path));
+      else treeRow(path).parentElement.open = !treeRow(path).parentElement.open;
+    } else if (event.key === ' ') {
+      event.preventDefault();
+      selectTreeEntry(path, event);
+    }
+  });
+
+  listen(ui.fileContextMenu, 'keydown', (event) => {
+    const buttons = [...ui.fileContextMenu.querySelectorAll('button:not([hidden]):not(:disabled)')];
+    const index = buttons.indexOf(document.activeElement);
+    if (event.key === 'ArrowDown' || event.key === 'ArrowUp') {
+      event.preventDefault();
+      buttons[
+        (index + (event.key === 'ArrowDown' ? 1 : -1) + buttons.length) % buttons.length
+      ]?.focus();
+    } else if (event.key === 'Escape') {
+      event.preventDefault();
+      event.stopPropagation();
+      closeFileMenu();
+      treeRow(treeState.focus)?.focus({ preventScroll: true });
+    } else if (event.key === 'Tab') closeFileMenu();
+  });
 
   function bindTreeEntry(element, node) {
     const root = isWorkspaceRoot(node.path);
+    treeEntries.set(node.path, node);
     element.dataset.path = node.path;
+    element.dataset.type = node.type;
+    element.setAttribute('role', 'treeitem');
+    element.setAttribute('aria-level', String(node.path.split('/').length));
+    element.addEventListener('click', (event) => {
+      closeFileMenu();
+      const modified = event.ctrlKey || event.metaKey || event.shiftKey;
+      if (modified) event.preventDefault();
+      selectTreeEntry(node.path, event);
+      if (!modified && node.type === 'file') previewFile(node.path, element);
+    });
     element.addEventListener('contextmenu', (event) => {
       event.preventDefault();
       event.stopPropagation();
-      openFileMenu(node, event.clientX, event.clientY);
+      contextTreeEntry(node, event.clientX, event.clientY);
     });
     if (!root) {
       element.draggable = true;
       element.addEventListener('dragstart', (event) => {
         event.stopPropagation();
-        event.dataTransfer.effectAllowed = 'move';
+        treeState.context(node.path);
+        applyTreeSelection();
+        const entries = topLevelEntries(selectedTreeEntries()).filter(
+          (entry) => !isWorkspaceRoot(entry.path),
+        );
+        event.dataTransfer.effectAllowed = 'copyMove';
+        event.dataTransfer.setData(
+          'application/x-umeko-paths',
+          JSON.stringify({ sessionId, paths: entries.map((entry) => entry.path) }),
+        );
         event.dataTransfer.setData('application/x-flowchart-path', node.path);
-        event.dataTransfer.setData('text/plain', node.path);
+        event.dataTransfer.setData('text/plain', entries.map((entry) => entry.path).join('\n'));
       });
     }
   }
@@ -1948,7 +2229,7 @@ export function mountWorkspaceRuntime() {
           .forEach((node) => node.classList.remove('drag-target'));
         highlight.classList.add('drag-target');
         if (hasFiles) showWorkspaceDropTarget(path);
-        event.dataTransfer.dropEffect = hasFiles ? 'copy' : 'move';
+        event.dataTransfer.dropEffect = hasFiles || event.ctrlKey ? 'copy' : 'move';
       });
     element.addEventListener('dragleave', (event) => {
       if (event.relatedTarget && element.contains(event.relatedTarget)) return;
@@ -1972,9 +2253,25 @@ export function mountWorkspaceRuntime() {
       // 内部拖拽 → 移动
       const source = event.dataTransfer.getData('application/x-flowchart-path');
       if (!source) return;
-      transferWorkspace(source, entryJoin(path, entryName(source)), 'move').catch((error) =>
-        setStatus(error.message),
+      let sources = [source];
+      const raw = event.dataTransfer.getData('application/x-umeko-paths');
+      if (raw) {
+        try {
+          const payload = JSON.parse(raw);
+          if (payload.sessionId !== sessionId || !Array.isArray(payload.paths)) return;
+          sources = payload.paths;
+        } catch {
+          return;
+        }
+      }
+      const entries = topLevelEntries(
+        sources.map((sourcePath) => treeEntries.get(sourcePath)).filter(Boolean),
       );
+      if (!entries.length || entries.some((entry) => isWorkspaceRoot(entry.path))) return;
+      pasteTreeEntries(
+        { entries, sessionId, operation: event.ctrlKey ? 'copy' : 'move' },
+        path,
+      ).catch((error) => setStatus(error.message));
     });
   }
 
@@ -1998,10 +2295,14 @@ export function mountWorkspaceRuntime() {
         summary.append(treeIcon(node.name, true), name);
         summary.title = node.path;
         bindTreeEntry(summary, node);
-        if (fileClipboard?.operation === 'move' && fileClipboard.path === node.path)
-          summary.classList.add('clipboard-cut');
+        summary.setAttribute('aria-expanded', String(details.open));
+        details.addEventListener('toggle', () => {
+          summary.setAttribute('aria-expanded', String(details.open));
+          applyTreeSelection();
+        });
         const children = document.createElement('div');
         children.className = 'tree-children';
+        children.setAttribute('role', 'group');
         renderTreeNodes(node.children, children);
         details.append(summary, children);
         bindDirectoryDrop(details, node.path, summary);
@@ -2022,25 +2323,10 @@ export function mountWorkspaceRuntime() {
         name.textContent = node.name;
         button.append(icon, name);
         bindTreeEntry(button, node);
-        if (fileClipboard?.operation === 'move' && fileClipboard.path === node.path)
-          button.classList.add('clipboard-cut');
-        button.addEventListener('click', (event) => {
-          if (event.ctrlKey || event.metaKey) {
-            event.preventDefault();
-            toggleTreeSelect(node.path);
-            return;
-          }
-          if (event.shiftKey) {
-            event.preventDefault(); // 阻止文本选中
-            selectTreeRange(node.path);
-            return;
-          }
-          if (treeSelection.size) clearTreeSelection();
-          previewFile(node.path, button);
-        });
         button.addEventListener('dblclick', (event) => {
           event.preventDefault();
-          toggleWorkspaceAttachment(node.path, attach);
+          if (!event.ctrlKey && !event.metaKey && !event.shiftKey)
+            toggleWorkspaceAttachment(node.path, attach);
         });
         const attach = document.createElement('button');
         attach.type = 'button';
@@ -2087,6 +2373,7 @@ export function mountWorkspaceRuntime() {
       [...ui.tree.querySelectorAll('.tree-dir[open] > summary')].map((node) => node.dataset.path),
     );
     const scrollTop = ui.tree.scrollTop;
+    const restoreFocus = ui.tree.contains(document.activeElement);
     const filter = (ui.treeFilter?.value || '').trim();
     const query = filter ? `?filter=${encodeURIComponent(filter)}` : '';
     const nodes = await api(`/v1/sessions/${targetSessionId}/workspace/tree${query}`);
@@ -2094,16 +2381,19 @@ export function mountWorkspaceRuntime() {
     const signature = treeStructureSignature(nodes);
     if (renderedTreeSessionId === targetSessionId && renderedTreeSignature === signature) {
       updateWorkspaceAttachButtons();
+      applyTreeSelection();
       return;
     }
     renderedTreeSessionId = targetSessionId;
     renderedTreeSignature = signature;
     ui.tree.replaceChildren();
+    treeEntries.clear();
     if (!nodes.length) {
       const empty = document.createElement('p');
       empty.className = 'tree-empty';
       empty.textContent = t('tree.empty');
       ui.tree.append(empty);
+      applyTreeSelection();
       return;
     }
     renderTreeNodes(nodes, ui.tree);
@@ -2113,6 +2403,8 @@ export function mountWorkspaceRuntime() {
     ui.tree.scrollTop = scrollTop;
     updateWorkspaceAttachButtons();
     applyTreeSelection();
+    if (restoreFocus)
+      (treeRow(treeState.focus) || visibleTreeRows()[0] || ui.tree).focus({ preventScroll: true });
   }
 
   function renderMarkdown(source, options = {}) {
@@ -2672,9 +2964,13 @@ export function mountWorkspaceRuntime() {
     await attachWorkspacePath(path, button);
   }
 
-  async function attachWorkspacePath(path, button = null) {
-    if (!path || !sessionId || workspaceAttachment(path)) return;
-    const attachmentSessionId = sessionId;
+  async function attachWorkspacePath(path, button = null, options = {}) {
+    const attachmentSessionId = options.sessionId || sessionId;
+    const draft =
+      attachmentSessionId === sessionId
+        ? pendingFiles
+        : attachmentDrafts.get(attachmentSessionId) || [];
+    if (!path || !attachmentSessionId || draft.some((file) => file.workspacePath === path)) return;
     if (button) button.disabled = true;
     try {
       const uploaded = await api(`/v1/sessions/${attachmentSessionId}/files/from-workspace`, {
@@ -2686,9 +2982,12 @@ export function mountWorkspaceRuntime() {
       addAttachmentChip(uploaded, attachmentSessionId);
       if (sessionId !== attachmentSessionId) return;
       updateWorkspaceAttachButtons();
-      setStatus(t('attachment.added', { name: uploaded.filename }), true);
-      ui.prompt.focus();
+      if (!options.batch) {
+        setStatus(t('attachment.added', { name: uploaded.filename }), true);
+        ui.prompt.focus();
+      }
     } catch (error) {
+      if (options.batch) throw error;
       setStatus(error.message);
     } finally {
       if (button && !workspaceAttachment(path)) button.disabled = false;

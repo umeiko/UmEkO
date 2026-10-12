@@ -25,7 +25,7 @@ const I18N_LOCALES = {
     'composer.help':
       'Enter 发送，Shift+Enter 换行。可添加、拖入或在输入框中粘贴图片与文件作为附件；上传完成后再发送。拖动输入区上沿调整高度。',
     'sidebar.help':
-      '拖入文件可保存到当前会话。文件支持预览、右键管理和双击加入附件。技能启用后只提供名称与简介，相关任务才读取完整指引；无关对话自动跳过。',
+      '拖入文件可保存到当前会话。文件支持预览、右键管理和双击加入附件。技能启用后只提供名称与简介，相关任务才读取完整指引；无关对话自动跳过。 Ctrl/Cmd 增减选择，Shift 连选；右键已选项批量管理，不显示额外工具条。',
     'sidebar.skills': '技能',
     'sidebar.files': '文件',
     'help.label': '查看说明',
@@ -230,12 +230,14 @@ const I18N_LOCALES = {
     'file.currentLocation': '当前位置：{path}',
     'file.deleteConfirm': '永久删除{description}“{name}”？此操作不可恢复。',
     'file.deleted': '已删除：{name}',
-    'tree.selCount': '已选 {count} 个文件',
+    'tree.selCount': '已选 {count} 项',
     'tree.attachSel': '附加所选',
     'tree.deleteSel': '删除所选',
     'tree.selClear': '取消选择',
     'file.deleteConfirmMulti': '确定删除所选的 {count} 个文件/目录？此操作不可恢复。',
     'file.deletedMulti': '已删除 {count} 项',
+    'file.batchCompleted': '已完成 {count} 项操作',
+    'file.batchFailed': '已完成 {done} 项，{failed} 项失败：{errors}',
     'file.dirAndContents': '目录及其全部内容',
     'file.downloadDir': '下载目录（ZIP）',
     'file.downloadFile': '下载文件',
@@ -357,7 +359,7 @@ const I18N_LOCALES = {
     'composer.help':
       'Enter to send, Shift+Enter for a new line. Add, drop, or paste images and files into the input as attachments; send after uploads finish. Drag the top edge to resize.',
     'sidebar.help':
-      'Drop files to save them to this session. Preview, right-click to manage, or double-click to attach. Enabled skills supply only names and descriptions; full instructions are loaded for relevant tasks and skipped for unrelated chats.',
+      'Drop files to save them to this session. Preview, right-click to manage, or double-click to attach. Enabled skills supply only names and descriptions; full instructions are loaded for relevant tasks and skipped for unrelated chats. Ctrl/Cmd adds or removes items; Shift selects a range. Right-click a selected item to manage the group.',
     'sidebar.skills': 'Skills',
     'sidebar.files': 'Files',
     'help.label': 'View help',
@@ -575,6 +577,8 @@ const I18N_LOCALES = {
     'file.deleteConfirmMulti':
       'Delete the {count} selected files/directories? This cannot be undone.',
     'file.deletedMulti': 'Deleted {count} items',
+    'file.batchCompleted': 'Completed {count} operations',
+    'file.batchFailed': 'Completed {done}; {failed} failed: {errors}',
     'file.dirAndContents': 'the directory and all its contents',
     'file.downloadDir': 'Download directory (ZIP)',
     'file.downloadFile': 'Download file',
@@ -698,7 +702,7 @@ const I18N_LOCALES = {
     'composer.help':
       'Enter 傳送，Shift+Enter 換行。可加入、拖入或在輸入框中貼上圖片與檔案作為附件；上傳完成後再傳送。拖曳輸入區上緣調整高度。',
     'sidebar.help':
-      '拖入檔案可儲存到目前會話。檔案支援預覽、右鍵管理和雙擊加入附件。技能啟用後只提供名稱與簡介，相關任務才讀取完整指引；無關對話自動跳過。',
+      '拖入檔案可儲存到目前會話。檔案支援預覽、右鍵管理和雙擊加入附件。技能啟用後只提供名稱與簡介，相關任務才讀取完整指引；無關對話自動跳過。 Ctrl/Cmd 增減選取，Shift 連選；右鍵已選項可批次管理，不顯示額外工具列。',
     'sidebar.skills': '技能',
     'sidebar.files': '檔案',
     'help.label': '查看說明',
@@ -915,12 +919,14 @@ const I18N_LOCALES = {
     'preview.tooLargeShort': '檔案過大，預覽已跳過',
     'preview.domTruncated': '預覽僅顯示前 400K 字元（檔案過大），完整內容請下載查看',
     'upload.savedToDir': '已儲存到 {dir}',
-    'tree.selCount': '已選 {count} 個檔案',
+    'tree.selCount': '已選 {count} 項',
     'tree.attachSel': '附加所選',
     'tree.deleteSel': '刪除所選',
     'tree.selClear': '取消選取',
     'file.deleteConfirmMulti': '確定刪除所選的 {count} 個檔案/目錄？此操作無法復原。',
     'file.deletedMulti': '已刪除 {count} 項',
+    'file.batchCompleted': '已完成 {count} 項操作',
+    'file.batchFailed': '已完成 {done} 項，{failed} 項失敗：{errors}',
     'file.dirAndContents': '目錄及其全部內容',
     'file.downloadDir': '下載目錄（ZIP）',
     'file.downloadFile': '下載檔案',
@@ -1031,7 +1037,7 @@ const I18N_LOCALES = {
     'composer.help':
       'Enter로 전송, Shift+Enter로 줄바꿈. 이미지와 파일을 추가, 끌어 놓기 또는 입력란에 붙여넣기로 첨부하세요. 업로드가 끝나면 전송할 수 있습니다. 위쪽 경계로 입력 높이를 조절하세요.',
     'sidebar.help':
-      '파일을 끌어 놓아 세션에 저장하세요. 미리 보기, 우클릭 관리, 더블 클릭 첨부가 가능합니다. 활성화된 스킬은 이름과 설명만 제공하며 관련 작업에서만 전체 지침을 읽습니다.',
+      '파일을 끌어 놓아 세션에 저장하세요. 미리 보기, 우클릭 관리, 더블 클릭 첨부가 가능합니다. 활성화된 스킬은 이름과 설명만 제공하며 관련 작업에서만 전체 지침을 읽습니다. Ctrl/Cmd로 선택을 추가하거나 제거하고 Shift로 범위를 선택합니다. 선택 항목을 우클릭하면 일괄 관리할 수 있습니다.',
     'sidebar.skills': '스킬',
     'sidebar.files': '파일',
     'help.label': '도움말 보기',
@@ -1262,6 +1268,8 @@ const I18N_LOCALES = {
     'file.deleteConfirmMulti':
       '선택한 {count}개의 파일/디렉터리를 삭제하시겠습니까? 복구할 수 없습니다.',
     'file.deletedMulti': '{count}개 항목 삭제됨',
+    'file.batchCompleted': '작업 {count}개 완료',
+    'file.batchFailed': '{done}개 완료, {failed}개 실패: {errors}',
     'file.dirAndContents': '디렉터리 및 모든 내용',
     'file.downloadDir': '디렉터리 다운로드(ZIP)',
     'file.downloadFile': '파일 다운로드',
@@ -1372,7 +1380,7 @@ const I18N_LOCALES = {
     'composer.help':
       'Entrée pour envoyer, Maj+Entrée pour une nouvelle ligne. Ajoutez, déposez ou collez des images et fichiers dans la zone de saisie ; attendez la fin du téléversement pour envoyer. Faites glisser le bord supérieur pour redimensionner.',
     'sidebar.help':
-      'Déposez les fichiers dans cette session. Aperçu, clic droit pour gérer, double clic pour joindre. Les skills activés fournissent leur nom et description ; les instructions complètes sont lues pour les tâches pertinentes uniquement.',
+      'Déposez les fichiers dans cette session. Aperçu, clic droit pour gérer, double clic pour joindre. Les skills activés fournissent leur nom et description ; les instructions complètes sont lues pour les tâches pertinentes uniquement. Ctrl/Cmd ajoute ou retire des éléments ; Maj sélectionne une plage. Clic droit sur la sélection pour agir sur le groupe.',
     'sidebar.skills': 'Skills',
     'sidebar.files': 'Fichiers',
     'help.label': 'Voir l’aide',
@@ -1610,6 +1618,8 @@ const I18N_LOCALES = {
     'file.deleteConfirmMulti':
       'Supprimer les {count} fichiers/dossiers sélectionnés ? Action irréversible.',
     'file.deletedMulti': '{count} éléments supprimés',
+    'file.batchCompleted': 'Opérations terminées : {count}',
+    'file.batchFailed': '{done} terminées ; {failed} en échec : {errors}',
     'file.dirAndContents': 'le répertoire et tout son contenu',
     'file.downloadDir': 'Télécharger le répertoire (ZIP)',
     'file.downloadFile': 'Télécharger le fichier',
@@ -1724,7 +1734,7 @@ const I18N_LOCALES = {
     'composer.help':
       'Enter zum Senden, Umschalt+Enter für einen Zeilenumbruch. Bilder und Dateien hinzufügen, ablegen oder ins Eingabefeld einfügen; nach dem Upload senden. Am oberen Rand die Eingabehöhe ändern.',
     'sidebar.help':
-      'Dateien in dieser Sitzung ablegen, ansehen, per Rechtsklick verwalten oder per Doppelklick anhängen. Aktivierte Skills liefern Namen und Beschreibung; vollständige Anleitungen werden nur für passende Aufgaben geladen.',
+      'Dateien in dieser Sitzung ablegen, ansehen, per Rechtsklick verwalten oder per Doppelklick anhängen. Aktivierte Skills liefern Namen und Beschreibung; vollständige Anleitungen werden nur für passende Aufgaben geladen. Ctrl/Cmd fügt Elemente hinzu oder entfernt sie; Umschalt wählt einen Bereich. Rechtsklick auf die Auswahl verwaltet die Gruppe.',
     'sidebar.skills': 'Skills',
     'sidebar.files': 'Dateien',
     'help.label': 'Hilfe anzeigen',
@@ -1959,6 +1969,8 @@ const I18N_LOCALES = {
     'file.deleteConfirmMulti':
       '{count} ausgewählte Dateien/Ordner löschen? Dies kann nicht rückgängig gemacht werden.',
     'file.deletedMulti': '{count} Elemente gelöscht',
+    'file.batchCompleted': '{count} Vorgänge abgeschlossen',
+    'file.batchFailed': '{done} abgeschlossen; {failed} fehlgeschlagen: {errors}',
     'file.dirAndContents': 'das Verzeichnis und seinen gesamten Inhalt',
     'file.downloadDir': 'Verzeichnis herunterladen (ZIP)',
     'file.downloadFile': 'Datei herunterladen',
@@ -2073,7 +2085,7 @@ const I18N_LOCALES = {
     'composer.help':
       'Invio per inviare, Maiusc+Invio per andare a capo. Aggiungi, trascina o incolla immagini e file nel campo di testo; invia al termine del caricamento. Trascina il bordo superiore per ridimensionare.',
     'sidebar.help':
-      'Trascina i file nella sessione. Anteprima, clic destro per gestire, doppio clic per allegare. Gli skill abilitati forniscono nome e descrizione; le istruzioni complete vengono lette solo per le attività pertinenti.',
+      'Trascina i file nella sessione. Anteprima, clic destro per gestire, doppio clic per allegare. Gli skill abilitati forniscono nome e descrizione; le istruzioni complete vengono lette solo per le attività pertinenti. Ctrl/Cmd aggiunge o rimuove elementi; Maiusc seleziona un intervallo. Clic destro sulla selezione per gestire il gruppo.',
     'sidebar.skills': 'Skills',
     'sidebar.files': 'File',
     'help.label': 'Mostra aiuto',
@@ -2310,6 +2322,8 @@ const I18N_LOCALES = {
     'file.deleteConfirmMulti':
       'Eliminare i {count} file/cartelle selezionati? Operazione irreversibile.',
     'file.deletedMulti': '{count} elementi eliminati',
+    'file.batchCompleted': 'Operazioni completate: {count}',
+    'file.batchFailed': '{done} completate; {failed} non riuscite: {errors}',
     'file.dirAndContents': 'la directory e tutto il suo contenuto',
     'file.downloadDir': 'Scarica directory (ZIP)',
     'file.downloadFile': 'Scarica file',

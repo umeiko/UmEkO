@@ -734,47 +734,26 @@ h2 {
   align-items: center;
   border-radius: 6px;
 }
-.tree-file-row:hover,
-.tree-file-row:has(.tree-file.active) {
+.tree-file-row:hover {
   background: var(--surface);
 }
-.tree-file-row.selected {
-  background: var(--surface);
-  box-shadow: inset 2px 0 0 var(--accent);
-}
-.tree-file-row.selected:hover {
-  background: var(--raised);
-}
-.tree-sel-bar {
-  display: flex;
-  align-items: center;
-  gap: 8px;
-  padding: 8px 12px;
-  border-bottom: 1px solid var(--line);
-  background: var(--surface);
-  font-size: 12.5px;
-}
-.tree-sel-bar .sel-count {
-  flex: 1;
-  color: var(--accent-dark);
-  font-weight: 600;
-}
-.tree-sel-bar button {
-  padding: 4px 10px;
-  border: 1px solid var(--line);
-  border-radius: 6px;
-  background: var(--surface);
-  color: var(--ink);
-  font-size: 12px;
-  cursor: pointer;
-}
-.tree-sel-bar button:hover {
-  border-color: var(--accent);
+.tree-file-row.selected,
+.tree-dir > summary.selected,
+.tree-file-row.selected:hover,
+.tree-dir > summary.selected:hover {
+  background: var(--accent-soft);
   color: var(--accent-dark);
 }
-.tree-sel-bar button.danger:hover {
-  border-color: var(--line-strong);
-  color: var(--danger);
+.tree-file-row:has(.tree-file:focus-visible),
+.tree-dir > summary:focus-visible {
+  outline: 1px solid var(--accent);
+  outline-offset: -1px;
+}
+.tree-file:focus-visible {
+  outline: none;
+}
+.file-tree {
+  user-select: none;
 }
 .tree-file:hover,
 .tree-file.active {
@@ -814,12 +793,15 @@ h2 {
 .file-context-menu {
   position: fixed;
   z-index: 50;
-  width: 168px;
+  width: 200px;
   padding: 5px;
   border: 1px solid var(--line);
   border-radius: 9px;
   background: var(--surface);
   box-shadow: 0 12px 38px var(--shadow-medium);
+}
+.file-context-menu [hidden] {
+  display: none !important;
 }
 .file-context-menu button {
   width: 100%;
@@ -828,14 +810,24 @@ h2 {
   border-radius: 5px;
   color: var(--ink);
   background: transparent;
-  font: 12px/1.2 inherit;
+  font: inherit;
+  font-size: 14px;
+  line-height: 1.4;
   text-align: left;
   cursor: pointer;
 }
 .file-context-menu button:hover:not(:disabled) {
   background: var(--surface);
 }
+.file-menu-selection {
+  padding: 7px 9px 9px;
+  color: var(--muted);
+  font-size: 13px;
+  border-bottom: 1px solid var(--line);
+  margin-bottom: 4px;
+}
 .file-context-menu button:disabled {
+  opacity: 0.45;
   color: var(--ink);
   cursor: default;
 }

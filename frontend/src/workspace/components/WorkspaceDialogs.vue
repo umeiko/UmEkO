@@ -5,6 +5,7 @@ import WorkspaceHelp from './WorkspaceHelp.vue';
 </script>
 <template>
   <div id="file-context-menu" class="file-context-menu hidden" role="menu">
+    <div class="file-menu-selection" hidden></div>
     <button type="button" data-file-action="new-file" data-i18n="fileMenu.newFile">
       新建文本文件
     </button>
@@ -20,6 +21,7 @@ import WorkspaceHelp from './WorkspaceHelp.vue';
       解压到此处
     </button>
     <button type="button" data-file-action="download" data-i18n="fileMenu.download">下载</button>
+    <button type="button" data-file-action="attach" data-i18n="tree.attachSel">附加所选</button>
     <hr />
     <button
       type="button"
