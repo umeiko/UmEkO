@@ -1,0 +1,2 @@
+# Preserve the audited bytes and SHA-256 manifests on every checkout platform.
+* -text whitespace=blank-at-eol,blank-at-eof,space-before-tab,cr-at-eol

@@ -1,0 +1,19 @@
+{
+  "name": "doc-image-qc",
+  "version": "1.0.0",
+  "source_files_sha256": {
+    "doc-image-qc.md": "a5ae14eee2dd9c6af4f5ad1f88044b750f8b8f16466ac8f7ffa79c91a4ed8d12",
+    "doc-image-qc/checks.md": "a59341163956d3148a303afabd965b4787a441155c578105c2ffcd4ba8da953c",
+    "doc-image-qc/render_report.py": "e3b61d1203ae91d4e3c7bbef9191f69cc844b0d48351744d3b25d1fb62e0ebfb"
+  },
+  "adaptations": [
+    "Added portable host instructions and SkillHub metadata to SKILL.md"
+  ],
+  "files_sha256": {
+    "SKILL.md": "2381a1fb14af9d271009d56cf9c6bb7a3f14fa64ad78fc41287dfaa929f10774",
+    "doc-image-qc/checks.md": "a59341163956d3148a303afabd965b4787a441155c578105c2ffcd4ba8da953c",
+    "doc-image-qc/render_report.py": "e3b61d1203ae91d4e3c7bbef9191f69cc844b0d48351744d3b25d1fb62e0ebfb",
+    "references/host-compatibility.md": "870c33eed414b225fd2395a879376cd27ce4f142f41b9eec3dc27ac72ad4f6e3",
+    "scripts/run.py": "9fbfa29dfe295f8b83ca900dd6e0d665ce85d8c947d78597f1ef6f0d94c75cee"
+  }
+}

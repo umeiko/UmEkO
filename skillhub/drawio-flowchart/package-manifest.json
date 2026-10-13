@@ -1,0 +1,42 @@
+{
+  "name": "drawio-flowchart",
+  "version": "1.0.0",
+  "source_files_sha256": {
+    "drawio-flowchart.md": "aaa690c8a6590a5dd7376bb48fc529acad9f49650f63088a493e503d88230502",
+    "drawio-flowchart/architecture.md": "561f6bdcc4e45684db47c3a91dd3a6474dec7fc237d5dc33a114e0939692ffa9",
+    "drawio-flowchart/config.json": "d7972af6146652d977b322cd0112daaf14e1959017f6a3a5b39bc82949fa1458",
+    "drawio-flowchart/delegation.md": "8f293449a53931c679a6770297e4326329c238705cd1d72d48e1f220d5645070",
+    "drawio-flowchart/drawio_arch.py": "d5fb35cc7103045942d1b77c09bcec0330661707fa5bae7a3541e8fbd121391d",
+    "drawio-flowchart/drawio_flow.py": "297451a8a77e497b6aa4723d253de561980ad3a125ade36661faec1f46a30e2c",
+    "drawio-flowchart/drawio_style.py": "3bd3d9f50193b6f5b68b68b2ad62f7fec1609c47c14bdc4c364ec8bad2269b68",
+    "drawio-flowchart/drawio_xml.py": "f463704d2643f26826620df3da0f36f94c78f2fb65e187cc4754eafa0d843827",
+    "drawio-flowchart/flowchart.md": "e3a8b9fbf5145e85ae57b92aec52713d044ccec098c8897034b6429c66bd8d53",
+    "drawio-flowchart/generate_drawio.py": "c8113d65148a96a83aceea4b68fe895af3e3d6694f07358b55cecc8f63fe801e",
+    "drawio-flowchart/prepare_drawio.py": "3bf63cd07a5934761715d58f8765f4a0ca8bb8d96f108efabca4bd763d0022f0",
+    "drawio-flowchart/provenance.md": "d0e4b72800a587638a1c8b93e716809fdf9de4af908c4413dfb193708b766151",
+    "drawio-flowchart/style-files.md": "4fcd42894ee8ac01ed32c9d77f74c175943a769aeb5a25161fe04d7052e2c458",
+    "drawio-flowchart/style.md": "f79f58074d41c27b254adc3c298374836956df2aa8848f52f451b4b5b66660b6"
+  },
+  "adaptations": [
+    "Added portable host instructions and SkillHub metadata to SKILL.md",
+    "Cleared machine-specific drawio_path; preserved all other config fields"
+  ],
+  "files_sha256": {
+    "SKILL.md": "bf73a26b7d2a119092ff4cc68125afeca86ae50c1434879e9fdc7bfc17b87d6c",
+    "drawio-flowchart/architecture.md": "561f6bdcc4e45684db47c3a91dd3a6474dec7fc237d5dc33a114e0939692ffa9",
+    "drawio-flowchart/config.json": "a4c802e63fee1d4c4ad3849a9e38cbd8073d097cf1712b083b9cdf3e99aaa26b",
+    "drawio-flowchart/delegation.md": "8f293449a53931c679a6770297e4326329c238705cd1d72d48e1f220d5645070",
+    "drawio-flowchart/drawio_arch.py": "d5fb35cc7103045942d1b77c09bcec0330661707fa5bae7a3541e8fbd121391d",
+    "drawio-flowchart/drawio_flow.py": "297451a8a77e497b6aa4723d253de561980ad3a125ade36661faec1f46a30e2c",
+    "drawio-flowchart/drawio_style.py": "3bd3d9f50193b6f5b68b68b2ad62f7fec1609c47c14bdc4c364ec8bad2269b68",
+    "drawio-flowchart/drawio_xml.py": "f463704d2643f26826620df3da0f36f94c78f2fb65e187cc4754eafa0d843827",
+    "drawio-flowchart/flowchart.md": "e3a8b9fbf5145e85ae57b92aec52713d044ccec098c8897034b6429c66bd8d53",
+    "drawio-flowchart/generate_drawio.py": "c8113d65148a96a83aceea4b68fe895af3e3d6694f07358b55cecc8f63fe801e",
+    "drawio-flowchart/prepare_drawio.py": "3bf63cd07a5934761715d58f8765f4a0ca8bb8d96f108efabca4bd763d0022f0",
+    "drawio-flowchart/provenance.md": "d0e4b72800a587638a1c8b93e716809fdf9de4af908c4413dfb193708b766151",
+    "drawio-flowchart/style-files.md": "4fcd42894ee8ac01ed32c9d77f74c175943a769aeb5a25161fe04d7052e2c458",
+    "drawio-flowchart/style.md": "f79f58074d41c27b254adc3c298374836956df2aa8848f52f451b4b5b66660b6",
+    "references/host-compatibility.md": "870c33eed414b225fd2395a879376cd27ce4f142f41b9eec3dc27ac72ad4f6e3",
+    "scripts/run.py": "9fbfa29dfe295f8b83ca900dd6e0d665ce85d8c947d78597f1ef6f0d94c75cee"
+  }
+}

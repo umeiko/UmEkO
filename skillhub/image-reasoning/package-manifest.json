@@ -1,0 +1,14 @@
+{
+  "name": "image-reasoning",
+  "version": "1.0.0",
+  "source_files_sha256": {
+    "image-reasoning.md": "d2665659430b6f2f7529394feb9c17b43deef3dfe313168188ae976516d99653"
+  },
+  "adaptations": [
+    "Added portable host instructions and SkillHub metadata to SKILL.md"
+  ],
+  "files_sha256": {
+    "SKILL.md": "40a2fd0ea81fd1a5bc4044ab2f0bd0878caa3df64f9100385b37c0dcc46b83a7",
+    "references/host-compatibility.md": "870c33eed414b225fd2395a879376cd27ce4f142f41b9eec3dc27ac72ad4f6e3"
+  }
+}
