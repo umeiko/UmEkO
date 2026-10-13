@@ -84,7 +84,7 @@ def test_agent_routes_cards_and_task_ownership(machine_client):
         assert client.post(task_path + "/cancel").status_code == 404
         assert client.get(task_path + "/artifacts/" + artifact["id"] + "/content").status_code == 404
     for base, task in zip(bases, tasks):
-        assert [item["id"] for item in client.get(base + "/v1/tasks").json()["tasks"]] == [task["id"]]
+        assert client.get(base + "/v1/tasks").status_code == 404
     app.state.agent_service.agent_registry.save({**a, "enabled": False}, a["id"])
     assert client.get(bases[0] + "/.well-known/agent-card.json").status_code == 404
     assert client.post(bases[0] + "/v1/tasks", json={"prompt": "hi"}).status_code == 404
@@ -209,7 +209,7 @@ def test_queued_tasks_keep_definition_and_skill_snapshot(machine_client, monkeyp
         service.agent_registry.delete(a["id"])
 
 
-def test_agent_default_model_and_explicit_request_override(machine_client, monkeypatch):
+def test_agent_default_model_and_rejected_request_override(machine_client, monkeypatch):
     client, app, _, _ = machine_client
     service, store = app.state.agent_service, app.state.store
     a, _ = seed(app)
@@ -223,14 +223,16 @@ def test_agent_default_model_and_explicit_request_override(machine_client, monke
         observed.append((agent.settings.text_model.model_id, agent._session.allowed_skill_packs, agent._messages[0]["content"]))
         return "Chosen model"
     monkeypatch.setattr(UmekoAgent, "chat", chat)
-    for override, expected in [(None, first["id"]), (second["id"], second["id"])]:
-        response = client.post("/agent/alpha/v1/tasks", json={"prompt": "model check", "model_id": override})
+    for selected in [first, second]:
+        service.agent_registry.save({**a, "default_model_id": selected["id"]}, a["id"])
+        response = client.post("/agent/alpha/v1/tasks", json={"prompt": "model check"})
         assert response.status_code == 202, response.text
         task = wait(client, "/agent/alpha/v1/tasks/" + response.json()["id"])
         assert task["status"] == "completed", task["error"]
-        assert observed[-1][0] == expected
+        assert observed[-1][0] == selected["id"]
         assert observed[-1][1] == {"alpha"}
         assert "PRIVATE ALPHA ROLE" in observed[-1][2]
+    assert client.post("/agent/alpha/v1/tasks", json={"prompt": "model check", "model_id": first["id"]}).status_code == 422
 
 
 def test_agent_vision_model_admin_validation_and_legacy_defaults(machine_app):
@@ -304,7 +306,8 @@ def test_agent_vision_routes_real_tools_and_keeps_queued_choice(machine_client, 
     tasks.start()
     assert wait(client, "/agent/alpha/v1/tasks/" + response.json()["id"])["status"] == "completed"
     assert calls == [first["id"], first["id"]]
-    response = client.post("/agent/alpha/v1/tasks", json={"prompt": "text override keeps vision", "model_id": override["id"]})
+    service.agent_registry.save({**definition, "default_model_id": override["id"]}, definition["id"])
+    response = client.post("/agent/alpha/v1/tasks", json={"prompt": "configured main keeps vision"})
     assert wait(client, "/agent/alpha/v1/tasks/" + response.json()["id"])["status"] == "completed"
     assert text_models[-1] == override["id"] and calls[-2:] == [second["id"], second["id"]]
     service.agent_registry.save({**definition, "default_vision_model_id": None}, definition["id"])

@@ -14,9 +14,9 @@
 
 ## 地址和权限
 
-下面所有路径相对具体 Agent 的完整基址，例如 `https://example.internal/doc-master/consistency/image-text/agent/image-qc`。每个 Agent 使用自己的工作指引、所选 Skill 和默认模型；调用者显式指定的 `model_id` 优先。配置方法见[智能体管理](agents.md)。
+下面所有路径相对具体 Agent 的完整基址，例如 `https://example.internal/doc-master/consistency/image-text/agent/image-qc`。每个 Agent 使用自己的工作指引、所选 Skill 和管理员配置的默认模型。配置方法见[智能体管理](agents.md)。
 
-显式 `model_id` 必须属于该 Agent 的主模型披露范围。默认主模型始终允许，其他模型从 MCP `list_models` 的结果选择；REST 和 A2A 同样检查，未披露模型被拒绝。`disclosed_model_ids=null` 保持全部模式，`[]` 仅允许默认主模型，数组开放对应模型。
+对外 REST、MCP、A2A 均不接受调用方选择 `model_id`，不提供模型列表或任务列表。提交返回本次执行的 `id/task_id`，以及标记服务归属的固定 `agent_id`；之后用本次 `task_id` 查询状态和取文件，不能查询其他 Agent 或调用方所属任务。
 
 | scope | 用途 |
 | --- | --- |
@@ -84,7 +84,6 @@ with httpx.Client(headers=headers, timeout=30) as client:
     response = client.post(base + "/v1/tasks", headers={"Idempotency-Key": "document-001"}, json={
         "prompt": "检查附件并生成报告",
         "files": [{"name": "input.txt", "content_base64": base64.b64encode(Path("input.txt").read_bytes()).decode()}],
-        # "model_id": "从模型列表获取的 ID",
     })
     response.raise_for_status()
     task = response.json()
@@ -106,12 +105,13 @@ with httpx.Client(headers=headers, timeout=30) as client:
 
 | 操作 | 路径 | 说明 |
 | --- | --- | --- |
-| POST | `/v1/tasks` | `prompt`、可选 `files`、`model_id`；返回 202 与 Task |
-| GET | `/v1/tasks?limit=50&offset=0` | 自己未到期的任务，limit 1–100 |
+| POST | `/v1/tasks` | `prompt`、可选 `files`；返回 202 与 Task，含本次 `id/task_id` 和服务 `agent_id` |
 | GET | `/v1/tasks/{task_id}` | 持久化状态、结果、错误、到期时间、产物 |
 | POST | `/v1/tasks/{task_id}/cancel` | 排队任务立即取消；运行任务协作式停止 |
 | GET | `/v1/tasks/{task_id}/events` | SSE，支持 `after` 和 `Last-Event-ID` |
 | GET | `/v1/tasks/{task_id}/artifacts/{artifact_id}/content` | 授权下载 |
+| GET | `/v1/tasks/{task_id}/files` | 顶层目录及 `file_id`；可传 `directory_id`，只列对应文件夹的直接子项 |
+| GET | `/v1/tasks/{task_id}/files/{file_id}/content` | 按序号授权下载文件；文件夹自动打包 ZIP |
 
 状态为 `queued`、`running`、`cancelling`、`completed`、`failed`、`cancelled`。`expires_at` 在终态前为空；终态默认保留 24 小时。Task 中的 `artifacts` 含 `id`、`name`、`media_type`、`size`、`download_url`、`resource_uri`。
 
@@ -119,7 +119,7 @@ with httpx.Client(headers=headers, timeout=30) as client:
 此期限与调用记录的 `expires_at` 分开。节点过期后仍可查询原 Task 的回复与产物元数据，但文件下载与资源读取返回不存在。
 A2A 对应 `metadata.workspaceExpiresAt`、`metadata.workspaceState`。节点物理清理约每分钟执行一次；到期访问立即被拒绝。
 
-Task 的 `agent_id` 标记所属 Agent。查询、列表、事件、取消和产物均限制在当前 Agent 与账号内，换用另一个 Agent 路径会返回 404。新增 Agent 的排队任务保留提交时的工作指引和主 Skill 文本副本；快照及停用规则见[多智能体架构](../architecture/agents.md)。
+Task 的 `agent_id` 标记所属 Agent。查询、文件列表、事件、取消和产物均限制在当前 Agent 与账号内，换用另一个 Agent 路径会返回 404。文件序号按任务持久保存，新增文件不会改变已列出条目的序号；可用目录序号逐层展开，默认不递归。文件访问需要 `artifacts:read`，且仅包含本次任务的 `workspace`、`attachments`、`generate`。新增 Agent 的排队任务保留提交时的工作指引和主 Skill 文本副本；快照及停用规则见[多智能体架构](../architecture/agents.md)。
 
 SSE 每帧含 `id`、`event`、`data`，data 是 `id/type/data/created_at` 事件对象。只保留最近 500 条，不作为完整审计日志；重连缺失历史时以 GET Task 的最终结果为准。原生浏览器 EventSource 不能设置 Bearer Header，可用支持 Header 的 SSE 客户端。
 

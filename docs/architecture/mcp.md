@@ -13,7 +13,7 @@ flowchart LR
 
 ## 工具与资源
 
-`get_agent_info`、`list_models`、`submit_task`、`get_task`、`list_tasks`、`cancel_task`、`read_artifact` 提供结构化结果。产物另有 `umeko://tasks/{task_id}/artifacts/{artifact_id}` 资源模板；小文件通过 MCP 读取，大文件通过受保护 HTTP 下载。
+`get_agent_info`、`submit_task`、`get_task`、`list_file`、`download_file`、`cancel_task`、`read_artifact` 提供结构化结果；不提供模型列表、选模型参数或任务列表。文件按任务保存序号，列目录仅展开直接子项，文件夹下载为 ZIP；`task_lifecycle` 提示词通过 `prompts/list` 和 `prompts/get` 说明使用契约。产物另有 `umeko://tasks/{task_id}/artifacts/{artifact_id}` 资源模板；小文件通过 MCP 读取，大文件通过受保护 HTTP 下载。
 
 工具可被发现，不代表凭据有权限执行。每次调用检查 scope 和任务归属。模型发现只返回 ID、名称、视觉能力和 Provider 名称，不返回模型地址或密钥。
 

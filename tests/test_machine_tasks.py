@@ -31,7 +31,7 @@ def test_task_roundtrip_artifact_isolation_and_memory_release(machine_client):
     assert client.get(url, headers=bearer(b)).status_code == 404
     assert client.get("/agent/fixture/v1/tasks/" + task_id, headers=bearer(b)).status_code == 404
     assert client.post("/agent/fixture/v1/tasks/" + task_id + "/cancel", headers=bearer(b)).status_code == 404
-    assert client.get("/agent/fixture/v1/tasks", headers=bearer(b)).json()["tasks"] == []
+    assert client.get("/agent/fixture/v1/tasks", headers=bearer(b)).status_code == 404
     stream = client.get("/agent/fixture/v1/tasks/" + task_id + "/events", headers=bearer(a))
     assert stream.headers["x-accel-buffering"] == "no"
     assert "event: task.completed" in stream.text
@@ -75,7 +75,7 @@ def test_oauth_rotation_revocation_and_audience(machine_client):
                         "client_secret": a["token"], "resource": "http://127.0.0.1/agent/fixture/v1/tasks", "scope": "tasks:read"})
     assert token.status_code == 200, token.text
     key = token.json()["access_token"]
-    assert client.get("/agent/fixture/v1/tasks", headers={"Authorization": "Bearer " + key}).status_code == 200
+    assert client.get("/agent/fixture/v1/tasks/missing", headers={"Authorization": "Bearer " + key}).status_code == 404
     assert client.post("/agent/fixture/a2a", json={}, headers={"Authorization": "Bearer " + key}).status_code == 401
     assert client.post("/agent/fixture/v1/tasks", json={"prompt": "forbidden"}, headers={"Authorization": "Bearer " + key}).status_code == 403
     assert client.post("/agent/fixture/oauth/token", data={"grant_type": "client_credentials", "client_id": a["id"], "client_secret": key}).status_code == 401
@@ -83,7 +83,7 @@ def test_oauth_rotation_revocation_and_audience(machine_client):
     rotated = app.state.identity_store.update(a["id"], rotate=True)
     assert client.get("/agent/fixture/v1/tasks", headers=bearer(a)).status_code == 401
     assert client.get("/agent/fixture/v1/tasks", headers={"Authorization": "Bearer " + key}).status_code == 401
-    assert client.get("/agent/fixture/v1/tasks", headers=bearer(rotated)).status_code == 200
+    assert client.get("/agent/fixture/v1/tasks/missing", headers=bearer(rotated)).status_code == 404
     app.state.identity_store.update(a["id"], enabled=False)
     assert client.get("/agent/fixture/v1/tasks", headers=bearer(rotated)).status_code == 401
 

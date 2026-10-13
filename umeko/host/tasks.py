@@ -7,16 +7,21 @@ import hashlib
 import json
 import logging
 import mimetypes
+import os
 import secrets
 import shutil
+import stat
+import tempfile
 import threading
 import time
 import uuid
+import zipfile
 from concurrent.futures import ThreadPoolExecutor
 from datetime import datetime, timedelta, timezone
-from pathlib import Path
+from pathlib import Path, PurePosixPath
 
 from .identities import SCOPES, now, require_scope
+from .file_manifest import ROOTS, _linked, session_root
 
 TERMINAL = frozenset({"completed", "failed", "cancelled"})
 MAX_FILE_BYTES = 20 * 1024 * 1024
@@ -39,9 +44,8 @@ def validate_input(payload: dict) -> tuple[dict, list[bytes]]:
     prompt = payload.get("prompt", "")
     if not isinstance(prompt, str) or not prompt.strip() or len(prompt) > 200_000:
         raise ValueError("prompt 须为非空文本，最多 200000 字符")
-    model_id = payload.get("model_id")
-    if model_id is not None and (not isinstance(model_id, str) or len(model_id) > 80):
-        raise ValueError("model_id 无效")
+    if "model_id" in payload:
+        raise ValueError("对外任务不支持选择 model_id，请使用管理员配置的默认模型")
     files = payload.get("files", [])
     if not isinstance(files, list) or len(files) > 10:
         raise ValueError("最多上传 10 个文件，总大小不超过 20 MiB")
@@ -63,7 +67,7 @@ def validate_input(payload: dict) -> tuple[dict, list[bytes]]:
             raise ValueError("文件总大小不能超过 20 MiB")
         contents.append(content)
         file_views.append({"name": name, "size": len(content), "sha256": hashlib.sha256(content).hexdigest()})
-    return {"prompt": prompt, "model_id": model_id, "files": file_views}, contents
+    return {"prompt": prompt, "model_id": None, "files": file_views}, contents
 
 
 class TaskService:
@@ -100,6 +104,11 @@ class TaskService:
               id TEXT NOT NULL, task_id TEXT NOT NULL REFERENCES service_tasks(id) ON DELETE CASCADE,
               path TEXT NOT NULL, name TEXT NOT NULL, media_type TEXT NOT NULL, size INTEGER NOT NULL,
               PRIMARY KEY(task_id,id)
+            );
+            CREATE TABLE IF NOT EXISTS service_task_file_refs (
+              task_id TEXT NOT NULL REFERENCES service_tasks(id) ON DELETE CASCADE,
+              file_id INTEGER NOT NULL, path TEXT NOT NULL, type TEXT NOT NULL,
+              PRIMARY KEY(task_id,file_id), UNIQUE(task_id,path,type)
             );
             """)
             columns = {row["name"] for row in db.execute("PRAGMA table_info(service_tasks)")}
@@ -172,8 +181,6 @@ class TaskService:
         owner = require_scope(principal, "tasks:create")
         agent_id = principal.get("agent_id", "")
         normalized, contents = validate_input(payload)
-        if normalized["model_id"] and self.store.model_by_id(normalized["model_id"]) is None:
-            raise ValueError("指定模型不存在")
         if idempotency_key is not None and (not isinstance(idempotency_key, str)
                                            or not 1 <= len(idempotency_key) <= 200):
             raise ValueError("幂等键须为 1–200 字符")
@@ -182,14 +189,11 @@ class TaskService:
         fingerprint = hashlib.sha256(json.dumps({**normalized, "context_id": context_id},
                                                 sort_keys=True, ensure_ascii=False).encode()).hexdigest()
         definition = principal.get("agent_definition")
-        model_allowed = True
         if agent_id:
             if not definition or definition["id"] != agent_id:
                 raise ValueError("智能体配置无效")
-            if normalized["model_id"]:
-                model_allowed = self.service.agent_registry.allows_model(definition, normalized["model_id"])
             normalized["agent_snapshot"] = self.service.agent_registry.snapshot(definition)
-            normalized["model_id"] = normalized["model_id"] or definition.get("default_model_id")
+            normalized["model_id"] = definition.get("default_model_id")
         if message_id:
             normalized["message_id"] = message_id
         task_id, stamp = "task_" + uuid.uuid4().hex, now()
@@ -207,8 +211,6 @@ class TaskService:
                     if row["request_hash"] != fingerprint:
                         raise IdempotencyConflict("同一幂等键对应的输入不同")
                     return self._visible(self._view(db, row), principal)
-            if not model_allowed:
-                raise PermissionError("该智能体未披露此主模型，请使用默认模型或已披露模型")
             if context_id and db.execute("SELECT 1 FROM service_tasks WHERE context_id=? AND user_id=? AND agent_id=?",
                                          (context_id, owner, agent_id)).fetchone() is None:
                 raise KeyError("Context 不存在或无权访问")
@@ -414,6 +416,125 @@ class TaskService:
                 or candidate == root or not candidate.is_file()):
             raise KeyError("产物不存在")
         return candidate, item["media_type"]
+
+    def _file_context(self, db, principal, task_id):
+        owner = require_scope(principal, "artifacts:read")
+        row = self._owned(db, task_id, owner, principal.get("agent_id", ""))
+        if self._workspace_expired(row):
+            raise KeyError("临时节点已过期，文件已不可读取")
+        root = session_root(self.service.data_root, owner, row["session_id"]) if row["session_id"] else None
+        if row["session_id"] and root is None:
+            raise KeyError("任务文件已不可读取")
+        return row, root
+
+    @staticmethod
+    def _safe_file_path(root, relative, expected_type=None):
+        parts = PurePosixPath(relative).parts
+        if (not parts or parts[0] not in ROOTS or PurePosixPath(relative).is_absolute()
+                or any(part in {".", ".."} for part in parts) or "\\" in relative):
+            raise KeyError("文件不存在或不可读取")
+        current = root
+        try:
+            for part in parts:
+                current = current / part
+                if _linked(current.lstat()) or not current.resolve().is_relative_to(root):
+                    raise KeyError("文件不存在或不可读取")
+            info = current.lstat()
+            kind = "directory" if stat.S_ISDIR(info.st_mode) else "file" if stat.S_ISREG(info.st_mode) else None
+            if kind is None or (expected_type is not None and kind != expected_type):
+                raise KeyError("文件不存在或类型已变化，请重新列出目录")
+            return current, kind, info
+        except OSError as exc:
+            raise KeyError("文件不存在或不可读取") from exc
+
+    def _file_ref(self, db, root, task_id, file_id):
+        if type(file_id) is not int or not 1 <= file_id <= 2**63 - 1:
+            raise ValueError("文件序号须为正整数")
+        item = db.execute("SELECT path,type FROM service_task_file_refs WHERE task_id=? AND file_id=?",
+                          (task_id, file_id)).fetchone()
+        if item is None or root is None:
+            raise KeyError("文件序号不存在，请先调用 list_file")
+        path, kind, info = self._safe_file_path(root, item["path"], item["type"])
+        return path, kind, info
+
+    def list_file(self, principal, task_id, directory_id=None):
+        with self.store.connect() as db:
+            db.execute("BEGIN IMMEDIATE")
+            row, root = self._file_context(db, principal, task_id)
+            result = {"task_id": task_id, "agent_id": row["agent_id"], "directory_id": directory_id,
+                      "ready": root is not None, "files": []}
+            if root is None:
+                if directory_id is not None:
+                    raise KeyError("任务文件尚未就绪")
+                return result
+            if directory_id is None:
+                children = [root / name for name in ROOTS]
+            else:
+                directory, kind, _ = self._file_ref(db, root, task_id, directory_id)
+                if kind != "directory":
+                    raise ValueError("directory_id 必须指向文件夹")
+                try:
+                    children = list(directory.iterdir())
+                except OSError as exc:
+                    raise KeyError("文件夹已不可读取") from exc
+            entries = []
+            for child in children:
+                relative = child.relative_to(root).as_posix()
+                try:
+                    path, kind, info = self._safe_file_path(root, relative)
+                except KeyError:
+                    continue
+                entries.append((path, kind, info, relative))
+            next_id = db.execute("SELECT COALESCE(MAX(file_id),0)+1 FROM service_task_file_refs WHERE task_id=?",
+                                 (task_id,)).fetchone()[0]
+            for path, kind, info, relative in sorted(entries, key=lambda entry: (entry[1] != "directory", entry[0].name.casefold(), entry[0].name)):
+                existing = db.execute("SELECT file_id FROM service_task_file_refs WHERE task_id=? AND path=? AND type=?",
+                                      (task_id, relative, kind)).fetchone()
+                file_id = existing[0] if existing else next_id
+                if existing is None:
+                    db.execute("INSERT INTO service_task_file_refs VALUES(?,?,?,?)", (task_id, file_id, relative, kind))
+                    next_id += 1
+                result["files"].append({"file_id": file_id, "name": path.name, "type": kind,
+                                        "size": info.st_size if kind == "file" else None})
+            return result
+
+    def file_info(self, principal, task_id, file_id):
+        with self.store.connect() as db:
+            _, root = self._file_context(db, principal, task_id)
+            path, kind, info = self._file_ref(db, root, task_id, file_id)
+        return {"task_id": task_id, "file_id": file_id, "name": path.name + ".zip" if kind == "directory" else path.name,
+                "type": kind, "size": info.st_size if kind == "file" else None,
+                "media_type": "application/zip" if kind == "directory" else mimetypes.guess_type(path.name)[0] or "application/octet-stream"}
+
+    def download_file(self, principal, task_id, file_id):
+        with self.store.connect() as db:
+            _, root = self._file_context(db, principal, task_id)
+            path, kind, _ = self._file_ref(db, root, task_id, file_id)
+        if kind == "file":
+            return path, mimetypes.guess_type(path.name)[0] or "application/octet-stream", path.name, False
+        with tempfile.NamedTemporaryFile(prefix="umeko-task-download-", suffix=".zip", delete=False) as output:
+            archive_path = Path(output.name)
+        try:
+            with zipfile.ZipFile(archive_path, "w", compression=zipfile.ZIP_DEFLATED) as archive:
+                pending = [path]
+                while pending:
+                    current = pending.pop()
+                    self._safe_file_path(root, current.relative_to(root).as_posix(), "directory")
+                    archive.writestr(current.relative_to(path.parent).as_posix() + "/", b"")
+                    with os.scandir(current) as iterator:
+                        for entry in iterator:
+                            child, child_kind, _ = self._safe_file_path(root, Path(entry.path).relative_to(root).as_posix())
+                            if child_kind == "directory":
+                                pending.append(child)
+                            else:
+                                archive.write(child, child.relative_to(path.parent).as_posix())
+            return archive_path, "application/zip", path.name + ".zip", True
+        except OSError as exc:
+            archive_path.unlink(missing_ok=True)
+            raise KeyError("文件夹内容已变化或不可读取，请重新列出目录") from exc
+        except BaseException:
+            archive_path.unlink(missing_ok=True)
+            raise
 
     def _schedule(self):
         last_gc = 0.0

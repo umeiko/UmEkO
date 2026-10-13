@@ -47,7 +47,7 @@ Card 由 `AgentCards` 从 `AgentRegistry` 配置生成。管理员在“服务�
 
 非流式发送可设 `configuration.returnImmediately=true` 立即拿到 Task；否则等待终态。流式发送依次返回初始 Task、回复增量、最终产物和终态。最终文本以 `append=false` 替换累积片段，防止重连或有界事件历史造成结果不完整。
 
-`GetTask` 可指定 `historyLength`；`ListTasks` 支持分页、context、状态、更新时间过滤及产物选项。产物下载遵循当前接入方式：需要凭据时检查服务账号权限，免鉴权时可直接读取共享身份的产物。取消和业务连接断开的行为与共享 TaskService 一致。
+`GetTask` 可指定 `historyLength`；查询使用提交返回的本次 Task `id`，`ListTasks` 返回不支持操作。产物与序号文件下载遵循当前接入方式：需要凭据时检查服务账号权限，免鉴权时可直接读取共享身份的本次任务文件。取消和业务连接断开的行为与共享 TaskService 一致。
 
 测试使用官方 ClientFactory 在真实 HTTP 服务上发现 Card、发送附件、接收流式 / 非流式结果、查询、列表和下载，并验证部署前缀与跨调用者隔离。CI 的前缀场景经过真实 NGINX，移除前缀后转到 Uvicorn；检查 Card 与产物链接包含完整用户前缀和 Agent 路径，域名根下遗漏前缀的请求返回 404。模型业务效果需要配置真实 Provider 后另行验证。
 

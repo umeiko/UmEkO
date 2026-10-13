@@ -43,7 +43,7 @@ def test_protocol_discovery_and_oauth_preserve_service_and_agent_prefixes(tmp_pa
                                 "client_id": account["id"], "client_secret": account["token"], "resource": base + target})
             assert token.status_code == 200
             bearer = {"Authorization": "Bearer " + token.json()["access_token"]}
-            assert client.get(route + "/v1/tasks", headers=bearer).status_code == (200 if target == "/v1/tasks" else 401)
+            assert client.get(route + "/v1/tasks/missing", headers=bearer).status_code == (404 if target == "/v1/tasks" else 401)
         if prefix:
             missing_prefix = client.post(route + "/oauth/token", data={"grant_type": "client_credentials",
                                          "client_id": account["id"], "client_secret": account["token"],

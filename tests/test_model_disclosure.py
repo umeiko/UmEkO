@@ -30,27 +30,25 @@ def setup_models(app, selection="selected", explicit=True):
 
 
 @pytest.mark.parametrize("machine_app", ["", "/dept/doc-master/consistency"], indirect=True)
-def test_discovery_and_override_scope_all_protocols(machine_server):
+def test_external_models_are_hidden_and_overrides_rejected_all_protocols(machine_server):
     base, app, account, _ = machine_server
     definition, default, extra, hidden = setup_models(app)
     async def check():
         headers = {"Authorization": "Bearer " + account["token"]}
         async with httpx2.AsyncClient(headers=headers, trust_env=False) as http:
             async with Client(streamable_http_client(base + "/mcp", http_client=http), cache=None) as client:
-                response = await client.call_tool("list_models", {})
-                assert not response.is_error
-                catalog = response.structured_content
-                assert {m["id"] for m in catalog["models"]} == {default["id"], extra["id"]}
-                assert catalog["default_model_id"] == default["id"]
-                assert catalog["default_vision_model_id"] is None
-                assert "PrivateProvider" not in json.dumps(catalog) and hidden["id"] not in json.dumps(catalog)
+                tools = (await client.list_tools()).tools
+                assert not {"list_models", "list_tasks"} & {tool.name for tool in tools}
+                submit = next(tool for tool in tools if tool.name == "submit_task")
+                assert "model_id" not in submit.input_schema["properties"]
+                assert "PrivateProvider" not in json.dumps(submit.model_dump())
                 blocked = await client.call_tool("submit_task", {"prompt": "hidden", "model_id": hidden["id"]})
                 assert blocked.is_error
-                allowed = await client.call_tool("submit_task", {"prompt": "optional", "model_id": extra["id"]})
+                allowed = await client.call_tool("submit_task", {"prompt": "default model"})
                 assert not allowed.is_error
         async with httpx.AsyncClient(headers=headers, trust_env=False) as http:
             blocked = await http.post(base + "/v1/tasks", json={"prompt": "hidden", "model_id": hidden["id"]})
-            assert blocked.status_code == 403
+            assert blocked.status_code == 422
             for _ in range(100):
                 task = (await http.get(base + "/v1/tasks/" + allowed.structured_content["id"])).json()
                 if task["status"] in {"completed", "failed", "cancelled"}:
@@ -62,7 +60,7 @@ def test_discovery_and_override_scope_all_protocols(machine_server):
             client = await ClientFactory(ClientConfig(httpx_client=http, streaming=False)).create_from_url(base)
             blocked = a2a.SendMessageRequest(message=a2a.Message(message_id="hidden-model",
                 role=a2a.Role.ROLE_USER, parts=[a2a.Part(text="hidden")]), metadata={"umeko": {"model_id": hidden["id"]}})
-            with pytest.raises(Exception, match="未披露"):
+            with pytest.raises(Exception, match="model_id"):
                 _ = [event async for event in client.send_message(blocked)]
             accepted = a2a.SendMessageRequest(message=a2a.Message(message_id="default-model",
                 role=a2a.Role.ROLE_USER, parts=[a2a.Part(text="default")]))
@@ -114,17 +112,20 @@ def test_admin_validation_persistence_and_legacy_compatibility(machine_app):
     assert len(service.agent_registry.disclosed_models(legacy)["models"]) == 3
 
 
-def test_accepted_task_keeps_model_after_disclosure_is_restricted(machine_client):
+def test_accepted_task_keeps_configured_model_after_default_changes(machine_client):
     client, app, account, _ = machine_client
-    definition, _, extra, _ = setup_models(app)
+    definition, default, extra, _ = setup_models(app)
     tasks, registry = app.state.task_service, app.state.agent_service.agent_registry
     tasks.stop()
     headers = {"Authorization": "Bearer " + account["token"], "Idempotency-Key": "accepted-model-selection"}
-    response = client.post("/agent/fixture/v1/tasks", headers=headers, json={"prompt": "queued", "model_id": extra["id"]})
+    response = client.post("/agent/fixture/v1/tasks", headers=headers, json={"prompt": "queued"})
     assert response.status_code == 202
-    registry.save({**definition, "disclosed_model_ids": []}, definition["id"])
-    again = client.post("/agent/fixture/v1/tasks", headers=headers, json={"prompt": "queued", "model_id": extra["id"]})
+    registry.save({**definition, "default_model_id": extra["id"]}, definition["id"])
+    again = client.post("/agent/fixture/v1/tasks", headers=headers, json={"prompt": "queued"})
     assert again.status_code == 202 and again.json()["id"] == response.json()["id"]
+    with app.state.store.connect() as db:
+        payload = json.loads(db.execute("SELECT input_json FROM service_tasks WHERE id=?", (response.json()["id"],)).fetchone()[0])
+    assert payload["model_id"] == default["id"]
     tasks.start()
     for _ in range(100):
         task = client.get("/agent/fixture/v1/tasks/" + response.json()["id"], headers=headers).json()
@@ -132,4 +133,4 @@ def test_accepted_task_keeps_model_after_disclosure_is_restricted(machine_client
             break
         time.sleep(.02)
     assert task["status"] == "completed", task
-    assert client.post("/agent/fixture/v1/tasks", headers={**headers, "Idempotency-Key": "new-selection"}, json={"prompt": "new", "model_id": extra["id"]}).status_code == 403
+    assert client.post("/agent/fixture/v1/tasks", headers={**headers, "Idempotency-Key": "new-selection"}, json={"prompt": "new", "model_id": extra["id"]}).status_code == 422

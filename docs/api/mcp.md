@@ -9,16 +9,26 @@
 | 工具 | 参数 | 结果 |
 | --- | --- | --- |
 | `get_agent_info` | 无 | 当前路径对应的公开 Agent Card，含介绍和实际披露的技能 |
-| `list_models` | 无 | 当前 Agent 允许披露的主模型 ID / 名称 / vision / Provider 名称，含默认主模型；默认视觉模型 ID 按披露范围返回 |
-| `submit_task` | `prompt`，可选 `files`、`model_id`、`idempotency_key` | Task 与任务 ID，立即返回 |
+| `submit_task` | `prompt`，可选 `files`、`idempotency_key` | 立即返回本次执行的 `id/task_id` 与当前服务的 `agent_id` |
 | `get_task` | `task_id` | 状态、最终回复、错误、产物与到期时间 |
-| `list_tasks` | 可选 `limit=50`、`offset=0` | `tasks` 与 `total`，最多 100 条 |
+| `list_file` | `task_id`，可选 `directory_id` | 当前目录的直接子项，包含文件名、类型、大小和稳定序号 `file_id` |
+| `download_file` | `task_id`、`file_id` | 受保护的 HTTP 下载链接；文件夹自动打包 ZIP |
 | `cancel_task` | `task_id` | 请求取消后的 Task |
 | `read_artifact` | `task_id`、`artifact_id` | `name/media_type` 和 UTF-8 `text` 或二进制 `content_base64` |
 
 `files` 为 `[{"name":"input.txt","content_base64":"..."}]`，不接受服务器路径。输入限制、权限与幂等规则见 [机器任务](machine-tasks.md)。`read_artifact` 与资源读取上限均为 256 KiB；大文件使用 GET Task 的 `download_url`，下载仍需授权。
 
-`list_models` 受智能体配置中的“主模型披露”约束，默认主模型始终可用。`submit_task.model_id` 必须是已披露模型；REST 和 A2A 使用相同限制。`default_vision_model_id` 仅在显式配置且该模型也已披露时返回，`null` 表示自动选择或未公开此 ID；不改变内部视觉模型配置。视觉模型在智能体管理中配置，`submit_task.model_id` 只覆盖主模型。选择规则见[智能体管理](agents.md)。
+主模型与视觉模型在智能体管理中配置，调用方不能选择模型；`list_models` 和 `list_tasks` 不再提供。查询、取消与文件访问使用提交返回的本次 `task_id`，仍限定当前 Agent 和调用方归属。固定的 `agent_id` 标记服务归属，不能代替执行 ID。
+
+`list_file(task_id)` 仅列出 `workspace`、`attachments`、`generate` 三个顶层目录；指定其中的文件夹 `file_id` 为 `directory_id` 时，只展开该文件夹的直接子项，不递归展开。序号按任务持久保存，不因排序或新增文件重新分配；不同任务的序号不可混用。`download_file` 返回的 URL 含完整用户部署前缀和 `/agent/{slug}`；需要凭据模式下，下载 GET 携带服务凭据。文件夹 ZIP 保留内部层次与空目录，临时归档在响应完成后清理。会话私有配置、链接和外部路径不提供下载，节点过期后文件访问返回不存在。
+
+## 使用契约提示词
+
+`prompts/list` 披露 `task_lifecycle`，无参数；首次接入可用 `prompts/get` 读取。它说明提交和状态的区别、保存本次 `task_id`、避免重复提交、逐层列文件和下载、取消、缺资料时交付真实工作台链接，以及节点过期后的处理。
+
+```python
+guide = await client.get_prompt("task_lifecycle")
+```
 
 资源模板：`umeko://tasks/{task_id}/artifacts/{artifact_id}`。模板读取返回二进制资源（blob）；需要文本内容可直接使用 `read_artifact`。
 

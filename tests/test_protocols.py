@@ -77,14 +77,8 @@ def test_a2a_official_client(machine_server, streaming):
             assert len(app.state.task_service.list({**app.state.identity_store.authenticate(a["token"]), "agent_id": app.state.fixture_agent["id"]})["tasks"]) == 1
             assert task.artifacts[1].parts[0].url.startswith(base + "/v1/tasks/")
             assert (await http.get(task.artifacts[1].parts[0].url)).status_code == 200
-            listing = await client.list_tasks(a2a.ListTasksRequest(status=a2a.TaskState.TASK_STATE_COMPLETED, history_length=0))
-            assert listing.total_size == 1 and not listing.tasks[0].history
-            empty = await client.list_tasks(a2a.ListTasksRequest(status=a2a.TaskState.TASK_STATE_INPUT_REQUIRED))
-            assert empty.total_size == 0
-            future_request = a2a.ListTasksRequest()
-            future_request.status_timestamp_after.FromJsonString("2099-01-01T00:00:00Z")
-            future = await client.list_tasks(future_request)
-            assert future.total_size == 0
+            with pytest.raises(Exception, match="任务列表"):
+                await client.list_tasks(a2a.ListTasksRequest())
         async with httpx.AsyncClient(headers={"Authorization":"Bearer "+b["token"], "A2A-Version":"1.0"},trust_env=False) as http:
             client = await ClientFactory(ClientConfig(httpx_client=http,streaming=False)).create_from_url(base)
             with pytest.raises(Exception):

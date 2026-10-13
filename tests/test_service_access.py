@@ -138,19 +138,19 @@ def test_access_mode_admin_controls_shared_identity_and_ip_log(machine_client):
         assert second_ip.get(artifact["download_url"]).status_code == 200
         entry = next(t for t in admin.get("/admin/v1/tasks").json() if t["id"] == task_id)
         assert entry["caller"] == "免鉴权调用" and entry["caller_ip"] == "192.0.2.7"
-        assert len(second_ip.get("/agent/fixture/v1/tasks").json()["tasks"]) == 1
+        assert second_ip.get("/agent/fixture/v1/tasks").status_code == 404
         assert identities.anonymous_principal()["user_id"] == IdentityStore(store).anonymous_principal()["user_id"]
         with store.connect() as db:
             assert db.execute("SELECT COUNT(*) FROM users WHERE kind='anonymous'").fetchone()[0] == 1
         assert client.get("/agent/fixture/v1/tasks", headers={"Authorization": "Bearer invalid"}).status_code == 401
         headers = {"Authorization": "Bearer " + account["token"]}
-        assert client.get("/agent/fixture/v1/tasks", headers=headers).json()["tasks"] == []
+        assert client.get("/agent/fixture/v1/tasks", headers=headers).status_code == 404
         assert client.get("/agent/fixture/v1/tasks/" + task_id, headers=headers).status_code == 404
         assert client.get("/v1/sessions").status_code == 401
         assert client.put("/admin/v1/service-access", json={"auth_mode": "required"}).status_code == 404
         assert admin.put("/admin/v1/service-access", json={"auth_mode": "required"}).status_code == 200
         assert client.get("/agent/fixture/v1/tasks/" + task_id).status_code == 401
-        assert client.get("/agent/fixture/v1/tasks", headers=headers).status_code == 200
+        assert client.get("/agent/fixture/v1/tasks/missing", headers=headers).status_code == 404
         assert client.get("/agent/fixture/.well-known/agent-card.json").json()["securityRequirements"]
         first_ip.close()
         second_ip.close()

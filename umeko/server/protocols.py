@@ -4,7 +4,6 @@ from __future__ import annotations
 import asyncio
 import base64
 import json
-from datetime import timezone
 from urllib.parse import urlsplit
 from typing import Any
 from fastapi import Request
@@ -26,7 +25,6 @@ from mcp.server.transport_security import TransportSecuritySettings
 from mcp.types import ToolAnnotations
 
 from .. import __version__
-from ..host.identities import require_scope
 from ..host.tasks import TERMINAL
 from .task_api import caller_ip, public_base, task_view
 
@@ -43,13 +41,31 @@ def _mcp_call(fn, *args, **kwargs):
 def _mcp_server(settings, tasks):
     server = MCPServer("UMEKO", version=__version__, instructions=(
         "先 get_agent_info 了解当前智能体，再 submit_task 提交任务，使用 get_task 查询状态。"
-        "完成后使用 read_artifact 读取产物；取消用 cancel_task。"
+        "用 submit_task 返回的 task_id 查询本次执行；list_file 按序号逐层列文件，download_file 返回下载链接，文件夹下载为 ZIP。"
+        "取消用 cancel_task。主模型和视觉模型由管理员配置，调用方不能选择。"
         "任务返回 workspace_url，可交给用户打开临时工作台查看文件与继续同一会话。"
         "若回复说明缺少必要图片、文档或需要人工处理，立即提供真实 workspace_url 和待补事项，邀请用户进入工作台处理；"
         "不要一直 get_task 等待补传文件，后续通过工作台或其会话 REST 接口继续。"
         "链接等同本会话访问凭据，请仅交给预期使用者。"))
     def principal(ctx):
         return ctx.request_context.request.state.principal
+
+    @server.prompt(name="task_lifecycle", title="任务提交、查询与文件下载契约")
+    def task_lifecycle() -> str:
+        """首次接入时读取：用最少步骤完成本 MCP 的任务提交、状态查询、文件下载和人工接续。"""
+        return """按以下契约使用当前 Agent 的 MCP：
+1. 可先 get_agent_info 了解能力。submit_task(prompt=用户需求, files=可选附件) 提交一次，保存返回的 task_id 和 workspace_url。
+   files 使用 name/content_base64，不传服务器路径；模型由管理员配置，不传 model_id。本服务不提供模型列表或任务列表。
+2. 提交成功不等于执行完成。只用这次返回的 task_id 调用 get_task；不能用固定 agent_id 替代。
+   queued/running/cancelling 时隔几秒查询，避免密集轮询和重复提交；重试同一次提交时复用 idempotency_key。
+3. completed 时交付 reply。list_file(task_id) 返回当前任务的顶层目录及 file_id；
+   用 list_file(task_id, directory_id=文件夹的file_id) 查看它的直接子项，再用 download_file(task_id, file_id) 获取下载链接。
+   文件下载保持原内容，文件夹自动打包 ZIP。需要凭据模式下，GET 下载链接携带相同服务凭据；不要把 file_id 当作 task_id。
+4. failed/cancelled 时说明 error 或停止状态；停止正在执行的任务用 cancel_task(task_id)，不要把失败当作成功。
+5. 回复说缺少必要资料或需要人工处理时，把真实 workspace_url 和待补事项交给用户，请其在临时工作台继续同一会话；不要空等补传或自动重提。
+6. 只访问当前 Agent、当前调用方、本次 task_id 的信息。下载序号在该任务内有效；不存在或类型变化时重新 list_file，不猜路径或序号。
+7. 节点有生命周期：workspace_state=expired 或下载返回过期时，原回复可能仍能查询，文件和工作台已不可访问。
+   说明过期情况；用户要求重做时才重新提交。workspace_url 是会话访问凭据，只交给预期使用者。"""
 
     @server.tool(structured_output=True, annotations=ToolAnnotations(readOnlyHint=True, openWorldHint=False))
     def get_agent_info(ctx: Context) -> dict[str, Any]:
@@ -58,37 +74,41 @@ def _mcp_server(settings, tasks):
         return tasks.service.agent_card.render(public_base(settings, request), tasks.service.identity_store.auth_mode(),
                                                request.state.agent_definition)
 
-    @server.tool(structured_output=True, annotations=ToolAnnotations(readOnlyHint=True, openWorldHint=False))
-    def list_models(ctx: Context) -> dict[str, Any]:
-        """列出当前智能体允许披露和选择的主模型 ID 与名称，包含默认主模型；不包含模型地址或密钥。
-        默认视觉模型 ID 仅在该模型也已披露时返回。submit_task.model_id 必须从此列表选择。"""
-        _mcp_call(require_scope, principal(ctx), "tasks:create")
-        definition = principal(ctx).get("agent_definition")
-        return tasks.service.agent_registry.disclosed_models(definition)
-
     @server.tool(structured_output=True, annotations=ToolAnnotations(readOnlyHint=False, destructiveHint=False, openWorldHint=True))
     async def submit_task(prompt: str, ctx: Context, files: list[dict[str, str]] | None = None,
-                          model_id: str | None = None, idempotency_key: str | None = None) -> dict[str, Any]:
-        """提交 Agent 任务并立即返回任务 ID。files 为 name/content_base64 列表，最多 10 个、合计 20 MiB；
+                          idempotency_key: str | None = None) -> dict[str, Any]:
+        """提交 Agent 任务并立即返回本次执行的 id/task_id 和当前服务的 agent_id。files 为 name/content_base64 列表，最多 10 个、合计 20 MiB；
         不接受服务器路径。任务独立执行，默认保留 24 小时；幂等键防止重复提交。
-        model_id 仅允许当前智能体 list_models 返回的主模型，省略时使用默认主模型。
+        使用管理员配置的默认模型，不接受调用方选择模型。
         返回 workspace_url，可在浏览器继续此会话。"""
+        # The SDK may ignore undeclared arguments; reject this removed option explicitly.
+        if "model_id" in ((ctx.request_context.params or {}).get("arguments") or {}):
+            raise ToolError("对外任务不支持选择 model_id，请使用管理员配置的默认模型")
         task = await asyncio.to_thread(_mcp_call, tasks.submit, principal(ctx),
-                                      {"prompt": prompt, "files": files or [], "model_id": model_id},
+                                      {"prompt": prompt, "files": files or []},
                                       source="mcp", idempotency_key=idempotency_key,
                                       caller_ip=caller_ip(ctx.request_context.request))
         return task_view(task, public_base(settings, ctx.request_context.request))
 
     @server.tool(structured_output=True, annotations=ToolAnnotations(readOnlyHint=True, openWorldHint=False))
     def get_task(task_id: str, ctx: Context) -> dict[str, Any]:
-        """查询自己的任务进度、结果、到期时间及产物。只读取持久化状态，不重复调用模型。"""
+        """用 submit_task 返回的 task_id 查询该次执行。只允许当前 Agent 与调用方所属任务，不列出其他任务或重复调用模型。"""
         return task_view(_mcp_call(tasks.get, principal(ctx), task_id), public_base(settings, ctx.request_context.request))
 
     @server.tool(structured_output=True, annotations=ToolAnnotations(readOnlyHint=True, openWorldHint=False))
-    def list_tasks(ctx: Context, limit: int = 50, offset: int = 0) -> dict[str, Any]:
-        """列出当前凭据所属账号的任务。最多返回 100 条，可用 offset 翻页。"""
-        result = _mcp_call(tasks.list, principal(ctx), limit=limit, offset=offset)
-        return {**result, "tasks": [task_view(t, public_base(settings, ctx.request_context.request)) for t in result["tasks"]]}
+    def list_file(task_id: str, ctx: Context, directory_id: int | None = None) -> dict[str, Any]:
+        """列出本次任务目录的直接子项，每个文件或文件夹返回稳定的 file_id 序号，不递归展开。
+        省略 directory_id 时列出 workspace、attachments、generate；传入已列出的文件夹序号可展开它的第一级。
+        仅可读取当前 Agent 与调用方的本次任务，需要 artifacts:read 权限。"""
+        return _mcp_call(tasks.list_file, principal(ctx), task_id, directory_id)
+
+    @server.tool(structured_output=True, annotations=ToolAnnotations(readOnlyHint=True, openWorldHint=False))
+    def download_file(task_id: str, file_id: int, ctx: Context) -> dict[str, Any]:
+        """用 list_file 返回的 file_id 下载本次任务的文件或文件夹。返回可直接 GET 的受保护下载链接；
+        文件夹自动打包 ZIP，文件保持原始内容。需要凭据模式下，下载请求携带服务凭据。"""
+        result = _mcp_call(tasks.file_info, principal(ctx), task_id, file_id)
+        return {**result, "download_url": public_base(settings, ctx.request_context.request)
+                + f"/v1/tasks/{task_id}/files/{file_id}/content"}
 
     @server.tool(structured_output=True, annotations=ToolAnnotations(readOnlyHint=False, destructiveHint=True, openWorldHint=False))
     def cancel_task(task_id: str, ctx: Context) -> dict[str, Any]:
@@ -254,9 +274,11 @@ class A2AHandler(RequestHandler):
         options = MessageToDict(params.metadata).get("umeko", {})
         if not isinstance(options, dict):
             raise InvalidParamsError("metadata.umeko 须为对象")
+        if "model_id" in options:
+            raise InvalidParamsError("对外任务不支持选择 model_id，请使用管理员配置的默认模型")
         try:
             record = await asyncio.to_thread(self.tasks.submit, context.state["principal"],
-                {"prompt": "\n".join(prompt), "files": files, "model_id": options.get("model_id")}, source="a2a",
+                {"prompt": "\n".join(prompt), "files": files}, source="a2a",
                 context_id=message.context_id or None, idempotency_key=options.get("idempotency_key") or "a2a:" + message.message_id,
                 message_id=message.message_id, caller_ip=context.state.get("caller_ip"))
             return record
@@ -289,26 +311,7 @@ class A2AHandler(RequestHandler):
         return self._task(record, context.state["base"])
 
     async def on_list_tasks(self, params, context):
-        try:
-            offset = int(params.page_token or "0")
-            if offset < 0:
-                raise ValueError()
-            if params.page_size < 0 or params.page_size > 100:
-                raise ValueError()
-            states = None if params.status == a2a.TaskState.TASK_STATE_UNSPECIFIED else [k for k, v in STATES.items() if v == params.status]
-            updated_after = None
-            if params.HasField("status_timestamp_after"):
-                updated_after = params.status_timestamp_after.ToDatetime(tzinfo=timezone.utc).isoformat()
-            result = self.tasks.list(context.state["principal"], limit=params.page_size or 50, offset=offset,
-                                     context_id=params.context_id or None, status=states, updated_after=updated_after)
-        except (ValueError, PermissionError) as exc:
-            raise InvalidParamsError("分页或权限无效") from exc
-        length = params.history_length if params.HasField("history_length") else None
-        include = params.include_artifacts if params.HasField("include_artifacts") else True
-        next_offset = offset + len(result["tasks"])
-        return a2a.ListTasksResponse(tasks=[self._task(r, context.state["base"], length, include) for r in result["tasks"]],
-             total_size=result["total"], page_size=len(result["tasks"]),
-             next_page_token=str(next_offset) if next_offset < result["total"] else "")
+        raise UnsupportedOperationError("不提供任务列表，请使用提交时返回的任务 ID 调用 GetTask")
 
     async def _stream(self, record, context):
         yield self._task(record, context.state["base"])

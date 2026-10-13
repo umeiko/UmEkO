@@ -10,7 +10,7 @@ Agent Card：`BASE_URL/.well-known/agent-card.json`；协议入口：`BASE_URL/a
 
 协议接口、输入输出能力和鉴权声明由实际服务配置生成；无法通过提交 Card 修改这些字段。公开 Card 使用 `Cache-Control: no-cache`。Task 的 `metadata.agentId` 标记归属，幂等键与 Context 限定在同一 Agent、同一调用者范围内。
 
-采用 A2A 1.0 JSON-RPC，方法名为 `SendMessage`、`SendStreamingMessage`、`GetTask`、`ListTasks`、`CancelTask`、`SubscribeToTask`。不是旧版 0.3 的 `message/send` 等方法名。
+采用 A2A 1.0 JSON-RPC，支持 `SendMessage`、`SendStreamingMessage`、`GetTask`、`CancelTask`、`SubscribeToTask`；`ListTasks` 返回不支持操作。使用提交响应的本次 Task `id` 查询，不能用固定 `metadata.agentId` 代替。不是旧版 0.3 的 `message/send` 等方法名。
 
 ```json
 {
@@ -32,9 +32,9 @@ Agent Card：`BASE_URL/.well-known/agent-card.json`；协议入口：`BASE_URL/a
 }
 ```
 
-`raw` 在 JSON 中为 base64，SDK 对象中为 bytes。也可发送 `data` 对象。URL 文件仅接受本服务、同一账号有权读取的任务产物；其他文件用 raw 上传。支持 `metadata.umeko.model_id` 选择模型，未设置时使用默认模型。
+`raw` 在 JSON 中为 base64，SDK 对象中为 bytes。也可发送 `data` 对象。URL 文件仅接受本服务、同一账号有权读取的任务产物；其他文件用 raw 上传。模型由管理员配置，`metadata.umeko.model_id` 不再接受。
 
-显式模型 ID 必须属于该 Agent 的“主模型披露”范围，规则与 MCP `list_models` 和 REST 一致；不可直接传入未披露的模型 ID。默认主模型始终可用，配置方法见[智能体管理](agents.md)。
+主模型和默认视觉模型的配置方法见[智能体管理](agents.md)。文件序号列表和文件/文件夹下载可通过同一 Agent 的 [REST 接口](machine-tasks.md) 或 [MCP 工具](mcp.md) 完成，仍使用该 Task 的 `id`。
 
 `messageId` 必须非空且不超过 150 字符，默认用于幂等。自定义幂等键使用 `metadata.umeko.idempotency_key`。已有任务暂不接受补充输入；`contextId` 只分组自己已有的任务，不继承模型记忆。
 
@@ -82,7 +82,7 @@ SDK `streaming=False` 使用非流式发送。任务很长时可用 `return_imme
 ## 查询、列表、取消与流式
 
 - `GetTask`：`id` 与可选 `historyLength`，0 不返回历史，负数无效。
-- `ListTasks`：`pageSize` 最多 100、`pageToken`、`contextId`、`status`、`statusTimestampAfter`、`historyLength`、`includeArtifacts`。返回任务、总数及下一页 token。
+- `ListTasks`：不提供任务列表，返回不支持操作；保存提交返回的 Task `id` 后使用 `GetTask`。
 - `CancelTask`：`id`，仅活跃任务可取消；已结束返回 TaskNotCancelable。取消请求后通过查询判断最终状态。
 - `SubscribeToTask`：`id`，订阅活跃任务；已结束任务用 GetTask 读取结果。
 
