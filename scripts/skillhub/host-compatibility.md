@@ -48,6 +48,11 @@ draw.io 技能的完整原始默认样式在 `drawio-flowchart/style.md`，默�
 缺少桌面程序仍可生成可编辑 `.drawio`；PNG/SVG/PDF 必须以实际导出结果为准。
 只生成 `.drawio` 可在生成参数中设置 `"formats": []`。
 
+Linux 部署与配置填写见绘图包的 `drawio-flowchart/linux-deployment.md`。
+`config.json` 的 `_help` 是说明字段，不参与布局；无桌面服务器的 `drawio_path`
+填写已安装的 `drawio_headless.sh` 包装入口的绝对路径，不能填整条命令。
+绘图包附带 `Dockerfile.linux.txt` 和 `linux_smoke.py`，可直接构建并验收两类图和三种导出。
+
 图像复检沿用正文约定：用户要求时最多一到两轮，默认不调用视觉工具。
 图像推理技能本身没有脚本或 Python 依赖，只需宿主具备视觉输入能力。
 

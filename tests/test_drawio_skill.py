@@ -398,7 +398,7 @@ def test_export_returns_fresh_files_and_drops_failed_stale_preview(tmp_path, mon
         assert ET.parse(command[-1]).getroot().tag == "mxfile"
         assert kwargs["timeout"] <= 45
         if fmt == "svg":
-            return SimpleNamespace(returncode=1)
+            return SimpleNamespace(returncode=1, stdout="", stderr=f"libasound.so.2 missing: fixture-drawio {command[-1]}")
         output.write_bytes(b"fixture rendered image")
         return SimpleNamespace(returncode=0)
 
@@ -407,6 +407,8 @@ def test_export_returns_fresh_files_and_drops_failed_stale_preview(tmp_path, mon
     result = module.generate({"args": {"xml": FLOW}, "workdir": str(workdir), "session_root": str(root)})
     assert result["files"] == ["generate/flowchart.drawio", "generate/flowchart.png"]
     assert "svg 导出失败" in result["result"] and not (workdir / "flowchart.svg").exists()
+    assert "libasound.so.2 missing" in result["result"]
+    assert str(root) not in result["result"] and "fixture-drawio" not in result["result"]
     assert not list(workdir.glob("*.export.*"))
 
 
@@ -417,8 +419,11 @@ def test_packaged_skill_is_self_contained(tmp_path):
     with zipfile.ZipFile(first) as archive:
         assert archive.testzip() is None
         assert FLOWCHART_SKILL in archive.namelist()
+        assert {"drawio-flowchart/linux-deployment.md", "drawio-flowchart/drawio_headless.sh",
+                "drawio-flowchart/Dockerfile.linux.txt", "drawio-flowchart/linux_smoke.py"} <= set(archive.namelist())
         assert not any("mermaid" in name.lower() or "__pycache__" in name for name in archive.namelist())
-        forbidden = ("mermaid", "mmdc", "```mmd", "%%{init", "init:")
+        # Docker Compose legitimately uses `init: true`; prohibit diagram directives.
+        forbidden = ("mermaid", "mmdc", "```mmd", "%%{init")
         assert not any(word in archive.read(name).decode("utf-8").lower() for name in archive.namelist() for word in forbidden)
         # All input is our own package, not an untrusted user upload.
         for name in archive.namelist():

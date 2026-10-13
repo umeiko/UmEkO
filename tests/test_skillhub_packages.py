@@ -67,6 +67,8 @@ def test_complete_portable_reproducible_packages(packages, tmp_path):
                 else:
                     assert archive.read(f"{archive_path.stem}/{relative}") == data
             if archive_path.stem == "drawio-flowchart":
+                assert {"drawio-flowchart/linux-deployment.md", "drawio-flowchart/Dockerfile.linux.txt",
+                        "drawio-flowchart/drawio_headless.sh", "drawio-flowchart/linux_smoke.py"} <= set(archive.namelist())
                 assert not any(b"mermaid" in archive.read(member).lower() for member in archive.namelist())
     assert json.loads((source / "drawio-flowchart/config.json").read_text(encoding="utf-8"))["drawio_path"]
     second = packager.package_skills(snapshot, tmp_path / "repeat")

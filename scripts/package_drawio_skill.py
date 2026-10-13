@@ -12,7 +12,7 @@ def package_skill(output: Path) -> Path:
     output.parent.mkdir(parents=True, exist_ok=True)
     with zipfile.ZipFile(output, "w", compression=zipfile.ZIP_DEFLATED) as archive:
         for source in sources:
-            if source.is_file() and source.suffix in {".md", ".py", ".json"}:
+            if source.is_file() and source.suffix in {".md", ".py", ".json", ".sh", ".txt"}:
                 info = zipfile.ZipInfo(source.relative_to(assets).as_posix(), date_time=(2026, 10, 12, 0, 0, 0))
                 info.compress_type = zipfile.ZIP_DEFLATED
                 archive.writestr(info, source.read_bytes())

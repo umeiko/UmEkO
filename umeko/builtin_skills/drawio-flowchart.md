@@ -41,6 +41,15 @@ description: 先提炼需求再生成、修改简明可编辑的 draw.io 流程�
 
 没有桌面版或导出失败时仍交付有效的 `.drawio`，明确说明未导出图片，不声称已经验证图像质量。字体须在服务环境中已安装；包内不分发字体文件。准备与生成脚本不调用模型或读取需求全文，不执行自动图像复检。部署配置见包内 `config.json`，详细规则是 `flowchart.md/architecture.md/delegation.md`；普通生成无需主 Agent 加载它们的全文。
 
+## Linux 与配置填写
+
+管理员配置或排查导出环境时，读取包内 `linux-deployment.md`；普通绘图无需加载整份部署说明。
+`config.json` 的 `_help` 提供字段填写说明，是合法 JSON 的说明项，不参与布局；不要添加 `//` 注释。
+无桌面的 Linux 需要 Linux 版 draw.io、Xvfb/xauth 和已安装字体；将包内 `drawio_headless.sh`
+安装为可执行脚本后，`drawio_path` 填它的绝对路径（如 `/usr/local/bin/drawio-headless`），不能填整条命令。
+包内另提供可随 SkillHub 上传的纯文本 `Dockerfile.linux.txt` 与无模型 `linux_smoke.py`，
+Docker 的完整命令和目录权限见部署说明。保留原字体需安装方正兰亭黑简体；选择替代字体时应说明外观变化。
+
 ## 用户要求时复检
 
 默认生成完成即交付，不调用 `image_reasoning`，不主动启动视觉修订循环。

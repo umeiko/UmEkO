@@ -231,7 +231,12 @@ def generate(payload):
                                              errors="replace", timeout=45 / len(formats),
                                              creationflags=getattr(subprocess, "CREATE_NO_WINDOW", 0))
                     if process.returncode != 0 or not temporary.is_file() or temporary.stat().st_size == 0:
-                        raise ValueError(f"退出码 {process.returncode} 或没有有效文件")
+                        detail = " ".join((process.stdout[-400:] + " " + process.stderr[-400:]).strip().splitlines())
+                        for absolute, label in ((str(source), "<图文件>"), (str(workdir), "<产物目录>"),
+                                                (renderer, "<draw.io>")):
+                            detail = detail.replace(absolute, label)
+                        raise ValueError(f"退出码 {process.returncode} 或没有有效文件"
+                                         + (f"：{detail[:800]}" if detail else ""))
                     temporary.replace(output)
                     files.append(output.relative_to(session_root).as_posix())
                 except (OSError, ValueError, subprocess.TimeoutExpired) as exc:

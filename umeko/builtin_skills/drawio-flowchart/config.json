@@ -3,6 +3,14 @@
   "scale": 2,
   "font_family": "方正兰亭黑简体",
   "font_size": "10.5",
+  "_help": {
+    "drawio_path": "单个可执行文件的绝对路径。Windows 填 draw.io.exe；有桌面的 Linux 可填 /usr/bin/drawio；无桌面 Linux 填安装后的 /usr/local/bin/drawio-headless。不能填 xvfb-run -a drawio 整条命令。留空时按 UMEKO_DRAWIO_PATH、DRAWIO_PATH、PATH 查找。",
+    "font_family": "必须是服务环境已安装字体的 family。保持原风格需安装方正兰亭黑简体；Linux 可显式改为 Noto Sans CJK SC，但字体外观会变化。",
+    "font_size": "原风格为字符串 10.5；style.md 的明确字体字段优先于此配置。",
+    "scale": "PNG 缩放倍率，默认 2；范围大于 0 且不超过 8。",
+    "layout": "仅流程图网格：172×最小高28，gap_x=60，gap_y=28。架构图仍用组件180×60内核网格。",
+    "linux": "先阅读 linux-deployment.md。无桌面导出需要 draw.io Linux程序、Xvfb、xauth、ALSA库和字体；包装脚本需有执行权限。Docker 运行需 --init --shm-size=512m，避免连续 PNG/PDF 导出崩溃。"
+  },
   "layout": {
     "node_width": 172,
     "node_height": 28,
