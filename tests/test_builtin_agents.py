@@ -81,8 +81,8 @@ def test_restart_preserves_edits_and_does_not_restore_deleted_defaults(tmp_path)
     restarted.store.delete_default_skill("doc-image-qc.md")
     checks.unlink()
     final = app_for(tmp_path).state.agent_service
-    assert final.agent_registry.list() == []
-    assert final.store.default_skills() == []
+    assert "image-qc" not in {item["slug"] for item in final.agent_registry.list()}
+    assert final.store.default_skill("doc-image-qc.md") is None
     assert not checks.exists()
 
 
@@ -102,7 +102,7 @@ def test_upgrade_reuses_custom_skill_and_preserves_existing_agent(tmp_path, exis
     if existing_agent:
         before = registry.save({"slug": "image-qc", "name": "Custom Agent", "description": "Custom service", "skill_names": []})
     assert install_builtin_agents(registry, library)
-    definition = registry.list()[0]
+    definition = next(item for item in registry.list() if item["slug"] == "image-qc")
     if existing_agent:
         assert definition == before
     else:

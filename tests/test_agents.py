@@ -60,7 +60,8 @@ def test_agent_routes_cards_and_task_ownership(machine_client):
         assert "PRIVATE" not in response.text
         assert client.get(base + "/").json()["mcp"] == "http://127.0.0.1" + base + "/mcp"
         assert client.get(base + "/v1/sessions").status_code == 404
-    assert {agent["slug"] for agent in client.get(prefix + "/agent").json()["agents"]} == {"image-qc", "fixture", "alpha", "beta"}
+    assert {agent["slug"] for agent in client.get(prefix + "/agent").json()["agents"]} == {
+        "image-qc", "flow-chart-agent", "image-resioning-agent", "fixture", "alpha", "beta"}
     assert client.get(prefix + "/.well-known/agent-card.json").status_code == 404
     tasks = []
     for base in bases:
@@ -87,7 +88,8 @@ def test_agent_routes_cards_and_task_ownership(machine_client):
     app.state.agent_service.agent_registry.save({**a, "enabled": False}, a["id"])
     assert client.get(bases[0] + "/.well-known/agent-card.json").status_code == 404
     assert client.post(bases[0] + "/v1/tasks", json={"prompt": "hi"}).status_code == 404
-    assert {agent["slug"] for agent in client.get(prefix + "/agent").json()["agents"]} == {"image-qc", "fixture", "beta"}
+    assert {agent["slug"] for agent in client.get(prefix + "/agent").json()["agents"]} == {
+        "image-qc", "flow-chart-agent", "image-resioning-agent", "fixture", "beta"}
 
 
 @pytest.mark.parametrize("prefix", ["", "/doc-master/consistency/image-text"])
@@ -120,8 +122,10 @@ def test_admin_definitions_and_public_base_url(machine_app, tmp_path):
         admin.cookies.set("umeko_admin", store.issue_token(user["id"]))
         listed = admin.get("/admin/v1/agents").json()
         assert listed["public_url_configured"] is True
-        assert {agent["slug"] for agent in listed["agents"]} == {"image-qc", "alpha", "beta"}
-        assert {s["filename"] for s in listed["skills"]} == {"doc-image-qc.md", "alpha.md", "beta.md"}
+        assert {agent["slug"] for agent in listed["agents"]} == {
+            "image-qc", "flow-chart-agent", "image-resioning-agent", "alpha", "beta"}
+        assert {s["filename"] for s in listed["skills"]} == {
+            "doc-image-qc.md", "drawio-flowchart.md", "image-reasoning.md", "alpha.md", "beta.md"}
         value = {"slug": "new-agent", "name": "New", "description": "New delivery", "skill_names": ["alpha.md"]}
         created = admin.post("/admin/v1/agents", json=value)
         assert created.status_code == 201, created.text

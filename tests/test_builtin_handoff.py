@@ -41,4 +41,4 @@ def test_prompt_upgrade_preserves_admin_choices_and_deleted_skill(tmp_path, cust
     assert not install_builtin_agents(registry, library)
     registry.delete(original["id"])
     assert not install_builtin_agents(registry, library)
-    assert registry.list() == []
+    assert "image-qc" not in {item["slug"] for item in registry.list()}

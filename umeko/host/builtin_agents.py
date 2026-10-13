@@ -1,4 +1,4 @@
-"""Install and upgrade recognized image QC defaults, preserving administrator edits."""
+"""Install default agents and recognized stock upgrades, preserving admin choices."""
 from __future__ import annotations
 
 import hashlib
@@ -41,6 +41,37 @@ IMAGE_QC_PROMPT = """你是图像质检智能体，帮助用户检查图片质�
 仅缺可选正文或产品参照时，仍完成可执行的图片检查，将无法核对的项目记 NA，不能要求所有纯图片任务补文档。
 检查结论记录证据、问题位置及修改建议，报告写入 generate/，不改动输入文件。
 问候和能力咨询直接简洁回答；不相关的请求不加载质检正文、不反复提醒用户挂载技能。"""
+
+FLOW_CHART_SLUG = "flow-chart-agent"
+IMAGE_REASONING_SLUG = "image-resioning-agent"
+
+BUILTIN_SERVICE_AGENTS = (
+    {
+        "slug": FLOW_CHART_SLUG,
+        "name": "流程图生成Agent",
+        "description": "根据需求文档或文字生成、修改简明可编辑的流程图和架构图，支持用户指定风格与图片导出，按需复检。",
+        "skill_names": ["drawio-flowchart.md"],
+        "system_prompt": """你是流程图生成智能体，帮助用户把需求转成简明、清晰、可编辑的流程图或架构图。
+收到绘图或修改图表的任务时，先用 use_skill(name="drawio-flowchart") 读取工作指引，再按该 Skill 执行。
+绘图规则、风格、委派、布局、导出和可选复检由 Skill 决定。
+若所需 Skill 未下发，说明请管理员启用对应默认 Skill，不声称已经完成绘图。
+交付实际生成的文件及其可下载链接。问候和能力咨询直接简洁回答。""",
+    },
+    {
+        "slug": IMAGE_REASONING_SLUG,
+        "name": "图像推理Agent",
+        "description": "接受单图或最多 5 张图片及开放式提示词，进行图文问答、几何解题、因果推理与场景线索分析。",
+        "skill_names": ["image-reasoning.md"],
+        "system_prompt": """你是图像推理智能体，帮助用户结合图片与文字解答开放性问题。
+收到图文分析或解题任务时，先用 use_skill(name="image-reasoning") 读取工作指引，再按该 Skill 执行。
+每次任务支持 1 至 5 张图片，允许用户自由描述问题；沿用当前任务或会话中明确指向的图片进行追问。
+若所需 Skill 未下发，说明请管理员启用对应默认 Skill。问候和能力咨询直接简洁回答。""",
+    },
+)
+
+
+def agent_installation_key(slug: str) -> str:
+    return "BUILTIN_AGENT_INSTALLED_" + slug
 
 
 def _upgrade_stock_file(library_dir: Path, relative: Path, digests: set[str]) -> bool:
@@ -106,14 +137,15 @@ def _upgrade_stock_prompt(registry) -> bool:
         return bool(changed)
 
 
-def install_builtin_agents(registry, library_dir: Path) -> bool:
+def _install_image_qc_agent(registry, library_dir: Path) -> bool:
     store = registry.store
     if store.config().get(INSTALL_KEY) == "1":
         assets_updated = _upgrade_builtin_assets(store, library_dir)
         prompt_updated = _upgrade_stock_prompt(registry)
         return assets_updated or prompt_updated
     # Materialize editable library sources. An existing source or script wins.
-    for source in sorted(ASSETS.rglob("*")):
+    sources = [ASSETS / IMAGE_QC_SKILL, *sorted((ASSETS / Path(IMAGE_QC_SKILL).stem).rglob("*"))]
+    for source in sources:
         if not source.is_file() or "__pycache__" in source.parts:
             continue
         target = library_dir / source.relative_to(ASSETS)
@@ -143,3 +175,31 @@ def install_builtin_agents(registry, library_dir: Path) -> bool:
     _upgrade_stock_prompt(registry)
     store.set_config({INSTALL_KEY: "1"})
     return True
+
+
+def install_builtin_agents(registry, library_dir: Path) -> bool:
+    # Import locally: the generic skill installer shares the QC asset constants.
+    from .builtin_skills import install_builtin_skills
+
+    store = registry.store
+    existing_skills = {item["name"] for item in store.default_skills()}
+    changed = _install_image_qc_agent(registry, library_dir)
+    changed = install_builtin_skills(store, library_dir) or changed
+    for definition in BUILTIN_SERVICE_AGENTS:
+        key = agent_installation_key(definition["slug"])
+        if store.config().get(key) == "1":
+            continue
+        if not any(item["slug"] == definition["slug"] for item in registry.list()):
+            skills = {item["name"]: item for item in store.default_skills()}
+            if all(name in skills for name in definition["skill_names"]):
+                # Enable only newly installed dependencies. Existing admin toggles win.
+                for name in definition["skill_names"]:
+                    if name not in existing_skills:
+                        store.set_default_skill_enabled(name, True)
+                        skills[name]["enabled"] = True
+                registry.save({**definition, "disclosed_model_ids": [],
+                               "enabled": all(skills[name]["enabled"] for name in definition["skill_names"])})
+        # Keep subsequent edits, disabling and deletion, including removed dependencies.
+        store.set_config({key: "1"})
+        changed = True
+    return changed
