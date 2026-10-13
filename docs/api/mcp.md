@@ -14,9 +14,21 @@
 | `list_file` | `task_id`，可选 `directory_id` | 当前目录的直接子项，包含文件名、类型、大小和稳定序号 `file_id` |
 | `download_file` | `task_id`、`file_id` | 受保护的 HTTP 下载链接；文件夹自动打包 ZIP |
 | `cancel_task` | `task_id` | 请求取消后的 Task |
-| `read_artifact` | `task_id`、`artifact_id` | `name/media_type` 和 UTF-8 `text` 或二进制 `content_base64` |
+| `read_results` | `task_id` | `ready`、自然语言 `text`、最终文件 `files`、结果更新时间及执行/节点状态 |
 
-`files` 为 `[{"name":"input.txt","content_base64":"..."}]`，不接受服务器路径。输入限制、权限与幂等规则见 [机器任务](machine-tasks.md)。`read_artifact` 与资源读取上限均为 256 KiB；大文件使用 GET Task 的 `download_url`，下载仍需授权。
+提交的 `files` 为 `[{"name":"input.txt","content_base64":"..."}]`，不接受服务器路径。输入限制、权限与幂等规则见 [机器任务](machine-tasks.md)。`read_results` 读取持久化的结果 JSON，不再次调用模型、不读取文件字节；文件统一使用 `download_file` 下载。
+
+## 最终结果
+
+机器任务的 Agent 最后输出 `{"text":"自然语言结果", "files":[{"path":"generate/final.drawio", "description":"可编辑图表"}]}`。平台校验 JSON、真实文件和会话边界，登记 Agent 明确选择的文件，并分配稳定的 `file_id`。没有文件时使用空数组；不会扫描目录补齐清单，也不把草稿自动认作最终产物。输出不符合契约或引用不存在的文件时，任务返回失败说明。
+
+`read_results` 返回如下结构，`files[].file_id` 可直接交给 `download_file`，无需先列目录寻找文件：
+
+```json
+{"task_id":"task_...","status":"completed","ready":true,"text":"已完成分析。","files":[{"file_id":1,"name":"final.drawio","path":"generate/final.drawio","type":"file","size":1234,"description":"可编辑图表"}],"updated_at":"...","error":null,"workspace_state":"available"}
+```
+
+结果读取需要 `tasks:read`，实际文件下载仍需要 `artifacts:read`。任务未完成时 `ready=false`；历史任务没有结果 JSON 时会说明缺失，不从旧产物列表推测最终文件。临时工作台续聊后，同一 `task_id` 返回最近一次通过校验的结果，原任务执行回复和状态仍保留。节点过期后可以读取保留的结果文字与文件元数据，下载则返回不存在。
 
 主模型与视觉模型在智能体管理中配置，调用方不能选择模型；`list_models` 和 `list_tasks` 不再提供。查询、取消与文件访问使用提交返回的本次 `task_id`，仍限定当前 Agent 和调用方归属。固定的 `agent_id` 标记服务归属，不能代替执行 ID。
 
@@ -24,13 +36,13 @@
 
 ## 使用契约提示词
 
-`prompts/list` 披露 `task_lifecycle`，无参数；首次接入可用 `prompts/get` 读取。它说明提交和状态的区别、保存本次 `task_id`、避免重复提交、逐层列文件和下载、取消、缺资料时交付真实工作台链接，以及节点过期后的处理。
+`prompts/list` 披露 `task_lifecycle`，无参数；首次接入可用 `prompts/get` 读取。它说明提交和状态的区别、保存本次 `task_id`、完成后用 `read_results` 读取最终清单并按序号下载、避免重复提交、取消、缺资料时交付真实工作台链接，以及节点过期后的处理。
 
 ```python
 guide = await client.get_prompt("task_lifecycle")
 ```
 
-资源模板：`umeko://tasks/{task_id}/artifacts/{artifact_id}`。模板读取返回二进制资源（blob）；需要文本内容可直接使用 `read_artifact`。
+原 `read_artifact` 工具与二进制产物资源模板已移除，MCP 不再内联传输文件内容。
 
 管理端“服务接入 → 智能体管理 → 配置与入口 → MCP 披露”可查看这些接口的实际定义，包括输入、返回 JSON Schema、只读等标注、资源模板和原始 JSON。该视图与对外 MCP 服务复用同一套 SDK 注册，读取定义不产生任务，不要求从管理服务器连回公网，也不需要额外提供调用凭据。管理 API 为 `GET /admin/v1/agents/{agent_id}/mcp`，响应含 `endpoint`、`auth_mode`、`enabled`、`server`、`transport`、`tools`、`resources`、`resourceTemplates`、`prompts`；仅接受管理员 Cookie。
 
@@ -64,7 +76,13 @@ async def main():
                 if result.is_error:
                     raise RuntimeError(str(result.content))
                 task = result.structured_content
-            print(task)
+            result = await client.call_tool("read_results", {"task_id": task["task_id"]})
+            if result.is_error:
+                raise RuntimeError(str(result.content))
+            print(result.structured_content["text"])
+            for file in result.structured_content["files"]:
+                download = await client.call_tool("download_file", {"task_id": task["task_id"], "file_id": file["file_id"]})
+                print(file["name"], download.structured_content["download_url"])
 
 asyncio.run(main())
 ```

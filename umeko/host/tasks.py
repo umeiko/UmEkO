@@ -22,6 +22,7 @@ from pathlib import Path, PurePosixPath
 
 from .identities import SCOPES, now, require_scope
 from .file_manifest import ROOTS, _linked, session_root
+from .results import parse_final_result
 
 TERMINAL = frozenset({"completed", "failed", "cancelled"})
 MAX_FILE_BYTES = 20 * 1024 * 1024
@@ -121,6 +122,8 @@ class TaskService:
                 db.execute("UPDATE service_tasks SET request_key=idempotency_key")
             if "file_manifest_json" not in columns:
                 db.execute("ALTER TABLE service_tasks ADD COLUMN file_manifest_json TEXT")
+            if "result_json" not in columns:
+                db.execute("ALTER TABLE service_tasks ADD COLUMN result_json TEXT")
             if "workspace_token" not in columns:
                 db.execute("ALTER TABLE service_tasks ADD COLUMN workspace_token TEXT")
             for name in ("workspace_expires_at", "workspace_opened_at", "workspace_last_active_at", "workspace_evicted_at"):
@@ -268,6 +271,17 @@ class TaskService:
         with self.store.connect() as db:
             return self._visible(self._view(db, self._owned(db, task_id, owner, principal.get("agent_id", ""))), principal)
 
+    def read_results(self, principal, task_id) -> dict:
+        owner = require_scope(principal, "tasks:read")
+        with self.store.connect() as db:
+            row = self._owned(db, task_id, owner, principal.get("agent_id", ""))
+            result = json.loads(row["result_json"]) if row["result_json"] else None
+            return {"task_id": task_id, "status": row["status"], "ready": result is not None,
+                    "text": result["text"] if result else None, "files": result["files"] if result else [],
+                    "updated_at": result["updated_at"] if result else None,
+                    "error": None if result else row["error"] or ("该历史任务没有结构化结果" if row["status"] == "completed" else None),
+                    "workspace_state": "expired" if self._workspace_expired(row) else "available"}
+
     def list(self, principal, *, limit=50, offset=0, context_id=None, status=None, updated_after=None) -> dict:
         owner = require_scope(principal, "tasks:read")
         where, args = "user_id=? AND agent_id=? AND (expires_at>? OR status NOT IN ('completed','failed','cancelled'))", [owner, principal.get("agent_id", ""), now()]
@@ -362,11 +376,8 @@ class TaskService:
                 db.execute("UPDATE service_tasks SET expires_at=?,workspace_expires_at=?,workspace_last_active_at=? WHERE id=?",
                            (expiry(self.settings), self.workspace_expiry(True), now(), task["id"]))
                 self._event(db, task["id"], "workspace.run." + run.status, {"run_id": run.id, "reply": run.reply, "error": run.error})
-                for item in self.service.artifacts(session.id):
-                    if Path(item["name"]).parts[0] not in {"generate", "workspace"} or not item["_path"].resolve().is_relative_to(session.root.resolve()):
-                        continue
-                    db.execute("INSERT OR REPLACE INTO service_task_artifacts VALUES(?,?,?,?,?,?)", (
-                        item["id"], task["id"], item["name"], item["name"], mimetypes.guess_type(item["name"])[0] or "application/octet-stream", item["size"]))
+                if run.status == "completed":
+                    self._record_results(db, task["id"], session, run.reply)
             self.capture_files(task["id"])
             self.service.evict_session(session.id)
 
@@ -506,6 +517,54 @@ class TaskService:
                 "type": kind, "size": info.st_size if kind == "file" else None,
                 "media_type": "application/zip" if kind == "directory" else mimetypes.guess_type(path.name)[0] or "application/octet-stream"}
 
+    def _record_results(self, db, task_id, session, reply):
+        result = parse_final_result(reply)
+        root = session_root(self.service.data_root, session.user_id, session.id)
+        if root is None:
+            raise ValueError("任务目录已不可读取，未登记最终产物")
+        verified = []
+        seen_paths = set()
+        for index, item in enumerate(result["files"], 1):
+            relative = item["path"]
+            parts = PurePosixPath(relative).parts
+            if (not parts or parts[0] not in {"generate", "workspace"} or PurePosixPath(relative).is_absolute()
+                    or any(part in {".", ".."} for part in relative.split("/"))
+                    or any(char in relative for char in ("\\", ":", "\x00"))):
+                raise ValueError(f"最终文件清单第 {index} 项须为 generate/ 或 workspace/ 内的会话相对路径")
+            try:
+                path, kind, info = self._safe_file_path(root, relative)
+            except KeyError as exc:
+                raise ValueError(f"最终文件清单第 {index} 项不存在或不可读取，未登记最终产物") from exc
+            identity = os.path.normcase(str(path))
+            if identity in seen_paths:
+                raise ValueError(f"最终文件清单第 {index} 项与已有文件重复")
+            seen_paths.add(identity)
+            item = {**item, "description": self.service.web_text(session.id, item["description"])}
+            verified.append((item, path, kind, info))
+        public_text = self.service.web_text(session.id, result["text"])
+        # Acquire the writer lock before allocating IDs, shared with concurrent list_file.
+        db.execute("DELETE FROM service_task_artifacts WHERE task_id=?", (task_id,))
+        next_id = db.execute("SELECT COALESCE(MAX(file_id),0)+1 FROM service_task_file_refs WHERE task_id=?", (task_id,)).fetchone()[0]
+        files = []
+        for item, path, kind, info in verified:
+            relative = path.relative_to(root).as_posix()
+            existing = db.execute("SELECT file_id FROM service_task_file_refs WHERE task_id=? AND path=? AND type=?", (task_id, relative, kind)).fetchone()
+            file_id = existing[0] if existing else next_id
+            if existing is None:
+                db.execute("INSERT INTO service_task_file_refs VALUES(?,?,?,?)", (task_id, file_id, relative, kind))
+                next_id += 1
+            files.append({"file_id": file_id, "name": path.name, "path": relative, "type": kind,
+                          "size": info.st_size if kind == "file" else None,
+                          "description": item["description"]})
+            # Keep existing REST/A2A file links compatible, but only for declared final files.
+            if kind == "file":
+                artifact_id = hashlib.sha256(relative.encode()).hexdigest()[:20]
+                db.execute("INSERT INTO service_task_artifacts VALUES(?,?,?,?,?,?)", (
+                    artifact_id, task_id, relative, relative, mimetypes.guess_type(path.name)[0] or "application/octet-stream", info.st_size))
+        public = {"text": public_text, "files": files, "updated_at": now()}
+        db.execute("UPDATE service_tasks SET result_json=? WHERE id=?", (json.dumps(public, ensure_ascii=False), task_id))
+        return public
+
     def download_file(self, principal, task_id, file_id):
         with self.store.connect() as db:
             _, root = self._file_context(db, principal, task_id)
@@ -585,7 +644,7 @@ class TaskService:
                     return
             payload = json.loads(row["input_json"])
             session = self.service.create_session(user_id=row["user_id"], title="服务任务 " + task_id[-8:],
-                                                  agent_snapshot=payload.get("agent_snapshot"))
+                                                  agent_snapshot=payload.get("agent_snapshot"), machine_results=True)
             with self.store.connect() as db:
                 db.execute("UPDATE service_tasks SET session_id=? WHERE id=?", (session.id, task_id))
                 db.execute("UPDATE agent_sessions SET purpose='task' WHERE id=?", (session.id,))
@@ -623,17 +682,11 @@ class TaskService:
             reply = self.service.web_text(session.id, run.reply)
             error = self.service.web_text(session.id, run.error) if run.finished else "服务停止，任务执行已中断"
             with self.store.connect() as db:
+                if status == "completed":
+                    reply = self._record_results(db, task_id, session, run.reply)["text"]
                 expires = (datetime.now(timezone.utc) + timedelta(seconds=self.settings.task_retention_seconds)).isoformat()
                 db.execute("UPDATE service_tasks SET status=?,reply=?,error=?,updated_at=?,completed_at=?,expires_at=? WHERE id=?",
                            (status, reply, error, stamp, stamp, expires, task_id))
-                for item in self.service.artifacts(session.id):
-                    path = item["_path"].resolve()
-                    relative = Path(item["name"])
-                    if relative.parts[0] not in {"generate", "workspace"} or not path.is_relative_to(session.root.resolve()):
-                        continue
-                    db.execute("INSERT OR REPLACE INTO service_task_artifacts VALUES(?,?,?,?,?,?)",
-                               (item["id"], task_id, item["name"], item["name"],
-                                mimetypes.guess_type(path.name)[0] or "application/octet-stream", item["size"]))
                 self._event(db, task_id, "task." + status, {"reply": reply, "error": error})
         except Exception as exc:
             error = self.service.web_text(session.id, str(exc)) if session else "任务初始化失败，请管理员检查配置"

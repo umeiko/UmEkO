@@ -107,13 +107,14 @@ with httpx.Client(headers=headers, timeout=30) as client:
 | --- | --- | --- |
 | POST | `/v1/tasks` | `prompt`、可选 `files`；返回 202 与 Task，含本次 `id/task_id` 和服务 `agent_id` |
 | GET | `/v1/tasks/{task_id}` | 持久化状态、结果、错误、到期时间、产物 |
+| GET | `/v1/tasks/{task_id}/results` | Agent 提交并由平台校验的结果 JSON，含自然语言 `text` 与最终文件清单 `files` |
 | POST | `/v1/tasks/{task_id}/cancel` | 排队任务立即取消；运行任务协作式停止 |
 | GET | `/v1/tasks/{task_id}/events` | SSE，支持 `after` 和 `Last-Event-ID` |
 | GET | `/v1/tasks/{task_id}/artifacts/{artifact_id}/content` | 授权下载 |
 | GET | `/v1/tasks/{task_id}/files` | 顶层目录及 `file_id`；可传 `directory_id`，只列对应文件夹的直接子项 |
 | GET | `/v1/tasks/{task_id}/files/{file_id}/content` | 按序号授权下载文件；文件夹自动打包 ZIP |
 
-状态为 `queued`、`running`、`cancelling`、`completed`、`failed`、`cancelled`。`expires_at` 在终态前为空；终态默认保留 24 小时。Task 中的 `artifacts` 含 `id`、`name`、`media_type`、`size`、`download_url`、`resource_uri`。
+状态为 `queued`、`running`、`cancelling`、`completed`、`failed`、`cancelled`。`expires_at` 在终态前为空；终态默认保留 24 小时。Task 中兼容保留的 `artifacts` 只登记 Agent 明确选择的最终文件，含 `id`、`name`、`media_type`、`size`、`download_url`。完整最终清单从 `/results` 读取，包含文件和目录的 `file_id`，可通过 `/files/{file_id}/content` 下载；不从目录扫描推测最终交付件。
 
 `workspace_expires_at` 是节点和产物文件的回收期限，`workspace_state` 为 `available` 或 `expired`；
 此期限与调用记录的 `expires_at` 分开。节点过期后仍可查询原 Task 的回复与产物元数据，但文件下载与资源读取返回不存在。

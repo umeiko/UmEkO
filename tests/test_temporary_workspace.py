@@ -213,8 +213,7 @@ def test_restricted_credentials_cannot_mint_workspace_write_access(machine_clien
     token = app.state.identity_store.issue_access_token(account["id"], account["token"], endpoint, ["tasks:read"])["access_token"]
     view = client.get("/agent/fixture/v1/tasks/" + task["id"], headers={"Authorization": "Bearer " + token}).json()
     assert view["workspace_url"] is None and "workspace_token" not in view
-    listing = client.get("/agent/fixture/v1/tasks", headers={"Authorization": "Bearer " + token}).json()
-    assert all(t["workspace_url"] is None for t in listing["tasks"])
+    assert client.get("/agent/fixture/v1/tasks", headers={"Authorization": "Bearer " + token}).status_code == 404
     # Revocation invalidates an already issued capability, too.
     app.state.identity_store.update(account["id"], enabled=False)
     assert client.get(task["workspace_url"] + "/v1/temporary").status_code == 410

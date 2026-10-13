@@ -18,18 +18,16 @@ from a2a.utils.errors import (
     TaskNotFoundError, UnsupportedOperationError,
 )
 from google.protobuf.json_format import MessageToDict, ParseDict
+from google.protobuf.struct_pb2 import Value
 from mcp.server import MCPServer
 from mcp.server.mcpserver import Context
-from mcp.server.mcpserver.exceptions import ToolError, ResourceError
+from mcp.server.mcpserver.exceptions import ToolError
 from mcp.server.transport_security import TransportSecuritySettings
 from mcp.types import ToolAnnotations
 
 from .. import __version__
 from ..host.tasks import TERMINAL
 from .task_api import caller_ip, public_base, task_view
-
-MAX_INLINE_ARTIFACT = 256 * 1024
-
 
 def _mcp_call(fn, *args, **kwargs):
     try:
@@ -41,7 +39,8 @@ def _mcp_call(fn, *args, **kwargs):
 def _mcp_server(settings, tasks):
     server = MCPServer("UMEKO", version=__version__, instructions=(
         "先 get_agent_info 了解当前智能体，再 submit_task 提交任务，使用 get_task 查询状态。"
-        "用 submit_task 返回的 task_id 查询本次执行；list_file 按序号逐层列文件，download_file 返回下载链接，文件夹下载为 ZIP。"
+        "用 submit_task 返回的 task_id 查询本次执行；结束后 read_results 获取自然语言结果和 Agent 选择的最终文件清单。"
+        "按清单的 file_id 调用 download_file 下载，文件夹为 ZIP；list_file 可逐层查看其他任务文件。"
         "取消用 cancel_task。主模型和视觉模型由管理员配置，调用方不能选择。"
         "任务返回 workspace_url，可交给用户打开临时工作台查看文件与继续同一会话。"
         "若回复说明缺少必要图片、文档或需要人工处理，立即提供真实 workspace_url 和待补事项，邀请用户进入工作台处理；"
@@ -58,14 +57,16 @@ def _mcp_server(settings, tasks):
    files 使用 name/content_base64，不传服务器路径；模型由管理员配置，不传 model_id。本服务不提供模型列表或任务列表。
 2. 提交成功不等于执行完成。只用这次返回的 task_id 调用 get_task；不能用固定 agent_id 替代。
    queued/running/cancelling 时隔几秒查询，避免密集轮询和重复提交；重试同一次提交时复用 idempotency_key。
-3. completed 时交付 reply。list_file(task_id) 返回当前任务的顶层目录及 file_id；
-   用 list_file(task_id, directory_id=文件夹的file_id) 查看它的直接子项，再用 download_file(task_id, file_id) 获取下载链接。
+3. completed 时调用 read_results(task_id)，ready=true 后交付 text，并按 files 中的 file_id 调用 download_file(task_id, file_id) 获取下载链接。
+   files 是 Agent 明确提交并由平台校验的最终文件清单，可能为空；不把整个目录的文件当成最终成果。
+   需要查看其他任务文件时用 list_file(task_id)，传 directory_id=文件夹的file_id 可逐层查看直接子项。
    文件下载保持原内容，文件夹自动打包 ZIP。需要凭据模式下，GET 下载链接携带相同服务凭据；不要把 file_id 当作 task_id。
 4. failed/cancelled 时说明 error 或停止状态；停止正在执行的任务用 cancel_task(task_id)，不要把失败当作成功。
 5. 回复说缺少必要资料或需要人工处理时，把真实 workspace_url 和待补事项交给用户，请其在临时工作台继续同一会话；不要空等补传或自动重提。
 6. 只访问当前 Agent、当前调用方、本次 task_id 的信息。下载序号在该任务内有效；不存在或类型变化时重新 list_file，不猜路径或序号。
 7. 节点有生命周期：workspace_state=expired 或下载返回过期时，原回复可能仍能查询，文件和工作台已不可访问。
-   说明过期情况；用户要求重做时才重新提交。workspace_url 是会话访问凭据，只交给预期使用者。"""
+   说明过期情况；用户要求重做时才重新提交。workspace_url 是会话访问凭据，只交给预期使用者。
+   临时工作台续聊后，可用同一 task_id 再 read_results 获取最新通过校验的结果；不要重复提交原任务。"""
 
     @server.tool(structured_output=True, annotations=ToolAnnotations(readOnlyHint=True, openWorldHint=False))
     def get_agent_info(ctx: Context) -> dict[str, Any]:
@@ -116,29 +117,11 @@ def _mcp_server(settings, tasks):
         return task_view(_mcp_call(tasks.cancel, principal(ctx), task_id), public_base(settings, ctx.request_context.request))
 
     @server.tool(structured_output=True, annotations=ToolAnnotations(readOnlyHint=True, openWorldHint=False))
-    def read_artifact(task_id: str, artifact_id: str, ctx: Context) -> dict[str, Any]:
-        """读取自己任务的产物，最多 256 KiB；文本返回 text，二进制返回 content_base64。
-        更大的产物请使用 get_task 返回的下载地址；需要凭据模式下附带服务凭据。"""
-        path, media_type = _mcp_call(tasks.artifact, principal(ctx), task_id, artifact_id)
-        if path.stat().st_size > MAX_INLINE_ARTIFACT:
-            raise ToolError("产物超过 256 KiB，请使用受保护的 HTTP 下载入口")
-        content = path.read_bytes()
-        try:
-            if media_type.startswith("text/") or media_type in {"application/json", "image/svg+xml"}:
-                return {"name": path.name, "media_type": media_type, "text": content.decode("utf-8")}
-        except UnicodeDecodeError:
-            pass
-        return {"name": path.name, "media_type": media_type, "content_base64": base64.b64encode(content).decode()}
-
-    @server.resource("umeko://tasks/{task_id}/artifacts/{artifact_id}", mime_type="application/octet-stream")
-    def artifact_resource(task_id: str, artifact_id: str, ctx: Context) -> bytes:
-        try:
-            path, _ = tasks.artifact(principal(ctx), task_id, artifact_id)
-        except (KeyError, PermissionError) as exc:
-            raise ResourceError(str(exc)) from exc
-        if path.stat().st_size > MAX_INLINE_ARTIFACT:
-            raise ResourceError("产物超过 256 KiB，请使用受保护的 HTTP 下载入口")
-        return path.read_bytes()
+    def read_results(task_id: str, ctx: Context) -> dict[str, Any]:
+        """读取本次 Agent 最后通过校验的结果 JSON：text 是自然语言结论，files 是 Agent 选择的最终交付件。
+        文件项包含 file_id，可直接交给 download_file；不读取文件内容，不自动扫描目录挑选产物。
+        ready=false 表示未产生结构化结果，结合 status/error 判断；节点过期后仍可读取保留的结果元数据。"""
+        return _mcp_call(tasks.read_results, principal(ctx), task_id)
 
     return server
 
@@ -207,6 +190,10 @@ class A2AHandler(RequestHandler):
         if include_artifacts:
             if record["reply"]:
                 task.artifacts.append(a2a.Artifact(artifact_id="response", name="Agent response", parts=[a2a.Part(text=record["reply"])]))
+                with self.tasks.store.connect() as db:
+                    result = db.execute("SELECT result_json FROM service_tasks WHERE id=?", (record["id"],)).fetchone()
+                if result and result["result_json"]:
+                    task.artifacts[-1].parts.append(a2a.Part(data=ParseDict(json.loads(result["result_json"]), Value())))
             for artifact in task_view(record, base)["artifacts"]:
                 task.artifacts.append(a2a.Artifact(artifact_id=artifact["id"], name=artifact["name"],
                     parts=[a2a.Part(url=artifact["download_url"], filename=artifact["name"], media_type=artifact["media_type"])]))

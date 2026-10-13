@@ -119,7 +119,8 @@ def test_image_reasoning_tasks_accept_images_and_open_prompt(tmp_path, monkeypat
         assert images and len(images) == count
         instructions = agent._skills["use_skill"].handler(name="image-reasoning")
         assert instructions and "错误" not in instructions
-        return agent._skills["image_reasoning"].handler(prompt=question, image_paths=[str(path) for path in images])
+        answer = agent._skills["image_reasoning"].handler(prompt=question, image_paths=[str(path) for path in images])
+        return json.dumps({"text": answer, "files": []})
 
     monkeypatch.setattr(LLMClient, "chat_with_images_stream", visual_chat)
     monkeypatch.setattr(UmekoAgent, "chat", chat)

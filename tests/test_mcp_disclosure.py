@@ -35,7 +35,7 @@ def test_admin_disclosure_matches_official_client_and_requires_admin(machine_ser
         assert data["auth_mode"] == "required"
         assert data["transport"] == "Streamable HTTP"
         assert {tool["name"] for tool in data["tools"]} == {
-            "get_agent_info", "submit_task", "get_task", "list_file", "download_file", "cancel_task", "read_artifact",
+            "get_agent_info", "submit_task", "get_task", "list_file", "download_file", "cancel_task", "read_results",
         }
         async def actual_listing():
             async with httpx2.AsyncClient(headers={"Authorization": "Bearer " + caller["token"]}, trust_env=False) as transport:
@@ -54,7 +54,7 @@ def test_admin_disclosure_matches_official_client_and_requires_admin(machine_ser
         assert "ctx" not in submit["inputSchema"]["properties"]
         assert "model_id" not in submit["inputSchema"]["properties"]
         assert submit["outputSchema"] and submit["annotations"]["readOnlyHint"] is False
-        assert data["resourceTemplates"][0]["uriTemplate"] == "umeko://tasks/{task_id}/artifacts/{artifact_id}"
+        assert data["resourceTemplates"] == []
         assert "fixture-key" not in json.dumps(data)
         assert "password_hash" not in json.dumps(data)
         assert service.task_service.snapshot()["counts"] == {}

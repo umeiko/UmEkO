@@ -174,8 +174,7 @@ def test_anonymous_official_mcp_and_a2a_clients(machine_server):
                         break
                     await asyncio.sleep(.03)
                 assert task["status"] == "completed"
-                artifact = task["artifacts"][0]
-                result = await client.call_tool("read_artifact", {"task_id": task["id"], "artifact_id": artifact["id"]})
+                result = await client.call_tool("read_results", {"task_id": task["id"]})
                 assert "hi MCP" in result.structured_content["text"]
         async with httpx.AsyncClient(headers={"A2A-Version": "1.0"}, trust_env=False, timeout=15) as http:
             client = await ClientFactory(ClientConfig(httpx_client=http, streaming=True)).create_from_url(base)

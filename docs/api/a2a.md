@@ -86,6 +86,6 @@ SDK `streaming=False` 使用非流式发送。任务很长时可用 `return_imme
 - `CancelTask`：`id`，仅活跃任务可取消；已结束返回 TaskNotCancelable。取消请求后通过查询判断最终状态。
 - `SubscribeToTask`：`id`，订阅活跃任务；已结束任务用 GetTask 读取结果。
 
-流式响应为 SSE 中的 JSON-RPC 结果。回复增量使用 `TaskArtifactUpdateEvent`，最终回复以 `append=false` 替换已累积的内容；最终状态使用 `TaskStatusUpdateEvent`。产物 URL 指向受保护 REST 下载入口，需带有效服务凭据。
+流式响应为 SSE 中的 JSON-RPC 结果。回复增量使用 `TaskArtifactUpdateEvent`，最终回复以 `append=false` 替换已累积的内容；最终状态使用 `TaskStatusUpdateEvent`。响应产物的第一个 Part 保留自然语言文本，后续 data Part 提供 Agent 的结果 JSON（text/files）；最终文件由 Agent 明确选择并经平台校验，文件项的 file_id 可交给同一 Agent 的 MCP download_file 或 REST 序号下载入口。产物 URL 指向受保护 REST 下载入口，需带有效服务凭据。
 
 接口只支持 JSONRPC 1.0，未提供推送通知、扩展 Card、多轮输入或其他传输绑定。完整生命周期、额度、保留时间和授权见 [机器任务](machine-tasks.md)与[A2A 架构](../architecture/a2a.md)。A2A 与 MCP 由官方 SDK 路由提供，不包含在 FastAPI 的 OpenAPI 操作清单中。

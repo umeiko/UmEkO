@@ -6,6 +6,7 @@ import httpx2
 import pytest
 from a2a import types as a2a
 from a2a.client import ClientFactory, ClientConfig
+from google.protobuf.json_format import MessageToDict
 from mcp.client import Client
 from mcp.client.streamable_http import streamable_http_client
 
@@ -18,7 +19,8 @@ def test_mcp_official_client(machine_server, mode):
         async with httpx2.AsyncClient(headers={"Authorization": "Bearer " + a["token"]}, trust_env=False) as http:
             async with Client(streamable_http_client(base + "/mcp", http_client=http), mode=mode, cache=None) as client:
                 tools = await client.list_tools()
-                assert {"submit_task","get_task","cancel_task","read_artifact"} <= {t.name for t in tools.tools}
+                assert {"submit_task","get_task","cancel_task","read_results"} <= {t.name for t in tools.tools}
+                assert "read_artifact" not in {t.name for t in tools.tools}
                 result = await client.call_tool("submit_task", {"prompt":"SDK test","files":[{"name":"a.txt","content_base64":base64.b64encode(b"SDK attachment").decode()}]})
                 assert not result.is_error, result
                 task = result.structured_content
@@ -39,10 +41,13 @@ def test_mcp_official_client(machine_server, mode):
                 assert artifact["download_url"].startswith(base + "/v1/tasks/")
                 info = await client.call_tool("get_agent_info", {})
                 assert info.structured_content["supportedInterfaces"][0]["url"] == base + "/a2a"
-                result = await client.call_tool("read_artifact", {"task_id":task["id"],"artifact_id":artifact["id"]})
+                result = await client.call_tool("read_results", {"task_id":task["id"]})
                 assert "SDK attachment" in result.structured_content["text"]
-                resource = await client.read_resource(artifact["resource_uri"])
-                assert base64.b64decode(resource.contents[0].blob).decode().endswith("SDK attachment")
+                assert result.structured_content["ready"]
+                file_id = result.structured_content["files"][0]["file_id"]
+                download = await client.call_tool("download_file", {"task_id": task["id"], "file_id": file_id})
+                assert download.structured_content["download_url"].startswith(base + "/v1/tasks/")
+                assert (await client.list_resource_templates()).resource_templates == []
                 hold = await client.call_tool("submit_task", {"prompt":"hold MCP"})
                 await client.call_tool("cancel_task", {"task_id":hold.structured_content["id"]})
         async with httpx.AsyncClient(headers={"Authorization":"Bearer " + b["token"]},trust_env=False) as other:
@@ -72,6 +77,7 @@ def test_a2a_official_client(machine_server, streaming):
                 assert (await browser.get(workspace + '/v1/temporary')).json()['state'] == 'ready'
             assert not task.history
             assert "A2A attachment" in task.artifacts[0].parts[0].text
+            assert MessageToDict(task.artifacts[0].parts[1].data)["files"][0]["path"] == "generate/report.txt"
             again = [e async for e in client.send_message(request)]
             assert next(e.task.id for e in again if e.HasField("task")) == task_id
             assert len(app.state.task_service.list({**app.state.identity_store.authenticate(a["token"]), "agent_id": app.state.fixture_agent["id"]})["tasks"]) == 1

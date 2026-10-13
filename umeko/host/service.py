@@ -34,6 +34,7 @@ from ..tree import TreeNode, TreeBudget, build_tree, compile_filter
 from .profile import CLOUD_PROFILE, Profile
 from ..skillpacks import parse_skill_pack_text, skill_packs_dir
 from .storage import Store
+from .results import MACHINE_RESULTS_PROMPT
 from .configuration import deployment_defaults, model_from_row, resolve_provider_settings
 
 
@@ -353,6 +354,7 @@ class AgentService:
         _restore_id=None,
         settings: Settings | None = None,
         agent_snapshot: dict | None = None,
+        machine_results: bool = False,
     ) -> SessionState:
         effective = settings if settings is not None else self.settings
         effective = self._agent_vision_settings(effective, agent_snapshot)
@@ -471,10 +473,15 @@ class AgentService:
                         except Exception:
                             pass
 
+        restored = self.store.session_by_id(_restore_id) if _restore_id else None
+        machine_results = machine_results or bool(restored and restored.get("purpose") == "task")
+        system_prompt = DEFAULT_SYSTEM + ("\n\n当前智能体工作指引：\n" + agent_snapshot["system_prompt"] if agent_snapshot and agent_snapshot.get("system_prompt") else "")
+        if machine_results:
+            system_prompt += MACHINE_RESULTS_PROMPT
         agent = UmekoAgent(
             effective,
             session,
-            DEFAULT_SYSTEM + ("\n\n当前智能体工作指引：\n" + agent_snapshot["system_prompt"] if agent_snapshot and agent_snapshot.get("system_prompt") else ""),
+            system_prompt,
             output_root=root,
             readable_root=root,
             readable_roots=tuple(root / name for name in self.WORKSPACE_ROOTS),
