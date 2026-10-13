@@ -38,7 +38,8 @@ def machine_app(tmp_path, monkeypatch, request):
         text = "Processed: " + prompt.split("\n")[0] + (" / " + content if content else "")
         (agent._output_root / "generate" / "report.txt").write_text(text, encoding="utf-8")
         agent._on_event("assistant.delta", {"text": text})
-        return json.dumps({"text": text, "files": [{"path": "generate/report.txt", "description": "Generated report"}]})
+        agent._skills["submit_results"].handler(text=text, files=[{"path": "generate/report.txt", "description": "Generated report"}])
+        return text
     monkeypatch.setattr(UmekoAgent, "chat", chat)
     settings = Settings(ModelConfig("fixture", "fixture-key", "http://unused.invalid"), base_path=getattr(request,"param",""),
                         task_workers=1, task_queue_limit=2, task_caller_limit=3,

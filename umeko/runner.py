@@ -35,6 +35,8 @@ class Run:
     completed_at: str | None = None
     reply: str | None = None
     error: str | None = None
+    # Keep the submitted answer with its execution even if the session is rebuilt.
+    structured_result: dict | None = field(default=None, repr=False)
     events: list[dict] = field(default_factory=list)
     _event_lock: threading.Lock = field(default_factory=threading.Lock, repr=False)
     _cancel_event: threading.Event = field(default_factory=threading.Event, repr=False)

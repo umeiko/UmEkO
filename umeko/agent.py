@@ -24,7 +24,7 @@ from .images import image_data_url, validate_image
 from .llm import LLMClient, message_text
 from .prompts.vision import image_input_guidance
 from .session import Session
-from .skills import Skill, build_file_tools, resolve_readable_path
+from .skills import Skill, ToolResult, build_file_tools, resolve_readable_path
 from .sub_agent import FileSubAgent
 
 logger = logging.getLogger(__name__)
@@ -455,6 +455,7 @@ class UmekoAgent:
                 return reply
 
             self._messages.append(self._assistant_message_dict(msg))
+            final_reply = None
             for call in msg.tool_calls:
                 args_preview = call.function.arguments[:200].replace("\n", " ")
                 logger.info("[tool] 调用 %s(%s)", call.function.name, args_preview)
@@ -463,9 +464,13 @@ class UmekoAgent:
                 self._emit(ev.TOOL_STARTED, name=call.function.name,
                            arguments=call.function.arguments)
                 try:
-                    result = self._execute(call.function.name, call.function.arguments)
+                    outcome = (self._execute(call.function.name, call.function.arguments)
+                               if final_reply is None else "本轮答案已经提交，此工具未执行。")
                 except OperationCancelled:
                     return self._cancelled_reply()
+                result = outcome.content if isinstance(outcome, ToolResult) else outcome
+                if isinstance(outcome, ToolResult) and outcome.final_reply is not None:
+                    final_reply = outcome.final_reply
                 if self._on_tool_result:
                     self._on_tool_result(call.function.name, result)
                 self._emit(ev.TOOL_COMPLETED, name=call.function.name, result=result)
@@ -479,6 +484,13 @@ class UmekoAgent:
                 )
                 if self._should_cancel and self._should_cancel():
                     return self._cancelled_reply()
+
+            if final_reply is not None:
+                self._pending.take()
+                self._messages.append({"role": "assistant", "content": final_reply})
+                if self._cb_delta:
+                    self._cb_delta(final_reply)
+                return final_reply
 
             # read_image 读取的图片：以一条新的 user 消息注入下一轮调用
             pending = self._pending.take()
@@ -521,7 +533,7 @@ class UmekoAgent:
             d["reasoning_content"] = reasoning
         return d
 
-    def _execute(self, name: str, arguments_json: str) -> str:
+    def _execute(self, name: str, arguments_json: str) -> str | ToolResult:
         skill = self._skills.get(name)
         if skill is None:
             return f"错误：未知工具 {name}"

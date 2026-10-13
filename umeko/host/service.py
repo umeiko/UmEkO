@@ -34,7 +34,7 @@ from ..tree import TreeNode, TreeBudget, build_tree, compile_filter
 from .profile import CLOUD_PROFILE, Profile
 from ..skillpacks import parse_skill_pack_text, skill_packs_dir
 from .storage import Store
-from .results import MACHINE_RESULTS_PROMPT
+from .results import MACHINE_RESULTS_PROMPT, SUBMISSION_REMINDER, ResultSubmission
 from .configuration import deployment_defaults, model_from_row, resolve_provider_settings
 
 
@@ -71,6 +71,7 @@ class SessionState:
         default_factory=lambda: {"skills": set()}, repr=False
     )
     agent_snapshot: dict | None = field(default=None, repr=False)
+    result_submission: ResultSubmission | None = field(default=None, repr=False)
 
 
 class AgentService:
@@ -478,10 +479,12 @@ class AgentService:
         system_prompt = DEFAULT_SYSTEM + ("\n\n当前智能体工作指引：\n" + agent_snapshot["system_prompt"] if agent_snapshot and agent_snapshot.get("system_prompt") else "")
         if machine_results:
             system_prompt += MACHINE_RESULTS_PROMPT
+        submission = ResultSubmission(root) if machine_results else None
         agent = UmekoAgent(
             effective,
             session,
             system_prompt,
+            extra_skills=(submission.tool(),) if submission else (),
             output_root=root,
             readable_root=root,
             readable_roots=tuple(root / name for name in self.WORKSPACE_ROOTS),
@@ -498,6 +501,7 @@ class AgentService:
             session_id, _now(), root, session, agent, user_id=user_id, title=title,
             active_run_holder=holder, builtin_resources=builtin_resources,
             agent_snapshot=agent_snapshot,
+            result_submission=submission,
         )
         with self._lock:
             self.sessions[session_id] = state
@@ -586,6 +590,8 @@ class AgentService:
                 return
             run.status = "running"
             run.emit("run.started")
+            if session.result_submission:
+                session.result_submission.begin_run(run.id)
             try:
                 image_suffixes = {".png", ".jpg", ".jpeg", ".webp", ".gif", ".bmp"}
                 images = [path for path in paths if path.suffix.lower() in image_suffixes]
@@ -601,6 +607,13 @@ class AgentService:
                         "不要只根据文件名或用户描述猜测内容。"
                     )
                 reply = session.agent.chat(prompt, images=images or None)
+                if (session.result_submission and session.result_submission.result is None
+                        and not run.cancel_requested()):
+                    # One bounded repair turn for a model that answered without calling the tool.
+                    reply = session.agent.chat(SUBMISSION_REMINDER)
+                if session.result_submission and not run.cancel_requested():
+                    run.structured_result = session.result_submission.for_run(run.id)
+                    reply = run.structured_result["text"]
                 self.store.add_message(session.id, "assistant", reply)
                 if run.cancel_requested():
                     run.finish("cancelled", reply=reply)

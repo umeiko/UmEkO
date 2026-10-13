@@ -4,7 +4,7 @@ Schema 与 MCP 工具的 inputSchema 同构，后续要接入 MCP 时可直接�
 OpenAI function calling 的 tools 定义也由它派生。
 """
 
-from .base import Skill
+from .base import Skill, ToolResult
 from .file_tools import build_file_tools, resolve_readable_path
 
-__all__ = ["Skill", "build_file_tools", "resolve_readable_path"]
+__all__ = ["Skill", "ToolResult", "build_file_tools", "resolve_readable_path"]

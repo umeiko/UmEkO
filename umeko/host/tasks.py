@@ -22,7 +22,7 @@ from pathlib import Path, PurePosixPath
 
 from .identities import SCOPES, now, require_scope
 from .file_manifest import ROOTS, _linked, session_root
-from .results import parse_final_result
+from .results import validate_result, verify_result_files
 
 TERMINAL = frozenset({"completed", "failed", "cancelled"})
 MAX_FILE_BYTES = 20 * 1024 * 1024
@@ -377,7 +377,7 @@ class TaskService:
                            (expiry(self.settings), self.workspace_expiry(True), now(), task["id"]))
                 self._event(db, task["id"], "workspace.run." + run.status, {"run_id": run.id, "reply": run.reply, "error": run.error})
                 if run.status == "completed":
-                    self._record_results(db, task["id"], session, run.reply)
+                    self._record_results(db, task["id"], session, run)
             self.capture_files(task["id"])
             self.service.evict_session(session.id)
 
@@ -517,30 +517,15 @@ class TaskService:
                 "type": kind, "size": info.st_size if kind == "file" else None,
                 "media_type": "application/zip" if kind == "directory" else mimetypes.guess_type(path.name)[0] or "application/octet-stream"}
 
-    def _record_results(self, db, task_id, session, reply):
-        result = parse_final_result(reply)
+    def _record_results(self, db, task_id, session, run):
+        if run.structured_result is None:
+            raise ValueError("Agent 未通过 submit_results 成功提交本轮答案，请重试任务")
+        result = validate_result(run.structured_result)
         root = session_root(self.service.data_root, session.user_id, session.id)
         if root is None:
             raise ValueError("任务目录已不可读取，未登记最终产物")
-        verified = []
-        seen_paths = set()
-        for index, item in enumerate(result["files"], 1):
-            relative = item["path"]
-            parts = PurePosixPath(relative).parts
-            if (not parts or parts[0] not in {"generate", "workspace"} or PurePosixPath(relative).is_absolute()
-                    or any(part in {".", ".."} for part in relative.split("/"))
-                    or any(char in relative for char in ("\\", ":", "\x00"))):
-                raise ValueError(f"最终文件清单第 {index} 项须为 generate/ 或 workspace/ 内的会话相对路径")
-            try:
-                path, kind, info = self._safe_file_path(root, relative)
-            except KeyError as exc:
-                raise ValueError(f"最终文件清单第 {index} 项不存在或不可读取，未登记最终产物") from exc
-            identity = os.path.normcase(str(path))
-            if identity in seen_paths:
-                raise ValueError(f"最终文件清单第 {index} 项与已有文件重复")
-            seen_paths.add(identity)
-            item = {**item, "description": self.service.web_text(session.id, item["description"])}
-            verified.append((item, path, kind, info))
+        verified = [(dict(item, description=self.service.web_text(session.id, item["description"])), path, kind, info)
+                    for item, path, kind, info in verify_result_files(result, root)]
         public_text = self.service.web_text(session.id, result["text"])
         # Acquire the writer lock before allocating IDs, shared with concurrent list_file.
         db.execute("DELETE FROM service_task_artifacts WHERE task_id=?", (task_id,))
@@ -683,7 +668,7 @@ class TaskService:
             error = self.service.web_text(session.id, run.error) if run.finished else "服务停止，任务执行已中断"
             with self.store.connect() as db:
                 if status == "completed":
-                    reply = self._record_results(db, task_id, session, run.reply)["text"]
+                    reply = self._record_results(db, task_id, session, run)["text"]
                 expires = (datetime.now(timezone.utc) + timedelta(seconds=self.settings.task_retention_seconds)).isoformat()
                 db.execute("UPDATE service_tasks SET status=?,reply=?,error=?,updated_at=?,completed_at=?,expires_at=? WHERE id=?",
                            (status, reply, error, stamp, stamp, expires, task_id))

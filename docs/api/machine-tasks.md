@@ -116,6 +116,8 @@ with httpx.Client(headers=headers, timeout=30) as client:
 
 状态为 `queued`、`running`、`cancelling`、`completed`、`failed`、`cancelled`。`expires_at` 在终态前为空；终态默认保留 24 小时。Task 中兼容保留的 `artifacts` 只登记 Agent 明确选择的最终文件，含 `id`、`name`、`media_type`、`size`、`download_url`。完整最终清单从 `/results` 读取，包含文件和目录的 `file_id`，可通过 `/files/{file_id}/content` 下载；不从目录扫描推测最终交付件。
 
+机器任务向主 Agent 注入内部 `submit_results(text, files)` 工具与提交提示词；工具校验通过后直接结束本轮，聊天正文无需是独立 JSON。参数或文件有误时先把错误返回模型修正，未调用工具时给予一次提交提醒。普通会话和文件子 Agent 不提供此工具，MCP 对外工具列表也不新增它。临时工作台续聊每轮重新提交，只有最新成功提交的结果才更新 `/results`，不会沿用上一轮的提交状态。
+
 `workspace_expires_at` 是节点和产物文件的回收期限，`workspace_state` 为 `available` 或 `expired`；
 此期限与调用记录的 `expires_at` 分开。节点过期后仍可查询原 Task 的回复与产物元数据，但文件下载与资源读取返回不存在。
 A2A 对应 `metadata.workspaceExpiresAt`、`metadata.workspaceState`。节点物理清理约每分钟执行一次；到期访问立即被拒绝。

@@ -7,7 +7,7 @@ import pytest
 
 from conftest import wait_task
 from umeko.agent import UmekoAgent
-from umeko.host.results import MACHINE_RESULTS_PROMPT
+from umeko.host.results import MACHINE_RESULTS_PROMPT, SUBMISSION_REMINDER
 from umeko.llm import LLMClient
 
 REAL_CHAT = UmekoAgent.chat
@@ -40,9 +40,10 @@ def test_results_select_final_files_and_direct_download(machine_client, monkeypa
         (generate / "final.txt").write_text("final content", encoding="utf-8")
         (generate / "delivery").mkdir(exist_ok=True)
         (generate / "delivery/evidence.txt").write_text("evidence", encoding="utf-8")
-        return json.dumps({"text": "完成分析。依据和结论如下。", "files": [
+        agent._skills["submit_results"].handler(text="完成分析。依据和结论如下。", files=[
             {"path": "generate/final.txt", "description": "最终说明"},
-            {"path": "generate/delivery", "description": "整包交付"}]})
+            {"path": "generate/delivery", "description": "整包交付"}])
+        return "普通文字收尾，不要求独立 JSON。"
 
     monkeypatch.setattr(UmekoAgent, "chat", chat)
     submitted = client.post(base, headers=headers, json={"prompt": "select finals"}).json()
@@ -70,9 +71,13 @@ def test_results_select_final_files_and_direct_download(machine_client, monkeypa
         session_id = db.execute("SELECT session_id FROM service_tasks WHERE id=?", (task_id,)).fetchone()[0]
     restored = service.get_session(session_id)
     assert MACHINE_RESULTS_PROMPT in restored.agent._messages[0]["content"]
+    assert "submit_results" in restored.agent._skills
+    assert "submit_results" not in restored.agent._subagent._skills
     service.evict_session(session_id)
-    ordinary = service.create_session(user_id=other["user_id"])
+    ordinary = service.create_session(user_id=other["user_id"],
+        agent_snapshot=service.agent_registry.snapshot(app.state.fixture_agent))
     assert MACHINE_RESULTS_PROMPT not in ordinary.agent._messages[0]["content"]
+    assert "submit_results" not in ordinary.agent._skills
     service.evict_session(ordinary.id)
     with store.connect() as db:
         db.execute("UPDATE service_tasks SET workspace_expires_at='2000-01-01T00:00:00+00:00' WHERE id=?", (task_id,))
@@ -89,6 +94,12 @@ def test_invalid_results_do_not_publish_inferred_files(machine_client, monkeypat
     client, app, account, _ = machine_client
     def chat(agent, prompt, images=None):
         (agent._output_root / "generate/unselected.txt").write_text("not a final", encoding="utf-8")
+        try:
+            arguments = json.loads(reply)
+        except ValueError:
+            arguments = None
+        if isinstance(arguments, dict):
+            agent._execute("submit_results", json.dumps(arguments))
         return reply
     monkeypatch.setattr(UmekoAgent, "chat", chat)
     headers = {"Authorization": "Bearer " + account["token"]}
@@ -104,7 +115,8 @@ def test_no_file_answer_and_legacy_result_are_not_inferred(machine_client, monke
     client, app, account, _ = machine_client
     def chat(agent, prompt, images=None):
         (agent._output_root / "generate/scratch.txt").write_text("scratch", encoding="utf-8")
-        return json.dumps({"text": "几何题答案是 30°。", "files": []})
+        agent._skills["submit_results"].handler(text="几何题答案是 30°。", files=[])
+        return "几何题答案是 30°。"
     monkeypatch.setattr(UmekoAgent, "chat", chat)
     headers = {"Authorization": "Bearer " + account["token"]}
     base = "/agent/fixture/v1/tasks"
@@ -118,16 +130,21 @@ def test_no_file_answer_and_legacy_result_are_not_inferred(machine_client, monke
     assert not legacy["ready"] and legacy["files"] == [] and "历史" in legacy["error"]
 
 
-def test_real_agent_tool_loop_returns_final_json(machine_client, monkeypatch):
+def test_real_agent_tool_loop_submits_and_finishes_without_another_model_reply(machine_client, monkeypatch):
     client, app, account, _ = machine_client
     replies = []
     def llm_chat(llm, messages, tools, **kwargs):
         assert MACHINE_RESULTS_PROMPT in messages[0]["content"]
+        assert any(t["function"]["name"] == "submit_results" for t in tools)
         if not replies:
             replies.append("write")
             return ChatCompletionMessage(role="assistant", tool_calls=[{"id": "final-write", "type": "function", "function": {
                 "name": "write_file", "arguments": json.dumps({"path": "generate/final.txt", "content": "real tool output"})}}])
-        return ChatCompletionMessage(role="assistant", content=json.dumps({"text": "Final tool-backed result", "files": [{"path": "generate/final.txt"}]}))
+        assert replies == ["write"], "A valid submission must end the model loop"
+        replies.append("submit")
+        return ChatCompletionMessage(role="assistant", content="答案已完成，准备提交。", tool_calls=[
+            {"id": "submit-final", "type": "function", "function": {"name": "submit_results",
+                "arguments": json.dumps({"text": "Final tool-backed result", "files": [{"path": "generate/final.txt"}]})}}])
     monkeypatch.setattr(UmekoAgent, "chat", REAL_CHAT)
     monkeypatch.setattr(LLMClient, "chat_with_tools_stream", llm_chat)
     headers = {"Authorization": "Bearer " + account["token"]}
@@ -139,3 +156,98 @@ def test_real_agent_tool_loop_returns_final_json(machine_client, monkeypatch):
     assert results["text"] == "Final tool-backed result" and len(results["files"]) == 1
     downloaded = client.get(base + f"/{task_id}/files/{results['files'][0]['file_id']}/content", headers=headers)
     assert downloaded.content == b"real tool output"
+    assert replies == ["write", "submit"]
+
+
+def tool_call(name, arguments, identity):
+    return {"id": identity, "type": "function", "function": {"name": name, "arguments": json.dumps(arguments)}}
+
+
+def test_model_can_correct_invalid_submission_and_later_calls_are_not_executed(machine_client, monkeypatch):
+    client, app, account, _ = machine_client
+    turns = []
+    def llm_chat(llm, messages, tools, **kwargs):
+        turns.append(messages)
+        if len(turns) == 1:
+            return ChatCompletionMessage(role="assistant", tool_calls=[tool_call("submit_results",
+                {"text": "too soon", "files": [{"path": "generate/missing.txt"}]}, "bad-submit")])
+        assert len(turns) == 2, "Submitting the corrected answer must finish the turn"
+        feedback = json.loads(messages[-1]["content"])
+        assert not feedback["ok"] and "不存在" in feedback["error"]
+        return ChatCompletionMessage(role="assistant", tool_calls=[
+            tool_call("write_file", {"path": "generate/final.txt", "content": "corrected"}, "write-final"),
+            tool_call("submit_results", {"text": "**已修正**，自然语言答案。", "files": [{"path": "generate/final.txt"}]}, "good-submit"),
+            tool_call("write_file", {"path": "generate/unwanted.txt", "content": "must not execute"}, "after-submit")])
+    monkeypatch.setattr(UmekoAgent, "chat", REAL_CHAT)
+    monkeypatch.setattr(LLMClient, "chat_with_tools_stream", llm_chat)
+    headers = {"Authorization": "Bearer " + account["token"]}
+    base = "/agent/fixture/v1/tasks"
+    task_id = client.post(base, headers=headers, json={"prompt": "correct the manifest"}).json()["id"]
+    completed = wait_task(client, task_id, account["token"])
+    assert completed["status"] == "completed", completed
+    read = client.get(base + f"/{task_id}/results", headers=headers).json()
+    assert read["text"] == "**已修正**，自然语言答案。"
+    assert [f["path"] for f in read["files"]] == ["generate/final.txt"]
+    with app.state.store.connect() as db:
+        sid = db.execute("SELECT session_id FROM service_tasks WHERE id=?", (task_id,)).fetchone()[0]
+        skipped = db.execute("SELECT result FROM tool_events WHERE session_id=? AND name='write_file' ORDER BY id DESC LIMIT 1", (sid,)).fetchone()
+    root = app.state.agent_service.data_root / "users" / account["user_id"] / "sessions" / sid
+    assert not (root / "generate/unwanted.txt").exists()
+    assert skipped and "未执行" in skipped[0]
+
+
+def test_plain_first_reply_gets_one_submission_reminder(machine_client, monkeypatch):
+    client, app, account, _ = machine_client
+    calls = []
+    def llm_chat(llm, messages, tools, **kwargs):
+        calls.append(messages)
+        if len(calls) == 1:
+            return ChatCompletionMessage(role="assistant", content="答案是 30°，不需要文件。")
+        assert len(calls) == 2 and messages[-1]["content"] == SUBMISSION_REMINDER
+        return ChatCompletionMessage(role="assistant", tool_calls=[tool_call("submit_results",
+            {"text": "答案是 30°，依据是三角形内角和。", "files": []}, "submit-text")])
+    monkeypatch.setattr(UmekoAgent, "chat", REAL_CHAT)
+    monkeypatch.setattr(LLMClient, "chat_with_tools_stream", llm_chat)
+    headers = {"Authorization": "Bearer " + account["token"]}
+    base = "/agent/fixture/v1/tasks"
+    task_id = client.post(base, headers=headers, json={"prompt": "plain mathematical answer"}).json()["id"]
+    completed = wait_task(client, task_id, account["token"])
+    assert completed["status"] == "completed", completed
+    results = client.get(base + f"/{task_id}/results", headers=headers).json()
+    assert results["ready"] and results["files"] == [] and "内角和" in results["text"]
+    assert len(calls) == 2
+
+
+def test_continuation_cannot_reuse_previous_submission(machine_client, monkeypatch):
+    import time
+    from urllib.parse import urlsplit
+
+    client, app, account, _ = machine_client
+    headers = {"Authorization": "Bearer " + account["token"]}
+    base = "/agent/fixture/v1/tasks"
+    task = client.post(base, headers=headers, json={"prompt": "original answer"}).json()
+    assert wait_task(client, task["id"], account["token"])["status"] == "completed"
+    previous = client.get(base + f"/{task['id']}/results", headers=headers).json()
+    for _ in range(100):
+        if not app.state.task_service._active:
+            break
+        time.sleep(.02)
+    workspace = urlsplit(task["workspace_url"]).path
+    sid = client.get(workspace + "/v1/temporary").json()["session_id"]
+    calls = []
+    def no_submission(agent, prompt, images=None):
+        assert "submit_results" in agent._skills
+        calls.append(prompt)
+        return "只给文字，没有提交。"
+    monkeypatch.setattr(UmekoAgent, "chat", no_submission)
+    response = client.post(workspace + f"/v1/sessions/{sid}/runs", json={"input": "a new answer"})
+    run_id = response.json()["id"]
+    for _ in range(100):
+        run = client.get(workspace + f"/v1/runs/{run_id}").json()
+        if run["status"] in {"completed", "failed", "cancelled"}:
+            break
+        time.sleep(.02)
+    assert run["status"] == "failed" and "submit_results" in run["error"]
+    assert calls == ["a new answer", SUBMISSION_REMINDER]
+    current = client.get(base + f"/{task['id']}/results", headers=headers).json()
+    assert current["text"] == previous["text"] and current["files"] == previous["files"]

@@ -19,8 +19,10 @@ def test_mcp_official_client(machine_server, mode):
         async with httpx2.AsyncClient(headers={"Authorization": "Bearer " + a["token"]}, trust_env=False) as http:
             async with Client(streamable_http_client(base + "/mcp", http_client=http), mode=mode, cache=None) as client:
                 tools = await client.list_tools()
-                assert {"submit_task","get_task","cancel_task","read_results"} <= {t.name for t in tools.tools}
-                assert "read_artifact" not in {t.name for t in tools.tools}
+                assert {t.name for t in tools.tools} == {
+                    "get_agent_info", "submit_task", "get_task", "cancel_task",
+                    "list_file", "download_file", "read_results",
+                }
                 result = await client.call_tool("submit_task", {"prompt":"SDK test","files":[{"name":"a.txt","content_base64":base64.b64encode(b"SDK attachment").decode()}]})
                 assert not result.is_error, result
                 task = result.structured_content

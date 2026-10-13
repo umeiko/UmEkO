@@ -192,7 +192,8 @@ def test_queued_tasks_keep_definition_and_skill_snapshot(machine_client, monkeyp
         assert "未配置" in agent._skills["read_pack_file"].handler(pack="beta", member="anything.md")
         assert "未配置" in agent._skills["run_skill_script"].handler(pack="beta", script="anything.py")
         assert "read_pack_file" not in agent._subagent._skills
-        return json.dumps({"text": "Snapshot executed", "files": []})
+        agent._skills["submit_results"].handler(text="Snapshot executed", files=[])
+        return "Snapshot executed"
     monkeypatch.setattr(UmekoAgent, "chat", chat)
     tasks.stop()
     response = client.post("/agent/alpha/v1/tasks", json={"prompt": "snapshot check"})
@@ -221,7 +222,8 @@ def test_agent_default_model_and_rejected_request_override(machine_client, monke
     observed = []
     def chat(agent, prompt, images=None):
         observed.append((agent.settings.text_model.model_id, agent._session.allowed_skill_packs, agent._messages[0]["content"]))
-        return json.dumps({"text": "Chosen model", "files": []})
+        agent._skills["submit_results"].handler(text="Chosen model", files=[])
+        return "Chosen model"
     monkeypatch.setattr(UmekoAgent, "chat", chat)
     for selected in [first, second]:
         service.agent_registry.save({**a, "default_model_id": selected["id"]}, a["id"])
@@ -296,7 +298,8 @@ def test_agent_vision_routes_real_tools_and_keeps_queued_choice(machine_client, 
         result = agent._skills["image_reasoning"].handler(prompt="inspect", image_paths=[str(image)])
         sub_result = agent._subagent._skills["image_reasoning"].handler(prompt="inspect", image_paths=[str(image)])
         assert result == sub_result == "visual fixture output"
-        return json.dumps({"text": result, "files": []})
+        agent._skills["submit_results"].handler(text=result, files=[])
+        return result
     monkeypatch.setattr(LLMClient, "chat_with_images_stream", visual_chat)
     monkeypatch.setattr(UmekoAgent, "chat", chat)
     tasks.stop()

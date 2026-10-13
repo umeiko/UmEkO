@@ -7,17 +7,25 @@ from typing import Any, Callable
 
 
 @dataclass(frozen=True)
+class ToolResult:
+    """A tool's visible acknowledgement and optional explicit end-of-turn reply."""
+
+    content: str
+    final_reply: str | None = None
+
+
+@dataclass(frozen=True)
 class Skill:
     """最小 Skill 定义。
 
     - name/description/parameters 与 MCP 工具的 (name, description, inputSchema) 一一对应；
-    - handler 接收参数 dict 解包后的关键字参数，返回字符串结果（给主 Agent 阅读）。
+    - handler 接收参数 dict 解包后的关键字参数；普通工具返回字符串，显式结束本轮可返回 ToolResult。
     """
 
     name: str
     description: str
     parameters: dict[str, Any]  # JSON Schema，type 固定为 "object"
-    handler: Callable[..., str]
+    handler: Callable[..., str | ToolResult]
 
     def to_openai_tool(self) -> dict:
         """转换为 OpenAI function calling 的 tool 定义。"""
