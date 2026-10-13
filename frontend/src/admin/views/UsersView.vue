@@ -1,13 +1,68 @@
 <script setup>
 import { useAdminI18n } from '../../shared/adminI18n.js';
 const { tr, date } = useAdminI18n();
-import { ref, onMounted } from 'vue';
+import { ref, reactive, computed, onMounted } from 'vue';
 import { api, ask, confirm, notify, run, sessionsFor } from '../state.js';
 import UiIcon from '../../shared/UiIcon.vue';
+import UiModal from '../../shared/UiModal.vue';
 import { encode } from '../../shared/api.js';
 const users = ref([]),
   error = ref(''),
   loading = ref(true);
+const settingsUser = ref(null),
+  settingsOpen = ref(false),
+  settingsLoading = ref(false),
+  settingsSaving = ref(false),
+  settingsError = ref(''),
+  providers = ref([]);
+const access = reactive({ allowed_provider_ids: null, allowed_model_ids: null });
+const allModels = computed(() => providers.value.flatMap((p) => p.models));
+const providerAllowed = (id) =>
+  access.allowed_provider_ids === null || access.allowed_provider_ids.includes(id);
+const modelAllowed = (id) =>
+  access.allowed_model_ids === null || access.allowed_model_ids.includes(id);
+const availableCount = computed(
+  () =>
+    providers.value
+      .filter((p) => providerAllowed(p.id))
+      .flatMap((p) => p.models)
+      .filter((m) => m.user_enabled && modelAllowed(m.id)).length,
+);
+function selectScope(key, ids, id, checked) {
+  const selected = access[key] === null ? ids : access[key];
+  access[key] = checked
+    ? [...new Set([...selected, id])]
+    : selected.filter((value) => value !== id);
+}
+async function userSettings(u) {
+  settingsLoading.value = true;
+  await run(async () => {
+    const data = await api('GET', `/admin/v1/users/${encode(u.id)}/model-access`);
+    providers.value = data.providers;
+    access.allowed_provider_ids = data.allowed_provider_ids;
+    access.allowed_model_ids = data.allowed_model_ids;
+    settingsUser.value = u;
+    settingsError.value = '';
+    settingsOpen.value = true;
+  });
+  settingsLoading.value = false;
+}
+async function saveSettings() {
+  if (settingsSaving.value) return;
+  settingsSaving.value = true;
+  settingsError.value = '';
+  try {
+    await api('PUT', `/admin/v1/users/${encode(settingsUser.value.id)}/model-access`, {
+      ...access,
+    });
+    settingsOpen.value = false;
+    notify(tr('用户模型权限已保存'));
+  } catch (e) {
+    settingsError.value = e.message;
+  } finally {
+    settingsSaving.value = false;
+  }
+}
 async function load() {
   try {
     users.value = await api('GET', '/admin/v1/users');
@@ -122,6 +177,9 @@ async function remove(u) {
             <td>{{ date(u.created_at) }}</td>
             <td>
               <div class="row">
+                <button :disabled="settingsLoading" @click="userSettings(u)">
+                  {{ tr('用户设置') }}
+                </button>
                 <button @click="sessionsFor(u)">{{ tr('查看会话') }}</button
                 ><button @click="password(u)">{{ tr('重置密码') }}</button
                 ><button @click="role(u)">{{ tr('修改角色') }}</button
@@ -133,5 +191,139 @@ async function remove(u) {
       </table>
       <div v-else class="empty-state">{{ loading ? tr('正在读取…') : tr('暂无用户') }}</div>
     </div>
+    <UiModal
+      id="user-model-access"
+      v-model="settingsOpen"
+      :busy="settingsSaving"
+      wide
+      :title="tr('用户设置') + ' · ' + (settingsUser?.username || '')"
+    >
+      <form id="user-model-access-form" class="stack" @submit.prevent="saveSettings">
+        <p class="muted">
+          {{ tr('选择该用户可用的供应商与模型。只有已下发且在两个开放范围内的模型可以使用。') }}
+        </p>
+        <fieldset :disabled="settingsSaving" class="stack">
+          <legend>{{ tr('供应商开放范围') }}</legend>
+          <div class="row">
+            <label class="check"
+              ><input
+                id="user-all-providers"
+                type="checkbox"
+                :checked="access.allowed_provider_ids === null"
+                @change="
+                  access.allowed_provider_ids = $event.target.checked
+                    ? null
+                    : providers.map((p) => p.id)
+                "
+              />
+              {{ tr('全部供应商（含以后新增）') }}</label
+            >
+            <button type="button" @click="access.allowed_provider_ids = []">
+              {{ tr('清空供应商选择') }}
+            </button>
+          </div>
+          <label v-for="p in providers" :key="p.id" class="check">
+            <input
+              :id="'user-provider-' + p.id"
+              type="checkbox"
+              :checked="providerAllowed(p.id)"
+              @change="
+                selectScope(
+                  'allowed_provider_ids',
+                  providers.map((p) => p.id),
+                  p.id,
+                  $event.target.checked,
+                )
+              "
+            />
+            <span>{{ p.name }}</span>
+          </label>
+          <p v-if="!providers.length" class="muted">{{ tr('尚未配置供应商') }}</p>
+        </fieldset>
+        <fieldset :disabled="settingsSaving" class="stack">
+          <legend>{{ tr('模型开放范围') }}</legend>
+          <div class="row">
+            <label class="check"
+              ><input
+                id="user-all-models"
+                type="checkbox"
+                :checked="access.allowed_model_ids === null"
+                @change="
+                  access.allowed_model_ids = $event.target.checked
+                    ? null
+                    : allModels.map((m) => m.id)
+                "
+              />
+              {{ tr('全部下发模型（含以后新增）') }}</label
+            >
+            <button type="button" @click="access.allowed_model_ids = []">
+              {{ tr('清空模型选择') }}
+            </button>
+          </div>
+          <section v-for="p in providers" :key="p.id" class="model-access-provider">
+            <strong>{{ p.name }}</strong>
+            <div class="model-access-models">
+              <label v-for="m in p.models" :key="m.id" class="check">
+                <input
+                  :id="'user-model-' + m.id"
+                  type="checkbox"
+                  :checked="providerAllowed(p.id) && m.user_enabled && modelAllowed(m.id)"
+                  :disabled="!providerAllowed(p.id) || !m.user_enabled"
+                  @change="
+                    selectScope(
+                      'allowed_model_ids',
+                      allModels.map((item) => item.id),
+                      m.id,
+                      $event.target.checked,
+                    )
+                  "
+                />
+                <span>{{ m.name }}</span
+                ><small v-if="!m.user_enabled" class="badge">{{ tr('未下发') }}</small>
+              </label>
+            </div>
+          </section>
+        </fieldset>
+        <p>{{ tr('当前开放 {count} 个模型', { count: availableCount }) }}</p>
+        <p class="muted">
+          {{
+            tr(
+              '保存后从下一轮调用生效。已选但不再开放的模型会回退到可用模型；没有可用模型时暂停调用。',
+            )
+          }}
+        </p>
+        <p v-if="settingsError" class="feedback bad" role="alert">{{ settingsError }}</p>
+      </form>
+      <template #footer>
+        <button :disabled="settingsSaving" @click="settingsOpen = false">{{ tr('取消') }}</button>
+        <button
+          id="user-model-access-save"
+          class="primary"
+          type="submit"
+          form="user-model-access-form"
+          :disabled="settingsSaving"
+        >
+          {{ tr('保存') }}
+        </button>
+      </template>
+    </UiModal>
   </section>
 </template>
+<style scoped>
+.model-access-provider {
+  display: grid;
+  gap: 10px;
+  padding: 12px;
+  border: 1px solid var(--line);
+  border-radius: 8px;
+}
+.model-access-models {
+  display: grid;
+  gap: 10px;
+  grid-template-columns: repeat(auto-fit, minmax(min(100%, 250px), 1fr));
+}
+.check span {
+  min-width: 0;
+  overflow-wrap: anywhere;
+}
+</style>

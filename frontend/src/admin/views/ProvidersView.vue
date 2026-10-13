@@ -15,7 +15,7 @@ const providers = ref([]),
   busy = ref(false),
   limits = reactive({});
 const current = computed(() => providers.value.find((p) => p.id === selected.value));
-const model = reactive({ name: '', vision: false, max_concurrent_requests: 0 });
+const model = reactive({ name: '', vision: false, max_concurrent_requests: 0, user_enabled: true });
 const iterations = ref(''),
   runtimeDefault = ref(32);
 async function load(resetDraft = true) {
@@ -129,6 +129,15 @@ async function vision(m, event) {
     notify(tr('视觉能力已更新'));
   });
   event.target.checked = m.vision;
+}
+async function dispatch(m, event) {
+  const value = event.target.checked;
+  await run(async () => {
+    await api('PUT', `/admin/v1/models/${encode(m.id)}`, { user_enabled: value });
+    m.user_enabled = value;
+    notify(tr('模型下发设置已更新'));
+  });
+  event.target.checked = m.user_enabled;
 }
 async function limit(m) {
   const raw = String(limits[m.id]).trim(),
@@ -341,6 +350,7 @@ async function saveRuntime() {
                 <tr>
                   <th>{{ tr('模型名称') }}</th>
                   <th>{{ tr('视觉能力') }}</th>
+                  <th>{{ tr('下发给用户') }}</th>
                   <th>{{ tr('并发上限') }}</th>
                   <th>{{ tr('状态') }}</th>
                   <th>{{ tr('操作') }}</th>
@@ -357,6 +367,18 @@ async function saveRuntime() {
                         tr('视觉')
                       }}</label
                     >
+                  </td>
+                  <td>
+                    <label class="check">
+                      <input
+                        :id="'model-dispatch-' + m.id"
+                        type="checkbox"
+                        :checked="m.user_enabled"
+                        :aria-label="m.name + ' ' + tr('下发给用户')"
+                        @change="dispatch(m, $event)"
+                      />
+                      {{ tr('下发给用户') }}
+                    </label>
                   </td>
                   <td>
                     <div class="row" style="flex-wrap: nowrap">
@@ -398,6 +420,10 @@ async function saveRuntime() {
               ><input id="nm-vision" v-model="model.vision" type="checkbox" />{{
                 tr('视觉')
               }}</label
+            ><label class="check">
+              <input id="nm-user-enabled" v-model="model.user_enabled" type="checkbox" />{{
+                tr('下发给用户')
+              }} </label
             ><input
               v-model="model.max_concurrent_requests"
               type="number"

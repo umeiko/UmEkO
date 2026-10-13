@@ -11,6 +11,7 @@ import { checkRecordInspection } from './admin-inspection.mjs';
 import { checkAgentDisclosure } from './agent-disclosure.mjs';
 import { checkTemporaryWorkspace } from './temporary-workspace.mjs';
 import { checkModelDisclosure, checkModelDisclosureControls } from './model-disclosure.mjs';
+import { checkUserModelAccess } from './user-model-access.mjs';
 const require = createRequire(import.meta.url);
 const { chromium } = require(process.env.UMEKO_PLAYWRIGHT || 'playwright');
 const root = fileURLToPath(new URL('../../', import.meta.url));
@@ -1156,6 +1157,7 @@ try {
         accounts.map((a) => a.id),
       );
       // Native Vue model settings persist in the real admin API.
+      await checkUserModelAccess(page, context, adminBase, publicBase, state, prefix, screenshot);
       await page.locator('#tab-providers').click();
       await page.locator('#pd-name').waitFor();
       await page.locator('#ml-' + state.text_model).fill('2');
@@ -1287,7 +1289,8 @@ try {
       assert.equal(agent.default_vision_model_id, state.vision_model);
       assert.deepEqual(agent.disclosed_model_ids, [state.vision_model]);
       await page.locator('#agent-definition-model-disclosure summary').click();
-      await page.locator('#agent-definition-model-disclosure').press('Escape');
+      await page.locator('#agent-definition-model-disclosure summary').press('Escape');
+      await page.locator('#agent-definition-model-disclosure[open]').waitFor({ state: 'hidden' });
       assert.equal(
         await page.locator('#agent-definition-model-disclosure').getAttribute('open'),
         null,
@@ -1311,7 +1314,7 @@ try {
       await page.locator('#tab-resources').click();
       await page.getByText('模型调用队列', { exact: true }).waitFor();
       await page.locator('#tab-users').click();
-      await page.locator('#page-users h2').waitFor();
+      await page.locator('#page-users > header h2').waitFor();
       await page.locator('#tab-sessions').click();
       await page.locator('#page-sessions').waitFor();
       await checkAdminLanguages(page, context, adminBase);

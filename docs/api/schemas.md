@@ -749,17 +749,6 @@
       "title": "Files",
       "type": "array"
     },
-    "model_id": {
-      "anyOf": [
-        {
-          "type": "string"
-        },
-        {
-          "type": "null"
-        }
-      ],
-      "title": "Model Id"
-    },
     "prompt": {
       "maxLength": 200000,
       "minLength": 1,
@@ -1422,6 +1411,11 @@
       "title": "Name",
       "type": "string"
     },
+    "user_enabled": {
+      "default": true,
+      "title": "User Enabled",
+      "type": "boolean"
+    },
     "vision": {
       "default": false,
       "title": "Vision",
@@ -1463,6 +1457,17 @@
         }
       ],
       "title": "Name"
+    },
+    "user_enabled": {
+      "anyOf": [
+        {
+          "type": "boolean"
+        },
+        {
+          "type": "null"
+        }
+      ],
+      "title": "User Enabled"
     },
     "vision": {
       "anyOf": [
@@ -1768,6 +1773,50 @@
     "password"
   ],
   "title": "_UserCreate",
+  "type": "object"
+}
+```
+
+### _UserModelAccessIn
+
+```json
+{
+  "additionalProperties": false,
+  "properties": {
+    "allowed_model_ids": {
+      "anyOf": [
+        {
+          "items": {
+            "type": "string"
+          },
+          "type": "array"
+        },
+        {
+          "type": "null"
+        }
+      ],
+      "title": "Allowed Model Ids"
+    },
+    "allowed_provider_ids": {
+      "anyOf": [
+        {
+          "items": {
+            "type": "string"
+          },
+          "type": "array"
+        },
+        {
+          "type": "null"
+        }
+      ],
+      "title": "Allowed Provider Ids"
+    }
+  },
+  "required": [
+    "allowed_provider_ids",
+    "allowed_model_ids"
+  ],
+  "title": "_UserModelAccessIn",
   "type": "object"
 }
 ```

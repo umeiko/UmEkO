@@ -26,7 +26,7 @@ from ..agent import UmekoAgent
 from ..cancellation import OperationCancelled
 from ..archives import ARCHIVE_SUFFIXES, extract_archive, write_zip
 from ..file_operations import bounded_path, operate_files
-from ..config import Settings
+from ..config import ModelConfig, Settings
 from ..prompts.system import DEFAULT_SYSTEM
 from ..runner import Run, RunManager, TERMINAL_STATUSES
 from ..session import Session
@@ -357,8 +357,8 @@ class AgentService:
         agent_snapshot: dict | None = None,
         machine_results: bool = False,
     ) -> SessionState:
-        effective = settings if settings is not None else self.settings
-        effective = self._agent_vision_settings(effective, agent_snapshot)
+        effective = settings if settings is not None else self.effective_settings_for(user_id, _restore_id)
+        effective = self._agent_vision_settings(effective, agent_snapshot, user_id)
         session_id = _restore_id or f"sess_{uuid.uuid4().hex}"
         root = self.data_root / "users" / user_id / "sessions" / session_id
         root.mkdir(parents=True, exist_ok=bool(_restore_id))
@@ -550,15 +550,7 @@ class AgentService:
             raise ValueError("当前 Session 已有任务正在运行")
         # 用户级/会话级模型选择在每个新 Run 生效：配置有变化就重装配该 Session
         # （DB 历史保留，重建后自动恢复上下文，不影响其他在线 Session）。
-        effective = self._agent_vision_settings(
-            self.effective_settings_for(session.user_id, session_id), session.agent_snapshot)
-        if effective != session.agent.settings:
-            record = self.store.session_by_id(session_id)
-            self.evict_session(session_id)
-            session = self.create_session(
-                user_id=record["user_id"], title=record["title"],
-                _restore_id=session_id, settings=effective, agent_snapshot=session.agent_snapshot,
-            )
+        session = self._session_with_current_models(session)
         if session.title == "未命名会话":
             title = " ".join(user_input.strip().split())[:28] or "未命名会话"
             session.title = title
@@ -578,6 +570,22 @@ class AgentService:
             run, lambda: self._execute_run(session, run, user_input, paths)
         )
         return run
+
+    def _session_with_current_models(self, session: SessionState) -> SessionState:
+        """Refresh authorization before any new model work, including manual compaction."""
+        effective = self._agent_vision_settings(
+            self.effective_settings_for(session.user_id, session.id), session.agent_snapshot, session.user_id)
+        if self.store.is_human_user(session.user_id) and effective.text_model.model_id is None:
+            access = self.store.user_model_access(session.user_id)
+            if (self._base_settings.registry_managed or self.store.list_providers()
+                    or any(value is not None for value in access.values())):
+                raise ValueError("当前没有对你开放的模型，请联系管理员设置模型权限")
+        if effective != session.agent.settings:
+            record = self.store.session_by_id(session.id)
+            self.evict_session(session.id)
+            session = self.create_session(user_id=record["user_id"], title=record["title"],
+                _restore_id=session.id, settings=effective, agent_snapshot=session.agent_snapshot)
+        return session
 
     def _execute_run(
         self, session: SessionState, run: Run, user_input: str, paths: list[Path]
@@ -654,6 +662,7 @@ class AgentService:
         active = session.active_run_holder["run"]
         if active is not None and active.status not in {"completed", "failed", "cancelled"}:
             raise ValueError("任务运行中，暂时不能压缩上下文")
+        session = self._session_with_current_models(session)
         with session.lock:
             result = session.agent.compact_context()
             if not result.get("compressed"):
@@ -753,9 +762,11 @@ class AgentService:
 
     # ---------- 用户级模型解析 ----------
 
-    def _agent_vision_settings(self, settings: Settings, snapshot: dict | None) -> Settings:
+    def _agent_vision_settings(self, settings: Settings, snapshot: dict | None, user_id: str = "") -> Settings:
         vision_id = (snapshot or {}).get("default_vision_model_id")
         if not vision_id:
+            return settings
+        if self.store.is_human_user(user_id) and vision_id not in {row["model_id"] for row in self.store.allowed_model_rows(user_id)}:
             return settings
         row = self.store.model_by_id(vision_id)
         if row is None or not row["vision"]:
@@ -763,6 +774,42 @@ class AgentService:
         return replace(settings, vision_model=model_from_row(row, settings.text_model))
 
     def effective_settings_for(
+        self, user_id: str, session_id: str | None = None
+    ) -> Settings:
+        """Resolve all three user model roles strictly inside the dispatched access scope."""
+        if not self.store.is_human_user(user_id):
+            return self._unrestricted_settings_for(user_id, session_id)
+        settings = resolve_provider_settings(self._base_settings, self.store)
+        self.settings = settings
+        rows = self.store.allowed_model_rows(user_id)
+        if not rows:
+            access = self.store.user_model_access(user_id)
+            if (not settings.registry_managed and not self.store.list_providers()
+                    and all(value is None for value in access.values())):
+                return settings  # Explicit in-process model configuration without a registry.
+            return replace(settings, text_model=ModelConfig("unconfigured", "", "https://invalid.unconfigured",
+                           ca_file=settings.text_model.ca_file), text_model_vision=False,
+                           sub_model=None, sub_model_vision=False, vision_model=None)
+        allowed = {row["model_id"]: row for row in rows}
+        prefs = self.store.user_model_prefs(user_id)
+        record = self.store.session_by_id(session_id) if session_id else None
+        candidates = [(record or {}).get("model_override_id"), prefs["main_model_id"], settings.text_model.model_id]
+        main = next((allowed[mid] for mid in candidates if mid in allowed), rows[0])
+        text = model_from_row(main, settings.text_model)
+        sub = allowed.get(prefs["sub_model_id"])
+        vision = allowed.get(prefs["vision_model_id"])
+        if vision is not None and not vision["vision"]:
+            vision = None
+        if vision is None and not main["vision"]:
+            vision_rows = [row for row in rows if row["vision"]]
+            vision = next((row for row in vision_rows if row["provider_id"] == main["provider_id"]),
+                          vision_rows[0] if vision_rows else None)
+        return replace(settings, text_model=text, text_model_vision=bool(main["vision"]),
+                       sub_model=model_from_row(sub, settings.text_model) if sub else None,
+                       sub_model_vision=bool(sub and sub["vision"]),
+                       vision_model=model_from_row(vision, settings.text_model) if vision else None)
+
+    def _unrestricted_settings_for(
         self, user_id: str, session_id: str | None = None
     ) -> Settings:
         """按优先级解析某用户（某会话）的生效配置：

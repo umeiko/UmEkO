@@ -249,6 +249,11 @@
             "title": "Name",
             "type": "string"
           },
+          "user_enabled": {
+            "default": true,
+            "title": "User Enabled",
+            "type": "boolean"
+          },
           "vision": {
             "default": false,
             "title": "Vision",
@@ -285,6 +290,17 @@
               }
             ],
             "title": "Name"
+          },
+          "user_enabled": {
+            "anyOf": [
+              {
+                "type": "boolean"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "User Enabled"
           },
           "vision": {
             "anyOf": [
@@ -540,6 +556,45 @@
           "password"
         ],
         "title": "_UserCreate",
+        "type": "object"
+      },
+      "_UserModelAccessIn": {
+        "additionalProperties": false,
+        "properties": {
+          "allowed_model_ids": {
+            "anyOf": [
+              {
+                "items": {
+                  "type": "string"
+                },
+                "type": "array"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Allowed Model Ids"
+          },
+          "allowed_provider_ids": {
+            "anyOf": [
+              {
+                "items": {
+                  "type": "string"
+                },
+                "type": "array"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Allowed Provider Ids"
+          }
+        },
+        "required": [
+          "allowed_provider_ids",
+          "allowed_model_ids"
+        ],
+        "title": "_UserModelAccessIn",
         "type": "object"
       }
     },
@@ -2920,6 +2975,108 @@
           }
         ],
         "summary": "Delete User"
+      }
+    },
+    "/admin/v1/users/{user_id}/model-access": {
+      "get": {
+        "description": "用户模型权限；null 跟随全部下发，空数组不开放，指定列表取交集。",
+        "operationId": "user_model_access_admin_v1_users__user_id__model_access_get",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "user_id",
+            "required": true,
+            "schema": {
+              "title": "User Id",
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "additionalProperties": true,
+                  "title": "Response User Model Access Admin V1 Users  User Id  Model Access Get",
+                  "type": "object"
+                }
+              }
+            },
+            "description": "Successful Response"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            },
+            "description": "Validation Error"
+          }
+        },
+        "security": [
+          {
+            "umeko_admin": []
+          }
+        ],
+        "summary": "User Model Access"
+      },
+      "put": {
+        "description": "保存用户的供应商和模型开放范围，下一轮调用时重新检查。",
+        "operationId": "set_user_model_access_admin_v1_users__user_id__model_access_put",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "user_id",
+            "required": true,
+            "schema": {
+              "title": "User Id",
+              "type": "string"
+            }
+          }
+        ],
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/_UserModelAccessIn"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "additionalProperties": true,
+                  "title": "Response Set User Model Access Admin V1 Users  User Id  Model Access Put",
+                  "type": "object"
+                }
+              }
+            },
+            "description": "Successful Response"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            },
+            "description": "Validation Error"
+          }
+        },
+        "security": [
+          {
+            "umeko_admin": []
+          }
+        ],
+        "summary": "Set User Model Access"
       }
     },
     "/admin/v1/users/{user_id}/password": {

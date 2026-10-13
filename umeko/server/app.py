@@ -302,19 +302,16 @@ def create_app(
     def available_models(request: Request) -> dict:
         """管理员配置的可用模型清单（不含凭据）+ 全局默认 + 我的偏好。"""
         active = store.active_model()
+        rows = store.allowed_model_rows(request.state.user["id"])
+        providers = {}
+        for row in rows:
+            provider = providers.setdefault(row["provider_id"], {"id": row["provider_id"], "name": row["provider"], "models": []})
+            provider["models"].append({"id": row["model_id"], "name": row["model"], "vision": bool(row["vision"])})
+        active_id = active["model_id"] if active and any(row["model_id"] == active["model_id"] for row in rows) else (rows[0]["model_id"] if rows else None)
         return {
-            "providers": [
-                {
-                    "id": p["id"], "name": p["name"],
-                    "models": [
-                        {"id": m["id"], "name": m["name"], "vision": m["vision"]}
-                        for m in p["models"]
-                    ],
-                }
-                for p in store.list_providers()
-            ],
-            "active_model_id": active["model_id"] if active else None,
-            "prefs": store.user_model_prefs(request.state.user["id"]),
+            "providers": list(providers.values()),
+            "active_model_id": active_id,
+            "prefs": store.effective_user_model_prefs(request.state.user["id"]),
         }
 
     @app.put("/v1/auth/model-prefs", tags=["models"])
@@ -328,6 +325,8 @@ def create_app(
             )
         except KeyError as exc:
             raise HTTPException(404, "模型不存在或已被管理员移除") from exc
+        except PermissionError as exc:
+            raise HTTPException(403, str(exc)) from exc
         except ValueError as exc:
             raise HTTPException(400, str(exc)) from exc
 
@@ -337,6 +336,8 @@ def create_app(
             store.set_session_model_override(session_id, payload.model_id)
         except KeyError as exc:
             raise HTTPException(404, "模型不存在或已被管理员移除") from exc
+        except PermissionError as exc:
+            raise HTTPException(403, str(exc)) from exc
 
     @app.get(
         "/v1/sessions/{session_id}/workspace/tree",

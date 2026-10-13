@@ -78,6 +78,12 @@ class _RoleSet(BaseModel):
     role: str
 
 
+class _UserModelAccessIn(BaseModel):
+    model_config = ConfigDict(extra="forbid")
+    allowed_provider_ids: list[str] | None
+    allowed_model_ids: list[str] | None
+
+
 class _DefaultSkillIn(BaseModel):
     content: str = Field(min_length=1, max_length=200_000)
 
@@ -109,12 +115,14 @@ class _ModelIn(BaseModel):
     name: str
     vision: bool = False
     max_concurrent_requests: int = Field(default=0, ge=0, strict=True)
+    user_enabled: bool = Field(default=True, strict=True)
 
 
 class _ModelPatch(BaseModel):
     name: str | None = None
     vision: bool | None = None
     max_concurrent_requests: int | None = Field(default=None, ge=0, strict=True)
+    user_enabled: bool | None = Field(default=None, strict=True)
 
 
 class _ActiveModelIn(BaseModel):
@@ -385,6 +393,26 @@ def create_admin_app(settings: Settings, service: AgentService, store: Store, pu
         except ValueError as exc:
             raise HTTPException(400, str(exc)) from exc
 
+    @app.get("/admin/v1/users/{user_id}/model-access")
+    def user_model_access(user_id: str) -> dict:
+        """用户模型权限；null 跟随全部下发，空数组不开放，指定列表取交集。"""
+        try:
+            access = store.user_model_access(user_id)
+        except KeyError as exc:
+            raise HTTPException(404, "用户不存在") from exc
+        return {**access, "providers": [{"id": p["id"], "name": p["name"], "models": p["models"]}
+                                          for p in store.list_providers()]}
+
+    @app.put("/admin/v1/users/{user_id}/model-access")
+    def set_user_model_access(user_id: str, payload: _UserModelAccessIn) -> dict:
+        """保存用户的供应商和模型开放范围，下一轮调用时重新检查。"""
+        try:
+            return store.set_user_model_access(user_id, **payload.model_dump())
+        except KeyError as exc:
+            raise HTTPException(404, "用户不存在") from exc
+        except ValueError as exc:
+            raise HTTPException(400, str(exc)) from exc
+
     @app.put("/admin/v1/users/{user_id}/role", status_code=204)
     def set_role(user_id: str, payload: _RoleSet) -> None:
         try:
@@ -488,7 +516,7 @@ def create_admin_app(settings: Settings, service: AgentService, store: Store, pu
     @app.post("/admin/v1/providers/{provider_id}/models", status_code=201)
     def add_model(provider_id: str, payload: _ModelIn) -> dict:
         try:
-            return store.add_model(provider_id, payload.name, payload.vision, payload.max_concurrent_requests)
+            return store.add_model(provider_id, payload.name, payload.vision, payload.max_concurrent_requests, payload.user_enabled)
         except ValueError as exc:
             raise HTTPException(400, str(exc)) from exc
 

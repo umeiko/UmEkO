@@ -38,7 +38,7 @@ export async function checkModelDisclosureControls(page, state, prefix, screensh
   await page.locator('#agent-model-search').scrollIntoViewIfNeeded();
   await screenshot(page, 'agent-model-disclosure-mobile', prefix);
   await page.setViewportSize({ width: 1440, height: 1000 });
-  await picker.press('Escape');
+  await picker.locator('summary').press('Escape');
   assert.equal(await picker.getAttribute('open'), null);
   await page.locator('[data-language-select]').selectOption('zh-CN');
 }

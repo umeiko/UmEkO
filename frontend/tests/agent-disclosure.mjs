@@ -27,9 +27,9 @@ export async function checkAgentDisclosure(page, context, adminBase, agent, pref
   assert.deepEqual(schema.required, ['task_id']);
   await mcp
     .getByLabel(label('搜索 MCP 工具', 'Search MCP tools'), { exact: true })
-    .fill('read_artifact');
+    .fill('read_results');
   assert.equal(await mcp.locator('.mcp-tool-list button').count(), 1);
-  assert.equal(await mcp.locator('.mcp-tool-detail h3').innerText(), 'read_artifact');
+  assert.equal(await mcp.locator('.mcp-tool-detail h3').innerText(), 'read_results');
   await mcp.getByLabel(label('搜索 MCP 工具', 'Search MCP tools'), { exact: true }).fill('');
   await mcp.getByRole('button', { name: 'submit_task', exact: true }).click();
   await screenshot(page, 'agent-mcp-tools', prefix);
@@ -41,15 +41,17 @@ export async function checkAgentDisclosure(page, context, adminBase, agent, pref
   await screenshot(page, 'agent-mcp-tools-mobile', prefix);
   await page.setViewportSize({ width: 1440, height: 1000 });
   await page.locator('#mcp-disclosure-tab-resources').click();
-  assert.match(await mcp.innerText(), /umeko:\/\/tasks\/\{task_id\}\/artifacts\/\{artifact_id\}/);
+  assert.deepEqual(expected.resourceTemplates, []);
+  assert.equal(await mcp.locator('#mcp-disclosure-panel-resources .mcp-resource').count(), 0);
   await page.locator('#mcp-disclosure-tab-prompts').click();
-  assert.ok(
-    await mcp
-      .getByText(label('当前没有对外披露 MCP 提示词', 'No MCP prompts are currently disclosed'), {
-        exact: true,
-      })
-      .isVisible(),
+  assert.deepEqual(
+    expected.prompts.map((prompt) => prompt.name),
+    ['task_lifecycle'],
   );
+  await mcp
+    .locator('#mcp-disclosure-panel-prompts h4')
+    .filter({ hasText: 'task_lifecycle' })
+    .waitFor();
   await page.locator('#mcp-disclosure-tab-json').click();
   const raw = JSON.parse(await mcp.locator('.mcp-raw').textContent());
   assert.deepEqual(raw, expected);

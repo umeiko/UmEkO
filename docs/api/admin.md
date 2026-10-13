@@ -46,7 +46,7 @@ Provider 创建参数：
 模型创建参数：
 
 ```json
-{"name":"document-model","vision":false,"max_concurrent_requests":2}
+{"name":"document-model","vision":false,"max_concurrent_requests":2,"user_enabled":true}
 ```
 
 模型并发上限设置在**每个模型**上，默认 `0` 为无限制，正整数为同时请求数。`PUT /admin/v1/models/{model_id}` 可只传：
@@ -56,6 +56,10 @@ Provider 创建参数：
 ```
 
 成功返回 `204`，当前进程内立即更新额度。等待请求按 FIFO 排队；流式请求直到流关闭才释放额度。降低额度不会中断已开始的请求，增大或改成 `0` 会放行等待请求。相同模型 ID 被主 / 子 / 视觉模型或不同用户使用时共享额度。
+
+“模型与供应商”中每个模型的“下发给用户”勾选对应 `user_enabled`。默认启用，旧数据库升级也保留原有开放状态。取消后用户工作台不能发现或选择该模型，下一轮运行会重新校验已有的主、子、视觉模型偏好及会话覆盖；不会中断已经开始的运行。服务凭据和免鉴权机器身份调用的固定 Agent 按管理员为该 Agent 配置的模型执行；网页登录身份提交的请求遵守该用户的开放范围。
+
+`PUT /admin/v1/models/{model_id}` 可单独传 `{"user_enabled":false}`；创建和 JSON 导入同样支持这个布尔字段。导入省略该字段时保留已有模型的下发状态。
 
 这控制同时进行的上游请求，不控制每分钟请求数或 token 数；独立进程不共享额度。业务线程池的任务排队也不等于有界、持久化的业务队列。
 
@@ -84,12 +88,21 @@ CLI 的导入文件只包含内层文档。导入按 Provider / 模型名称合�
 | GET / POST | `/admin/v1/users` | 用户列表 / 创建 `{username,password,role}` |
 | PUT | `/admin/v1/users/{user_id}/password` | `{password}` 重置密码 |
 | PUT | `/admin/v1/users/{user_id}/role` | `{role}` 修改角色 |
+| GET / PUT | `/admin/v1/users/{user_id}/model-access` | 查看 / 设置用户的供应商与模型开放范围 |
 | DELETE | `/admin/v1/users/{user_id}` | 删除用户和所属数据 |
 | GET | `/admin/v1/users/{user_id}/sessions` | 用户会话列表 |
 | DELETE | `/admin/v1/sessions/{session_id}` | 删除会话和文件 |
 | POST | `/admin/v1/sessions/{session_id}/evict` | 驱逐内存缓存，不是删除历史 |
 
 角色为 `user` / `admin`；服务保留至少一个管理员。驱逐和配置重载可能取消该缓存中的活跃任务，调用前需理解对在线用户的影响。
+
+用户列表的“用户设置”按供应商和模型勾选开放范围。GET 返回 `allowed_provider_ids`、`allowed_model_ids` 和不含供应商凭据的模型目录。PUT 需提交两个字段：
+
+```json
+{"allowed_provider_ids":["provider_example"],"allowed_model_ids":["model_example"]}
+```
+
+任一字段为 `null` 表示该层不限制，包含以后新增的条目；空数组表示该层全部关闭；指定数组表示只开放列出的 ID。有效范围是**全局下发模型、用户供应商范围、用户模型范围的交集**。已有用户默认两个字段均为 `null`。新设置下一轮运行生效；已失去权限的选择回退到范围内的默认模型或第一个可用模型，无模型时拒绝新调用，仍可浏览已有会话。用户偏好和会话覆盖接口拒绝未开放的模型 ID（`403`）。管理员身份在用户工作台使用模型时也遵守自己的开放范围。
 
 ## 默认技能与服务器技能库
 

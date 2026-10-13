@@ -2,6 +2,7 @@ from __future__ import annotations
 
 import hashlib
 import hmac
+import json
 import secrets
 import sqlite3
 import threading
@@ -85,11 +86,17 @@ class Store:
               name TEXT NOT NULL, vision INTEGER NOT NULL DEFAULT 0,
               created_at TEXT NOT NULL,
               max_concurrent_requests INTEGER NOT NULL DEFAULT 0 CHECK(max_concurrent_requests >= 0),
+              user_enabled INTEGER NOT NULL DEFAULT 1 CHECK(user_enabled IN (0,1)),
               UNIQUE(provider_id, name)
             );
             CREATE TABLE IF NOT EXISTS user_model_prefs (
               user_id TEXT PRIMARY KEY REFERENCES users(id) ON DELETE CASCADE,
               main_model_id TEXT, sub_model_id TEXT, vision_model_id TEXT,
+              updated_at TEXT NOT NULL
+            );
+            CREATE TABLE IF NOT EXISTS user_model_access (
+              user_id TEXT PRIMARY KEY REFERENCES users(id) ON DELETE CASCADE,
+              allowed_provider_ids TEXT, allowed_model_ids TEXT,
               updated_at TEXT NOT NULL
             );
             CREATE TABLE IF NOT EXISTS tool_events (
@@ -121,6 +128,9 @@ class Store:
             if "max_concurrent_requests" not in model_cols:
                 db.execute("ALTER TABLE provider_models ADD COLUMN max_concurrent_requests "
                            "INTEGER NOT NULL DEFAULT 0 CHECK(max_concurrent_requests >= 0)")
+            if "user_enabled" not in model_cols:
+                db.execute("ALTER TABLE provider_models ADD COLUMN user_enabled "
+                           "INTEGER NOT NULL DEFAULT 1 CHECK(user_enabled IN (0,1))")
             cols = {row["name"] for row in db.execute("PRAGMA table_info(users)")}
             if "role" not in cols:
                 db.execute(
@@ -292,7 +302,8 @@ class Store:
         for m in models:
             by_pid.setdefault(m["provider_id"], []).append(
                 {"id": m["id"], "name": m["name"], "vision": bool(m["vision"]),
-                 "max_concurrent_requests": m["max_concurrent_requests"]}
+                 "max_concurrent_requests": m["max_concurrent_requests"],
+                 "user_enabled": bool(m["user_enabled"])}
             )
         return [
             {
@@ -350,7 +361,7 @@ class Store:
             result = db.execute("DELETE FROM providers WHERE id=?", (provider_id,))
             if not result.rowcount:
                 raise KeyError(provider_id)
-            self._drop_model_references(db, model_ids)
+            self._drop_model_references(db, model_ids, [provider_id])
             # 激活模型随级联消失时清掉激活指针
             row = db.execute(
                 "SELECT value FROM app_config WHERE key='ACTIVE_MODEL_ID'"
@@ -361,7 +372,7 @@ class Store:
                 db.execute("DELETE FROM app_config WHERE key='ACTIVE_MODEL_ID'")
 
     @staticmethod
-    def _drop_model_references(db, model_ids: list[str]) -> None:
+    def _drop_model_references(db, model_ids: list[str], provider_ids: tuple[str, ...] | list[str] = ()) -> None:
         """模型被删除时，同步清掉用户偏好与会话覆盖里的悬空引用。"""
         for mid in model_ids:
             db.execute(
@@ -381,27 +392,44 @@ class Store:
                 "WHERE model_override_id=?",
                 (mid,),
             )
+        # Prune deleted entries while preserving explicit empty scopes (deny all).
+        for row in db.execute("SELECT * FROM user_model_access").fetchall():
+            updates = {}
+            for key, removed in (("allowed_model_ids", model_ids), ("allowed_provider_ids", provider_ids)):
+                if row[key] is not None:
+                    current = json.loads(row[key])
+                    remaining = [value for value in current if value not in removed]
+                    if remaining != current:
+                        updates[key] = json.dumps(remaining)
+            if updates:
+                clause = ",".join(f"{key}=?" for key in updates)
+                db.execute(f"UPDATE user_model_access SET {clause},updated_at=? WHERE user_id=?",
+                           (*updates.values(), _now(), row["user_id"]))
 
     def add_model(
         self, provider_id: str, name: str, vision: bool = False,
         max_concurrent_requests: int = 0,
+        user_enabled: bool = True,
     ) -> dict:
         name = name.strip()
         if not name:
             raise ValueError("模型名不能为空")
         limit = validate_limit(max_concurrent_requests)
+        if type(user_enabled) is not bool:
+            raise ValueError("user_enabled 必须是布尔值")
         mid = f"mdl_{uuid.uuid4().hex}"
         try:
             with self.connect() as db:
                 db.execute(
-                    "INSERT INTO provider_models (id,provider_id,name,vision,created_at,max_concurrent_requests) "
-                    "VALUES (?,?,?,?,?,?)",
-                    (mid, provider_id, name, 1 if vision else 0, _now(), limit),
+                    "INSERT INTO provider_models (id,provider_id,name,vision,created_at,max_concurrent_requests,user_enabled) "
+                    "VALUES (?,?,?,?,?,?,?)",
+                    (mid, provider_id, name, 1 if vision else 0, _now(), limit, int(user_enabled)),
                 )
         except sqlite3.IntegrityError as exc:
             raise ValueError("该 Provider 下模型已存在") from exc
         set_model_limit(mid, limit)
-        return {"id": mid, "name": name, "vision": bool(vision), "max_concurrent_requests": limit}
+        return {"id": mid, "name": name, "vision": bool(vision), "max_concurrent_requests": limit,
+                "user_enabled": user_enabled}
 
     def update_model(self, model_id: str, **fields) -> None:
         updates: dict = {}
@@ -409,6 +437,10 @@ class Store:
             updates["name"] = str(fields["name"]).strip()
         if "vision" in fields:
             updates["vision"] = 1 if fields["vision"] else 0
+        if "user_enabled" in fields:
+            if type(fields["user_enabled"]) is not bool:
+                raise ValueError("user_enabled 必须是布尔值")
+            updates["user_enabled"] = int(fields["user_enabled"])
         if "max_concurrent_requests" in fields:
             updates["max_concurrent_requests"] = validate_limit(fields["max_concurrent_requests"])
         if not updates:
@@ -479,6 +511,58 @@ class Store:
 
     # ---- 用户模型偏好（角色级：主/子/视觉智能体）与会话级覆盖 ----
 
+    def is_human_user(self, user_id: str) -> bool:
+        with self.connect() as db:
+            return db.execute("SELECT 1 FROM users WHERE id=? AND kind='human'", (user_id,)).fetchone() is not None
+
+    def user_model_access(self, user_id: str) -> dict:
+        with self.connect() as db:
+            if db.execute("SELECT 1 FROM users WHERE id=? AND kind='human'", (user_id,)).fetchone() is None:
+                raise KeyError(user_id)
+            row = db.execute("SELECT allowed_provider_ids,allowed_model_ids FROM user_model_access WHERE user_id=?",
+                             (user_id,)).fetchone()
+        return {key: json.loads(row[key]) if row and row[key] is not None else None
+                for key in ("allowed_provider_ids", "allowed_model_ids")}
+
+    def set_user_model_access(self, user_id: str, allowed_provider_ids: list[str] | None,
+                              allowed_model_ids: list[str] | None) -> dict:
+        with self.connect() as db:
+            if db.execute("SELECT 1 FROM users WHERE id=? AND kind='human'", (user_id,)).fetchone() is None:
+                raise KeyError(user_id)
+            values = []
+            for ids, table in ((allowed_provider_ids, "providers"), (allowed_model_ids, "provider_models")):
+                if ids is not None:
+                    if not isinstance(ids, list) or any(not isinstance(mid, str) for mid in ids):
+                        raise ValueError("开放范围必须为 ID 数组或 null")
+                    known = {row["id"] for row in db.execute(f"SELECT id FROM {table}")}
+                    if not set(ids) <= known:
+                        raise ValueError("选择的供应商或模型不存在，请刷新后重试")
+                    ids = list(dict.fromkeys(ids))
+                values.append(json.dumps(ids) if ids is not None else None)
+            db.execute("INSERT OR REPLACE INTO user_model_access VALUES (?,?,?,?)", (user_id, *values, _now()))
+        return self.user_model_access(user_id)
+
+    def allowed_model_rows(self, user_id: str) -> list[dict]:
+        """Internal model rows; dispatch and per-user scope apply only to human workbenches."""
+        human = self.is_human_user(user_id)
+        access = self.user_model_access(user_id) if human else {"allowed_provider_ids": None, "allowed_model_ids": None}
+        with self.connect() as db:
+            rows = db.execute("""
+              SELECT m.id AS model_id, m.name AS model, m.vision, m.max_concurrent_requests,
+                     p.id AS provider_id, p.name AS provider, p.base_url, p.api_key, p.proxy
+              FROM provider_models m JOIN providers p ON p.id=m.provider_id
+              WHERE (?=0 OR m.user_enabled=1) ORDER BY p.created_at,m.created_at,m.id
+            """, (int(human),)).fetchall()
+        return [dict(row) for row in rows
+                if (access["allowed_provider_ids"] is None or row["provider_id"] in access["allowed_provider_ids"])
+                and (access["allowed_model_ids"] is None or row["model_id"] in access["allowed_model_ids"])]
+
+    def effective_user_model_prefs(self, user_id: str) -> dict:
+        prefs = self.user_model_prefs(user_id)
+        allowed = {row["model_id"]: row for row in self.allowed_model_rows(user_id)}
+        return {key: mid if mid in allowed and (key != "vision_model_id" or allowed[mid]["vision"]) else None
+                for key, mid in prefs.items()}
+
     @staticmethod
     def _empty_prefs() -> dict:
         return {
@@ -511,6 +595,10 @@ class Store:
         for mid in (main_model_id, sub_model_id, vision_model_id):
             if mid is not None and self.model_by_id(mid) is None:
                 raise KeyError(mid)
+        if self.is_human_user(user_id):
+            allowed = {row["model_id"] for row in self.allowed_model_rows(user_id)}
+            if any(mid is not None and mid not in allowed for mid in (main_model_id, sub_model_id, vision_model_id)):
+                raise PermissionError("模型未对该用户开放，请联系管理员")
         if vision_model_id is not None:
             row = self.model_by_id(vision_model_id)
             if not row["vision"]:
@@ -528,6 +616,12 @@ class Store:
         """会话级主模型覆盖；None = 清除覆盖，回到用户偏好/全局默认。"""
         if model_id is not None and self.model_by_id(model_id) is None:
             raise KeyError(model_id)
+        record = self.session_by_id(session_id)
+        if record is None:
+            raise KeyError(session_id)
+        if model_id is not None and self.is_human_user(record["user_id"]):
+            if model_id not in {row["model_id"] for row in self.allowed_model_rows(record["user_id"])}:
+                raise PermissionError("模型未对该用户开放，请联系管理员")
         with self.connect() as db:
             result = db.execute(
                 "UPDATE agent_sessions SET model_override_id=? WHERE id=?",
@@ -609,10 +703,12 @@ class Store:
                     continue
                 limit = validate_limit(m.get("max_concurrent_requests", 0))
                 try:
-                    self.add_model(pid, mname, bool(m.get("vision", False)), limit)
+                    self.add_model(pid, mname, bool(m.get("vision", False)), limit, m.get("user_enabled", True))
                     created_m += 1
                 except ValueError:
-                    if "vision" in m or "max_concurrent_requests" in m:
+                    if type(m.get("user_enabled", True)) is not bool:
+                        raise ValueError("user_enabled 必须是布尔值")
+                    if "vision" in m or "max_concurrent_requests" in m or "user_enabled" in m:
                         row = next(
                             (x for x in self.list_providers() if x["id"] == pid), None
                         )
@@ -626,6 +722,8 @@ class Store:
                                 updates["vision"] = bool(m["vision"])
                             if "max_concurrent_requests" in m:
                                 updates["max_concurrent_requests"] = limit
+                            if "user_enabled" in m:
+                                updates["user_enabled"] = m["user_enabled"]
                             self.update_model(hit["id"], **updates)
         activated = None
         active = str(doc.get("active", "")).strip()

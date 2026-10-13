@@ -358,6 +358,11 @@ async function removeAgent(a) {
     notify(tr('智能体已删除'));
   });
 }
+function closeModelPicker(event) {
+  // A native toggle may still be pending; close the DOM as well as the Vue state.
+  event.currentTarget.open = false;
+  modelPickerOpen.value = false;
+}
 function manageSkills() {
   editor.value = false;
   admin.tab = 'dskills';
@@ -793,7 +798,7 @@ function manageSkills() {
               class="model-disclosure"
               :open="modelPickerOpen"
               @toggle="modelPickerOpen = $event.target.open"
-              @keydown.esc.prevent="modelPickerOpen = false"
+              @keydown.esc.prevent="closeModelPicker"
               aria-labelledby="agent-model-disclosure-label"
             >
               <summary @click="saving && $event.preventDefault()" :aria-disabled="saving">
