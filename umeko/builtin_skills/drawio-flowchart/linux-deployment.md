@@ -28,6 +28,32 @@ RPM 发行版可选官方 `.rpm` 并安装对应的 Xvfb/xauth/字体包；AppIm
 
 ## config.json 怎么填
 
+### 下载并安装原字体
+
+方正兰亭黑简体原文件提供在 [assets Release](https://github.com/umeiko/UmEkO/releases/tag/assets)：
+[FZLanTingHeiS-R-GB.ttf](https://github.com/umeiko/UmEkO/releases/download/assets/FZLanTingHeiS-R-GB.ttf)，
+[SHA256SUMS.txt](https://github.com/umeiko/UmEkO/releases/download/assets/SHA256SUMS.txt)。
+项目维护方确认公司已取得商业授权；字体授权独立于项目代码许可。
+
+```sh
+curl --fail --location --retry 3 \
+  https://github.com/umeiko/UmEkO/releases/download/assets/FZLanTingHeiS-R-GB.ttf \
+  --output /tmp/FZLanTingHeiS-R-GB.ttf
+printf '%s  %s\n' \
+  '5301bdfe967da491eec7edf29c6ba50cf44f27ad30a0d70a7f74247f3656199b' \
+  '/tmp/FZLanTingHeiS-R-GB.ttf' | sha256sum --check -
+sudo install -d -m 0755 /usr/local/share/fonts/umeko
+sudo install -m 0644 /tmp/FZLanTingHeiS-R-GB.ttf /usr/local/share/fonts/umeko/
+sudo fc-cache -f
+fc-match -f '%{family}\n' '方正兰亭黑简体'
+```
+
+确认返回的 family 包含 `方正兰亭黑简体` 或 `FZLanTingHeiS-R-GB`，然后保留配置中的
+`"font_family": "方正兰亭黑简体"`、`"font_size": "10.5"`。Docker 可将上面的字体目录
+只读挂载到容器同名路径；宿主已安装字体不代表容器内自动可用。
+
+### 配置字段
+
 `config.json` 是严格 JSON，不支持 `//` 或 `#` 注释；其中 `_help` 是说明字段，脚本忽略它，
 可以保留。配置以下字段即可：
 

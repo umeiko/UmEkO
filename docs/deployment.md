@@ -102,6 +102,51 @@ uv run python -m umeko.server --env .env --host 0.0.0.0 --port 8000
 exe 读取同样的部署配置和 Provider 数据库，用户面 / 管理面端口及配置顺序与源码启动一致。
 不要把升级后的 exe 放到另一个空目录就当作原安装继续运行；应保留数据目录或显式指定原目录。
 
+### draw.io 导出与原始字体 {#drawio-font}
+
+绘图 Skill 默认使用 **方正兰亭黑简体**，实际 family 为 `方正兰亭黑简体` / `FZLanTingHeiS-R-GB`，
+样式为 Regular。项目维护方已确认公司取得商业授权，原始字体文件单独提供在
+[assets Release](https://github.com/umeiko/UmEkO/releases/tag/assets)：
+
+- [下载 FZLanTingHeiS-R-GB.ttf](https://github.com/umeiko/UmEkO/releases/download/assets/FZLanTingHeiS-R-GB.ttf)
+- [下载 SHA256SUMS.txt](https://github.com/umeiko/UmEkO/releases/download/assets/SHA256SUMS.txt)
+
+字体文件为 2,400,742 字节，SHA-256：
+`5301bdfe967da491eec7edf29c6ba50cf44f27ad30a0d70a7f74247f3656199b`。
+字体授权独立于项目代码许可，使用范围以相应字体授权为准。
+
+**Windows**：下载字体，右键选择“为所有用户安装”，再重启实际运行绘图的服务。
+只在管理员个人账户安装，并不代表其他服务账户也能读取该字体。
+
+**Linux（fontconfig）**：运行以下命令下载、校验并安装：
+
+```sh
+curl --fail --location --retry 3 \
+  https://github.com/umeiko/UmEkO/releases/download/assets/FZLanTingHeiS-R-GB.ttf \
+  --output /tmp/FZLanTingHeiS-R-GB.ttf
+printf '%s  %s\n' \
+  '5301bdfe967da491eec7edf29c6ba50cf44f27ad30a0d70a7f74247f3656199b' \
+  '/tmp/FZLanTingHeiS-R-GB.ttf' | sha256sum --check -
+sudo install -d -m 0755 /usr/local/share/fonts/umeko
+sudo install -m 0644 /tmp/FZLanTingHeiS-R-GB.ttf /usr/local/share/fonts/umeko/
+sudo fc-cache -f
+fc-match -f '%{family}\n' '方正兰亭黑简体'
+```
+
+最后一条应包含 `方正兰亭黑简体` 或 `FZLanTingHeiS-R-GB`，不要把命令成功但返回替代字体当作安装完成。
+在绘图 Skill 的 `config.json` 中保留 `"font_family": "方正兰亭黑简体"`、`"font_size": "10.5"`。
+
+**Docker**：字体必须在容器内可用；可将宿主已安装的字体目录只读挂载：
+
+```sh
+--mount type=bind,src=/usr/local/share/fonts/umeko,dst=/usr/local/share/fonts/umeko,readonly
+```
+
+字体目录权限需允许容器服务账户读取；容器启动后执行 `fc-match` 核对实际 family。
+方正字体作为独立 Release 资产下载，Skill ZIP 不包含字体二进制。
+Linux 版 draw.io、Xvfb、`drawio_path`、完整 Docker 命令和无模型验收见
+[绘图 Skill 的 Linux 部署说明](https://github.com/umeiko/UmEkO/blob/main/umeko/builtin_skills/drawio-flowchart/linux-deployment.md)。
+
 ## 配置放在哪里
 
 模型配置统一保存在 `UMEKO_DATA_ROOT/umeko.db` 的 Provider / Model 注册表中。
