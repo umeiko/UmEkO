@@ -182,7 +182,8 @@ def test_machine_protocol_runs_real_tools_after_upstream_400(machine_server, mon
         completed = sum(m["role"] == "user" and "[工具返回" in (m.get("content") or "") for m in body["messages"])
         result = {"tool_calls": [{"name": "list_dir", "arguments": {"directory": "attachments"}}]} if not completed else (
             {"tool_calls": [{"name": "write_file", "arguments": {"path": "report.txt", "content": "COMPAT_REPORT"}}]}
-            if completed == 1 else {"final": "COMPAT_COMPLETE"})
+            if completed == 1 else {"tool_calls": [{"name": "submit_results", "arguments": {
+                "text": "COMPAT_COMPLETE", "files": [{"path": "generate/report.txt"}]}}]})
         return model_response(json.dumps(result), body["stream"])
     sdk = sdk_factory(handle)
     monkeypatch.setattr(LLMClient, "_get_client", lambda self: sdk)
@@ -209,11 +210,16 @@ def test_machine_protocol_runs_real_tools_after_upstream_400(machine_server, mon
                 await asyncio.sleep(.05)
             assert task["status"] == "completed", task
             assert task["reply"] == "COMPAT_COMPLETE"
+            results = (await http.get(base + "/v1/tasks/" + task_id + "/results")).json()
+            assert results["ready"] and results["text"] == "COMPAT_COMPLETE"
+            assert [f["path"] for f in results["files"]] == ["generate/report.txt"]
+            file_id = results["files"][0]["file_id"]
+            assert (await http.get(base + f"/v1/tasks/{task_id}/files/{file_id}/content")).text == "COMPAT_REPORT"
             artifact = next(a for a in task["artifacts"] if a["name"] == "generate/report.txt")
             assert (await http.get(artifact["download_url"])).text == "COMPAT_REPORT"
             assert task["workspace_url"].startswith(base.rsplit("/agent/", 1)[0] + "/TMP/")
             info = (await http.get(task["workspace_url"] + "/v1/temporary")).json()
             tools = (await http.get(task["workspace_url"] + "/v1/sessions/" + info["session_id"] + "/tool-events")).json()
-            assert [e["name"] for e in tools] == ["list_dir", "write_file"]
+            assert [e["name"] for e in tools] == ["list_dir", "write_file", "submit_results"]
     asyncio.run(check())
     assert [bool(r.get("tools")) for r in requests] == [True, False] * 3
