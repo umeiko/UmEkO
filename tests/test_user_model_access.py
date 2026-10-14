@@ -166,7 +166,8 @@ def test_management_validation_auth_persistence_and_import(model_access):
                             json={"name": "never-dispatch", "user_enabled": False})
     assert created.status_code == 201 and created.json()["user_enabled"] is False
     assert e["admin"].put(route, json={"user_enabled": False}).status_code == 204
-    assert not ids(e["user"].get(e["prefix"] + "/v1/models").json())
+    # An explicit personal grant still works after global dispatch is turned off.
+    assert ids(e["user"].get(e["prefix"] + "/v1/models").json()) == {e["main"]["id"]}
     for invalid in ("false", 0, 1):
         assert e["admin"].put(route, json={"user_enabled": invalid}).status_code == 422
     assert Store(e["store"].path).user_model_access(e["owner"]["id"]) == original
@@ -180,6 +181,51 @@ def test_management_validation_auth_persistence_and_import(model_access):
     e["store"].delete_provider(e["p"]["id"])
     assert not e["store"].allowed_model_rows(e["owner"]["id"])
     assert e["store"].user_model_access(e["owner"]["id"]) == {"allowed_provider_ids": [], "allowed_model_ids": []}
+
+
+def test_vip_grant_exposes_private_model_only_to_that_user_and_can_be_revoked(model_access, monkeypatch):
+    e = model_access
+    service, store = e["service"], e["store"]
+    private = e["hidden"]["id"]
+    other = store.create_user("ordinary-reader", "fixture-password")
+    assert private not in ids(e["user"].get(e["prefix"] + "/v1/models").json())
+    grant(e, [e["q"]["id"]], [private])
+    exposed = e["user"].get(e["prefix"] + "/v1/models").json()
+    assert ids(exposed) == {private} and exposed["active_model_id"] == private
+    assert private not in {row["model_id"] for row in store.allowed_model_rows(other["id"])}
+    prefs = {key: private for key in ("main_model_id", "sub_model_id", "vision_model_id")}
+    assert e["user"].put(e["prefix"] + "/v1/auth/model-prefs", json=prefs).status_code == 200
+    sid = e["user"].post(e["prefix"] + "/v1/sessions", json={}).json()["id"]
+    model_url = e["prefix"] + f"/v1/sessions/{sid}/model"
+    assert e["user"].put(model_url, json={"model_id": private}).status_code == 204
+    seen = []
+    def chat(agent, prompt, images=None):
+        settings = agent.settings
+        seen.append((settings.text_model.model_id, settings.sub_model.model_id if settings.sub_model else None,
+                     settings.vision_model.model_id if settings.vision_model else None))
+        return "controlled VIP answer"
+    monkeypatch.setattr(UmekoAgent, "chat", chat)
+    first = service.create_run(sid, "use the private model", [])
+    for _ in range(200):
+        if first.finished and service.get_session(sid).active_run_holder["run"] is None:
+            break
+        time.sleep(.01)
+    assert first.status == "completed" and seen == [(private, private, private)]
+    # Closing the provider still blocks even an explicit VIP grant.
+    grant(e, [], [private])
+    assert not ids(e["user"].get(e["prefix"] + "/v1/models").json())
+    assert e["user"].put(model_url, json={"model_id": private}).status_code == 403
+    # Following default dispatch revokes the exception; old prefs/overrides cannot retain it.
+    grant(e)
+    exposed = e["user"].get(e["prefix"] + "/v1/models").json()
+    assert private not in ids(exposed) and exposed["prefs"] == Store._empty_prefs()
+    assert e["user"].put(model_url, json={"model_id": private}).status_code == 403
+    second = service.create_run(sid, "after revocation", [])
+    for _ in range(200):
+        if second.finished:
+            break
+        time.sleep(.01)
+    assert second.status == "completed" and private not in seen[-1]
 
 
 def test_manual_context_compaction_rechecks_model_access(model_access, monkeypatch):

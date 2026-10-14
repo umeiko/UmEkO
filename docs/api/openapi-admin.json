@@ -2979,7 +2979,7 @@
     },
     "/admin/v1/users/{user_id}/model-access": {
       "get": {
-        "description": "用户模型权限；null 跟随全部下发，空数组不开放，指定列表取交集。",
+        "description": "用户模型权限；null 跟随全局下发，空数组不开放，指定列表可单独授权未下发模型；仍需开放对应供应商。",
         "operationId": "user_model_access_admin_v1_users__user_id__model_access_get",
         "parameters": [
           {

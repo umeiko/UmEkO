@@ -19,14 +19,19 @@ const access = reactive({ allowed_provider_ids: null, allowed_model_ids: null })
 const allModels = computed(() => providers.value.flatMap((p) => p.models));
 const providerAllowed = (id) =>
   access.allowed_provider_ids === null || access.allowed_provider_ids.includes(id);
-const modelAllowed = (id) =>
-  access.allowed_model_ids === null || access.allowed_model_ids.includes(id);
+const modelAllowed = (model) =>
+  access.allowed_model_ids === null
+    ? model.user_enabled
+    : access.allowed_model_ids.includes(model.id);
+const dispatchedIds = computed(() =>
+  allModels.value.filter((m) => m.user_enabled).map((m) => m.id),
+);
 const availableCount = computed(
   () =>
     providers.value
       .filter((p) => providerAllowed(p.id))
       .flatMap((p) => p.models)
-      .filter((m) => m.user_enabled && modelAllowed(m.id)).length,
+      .filter(modelAllowed).length,
 );
 function selectScope(key, ids, id, checked) {
   const selected = access[key] === null ? ids : access[key];
@@ -200,7 +205,11 @@ async function remove(u) {
     >
       <form id="user-model-access-form" class="stack" @submit.prevent="saveSettings">
         <p class="muted">
-          {{ tr('选择该用户可用的供应商与模型。只有已下发且在两个开放范围内的模型可以使用。') }}
+          {{
+            tr(
+              '默认跟随已下发模型。未全局下发的模型也可在这里单独授权给该用户，仍须开放对应供应商。',
+            )
+          }}
         </p>
         <fieldset :disabled="settingsSaving" class="stack">
           <legend>{{ tr('供应商开放范围') }}</legend>
@@ -248,11 +257,7 @@ async function remove(u) {
                 id="user-all-models"
                 type="checkbox"
                 :checked="access.allowed_model_ids === null"
-                @change="
-                  access.allowed_model_ids = $event.target.checked
-                    ? null
-                    : allModels.map((m) => m.id)
-                "
+                @change="access.allowed_model_ids = $event.target.checked ? null : dispatchedIds"
               />
               {{ tr('全部下发模型（含以后新增）') }}</label
             >
@@ -267,19 +272,14 @@ async function remove(u) {
                 <input
                   :id="'user-model-' + m.id"
                   type="checkbox"
-                  :checked="providerAllowed(p.id) && m.user_enabled && modelAllowed(m.id)"
-                  :disabled="!providerAllowed(p.id) || !m.user_enabled"
+                  :checked="providerAllowed(p.id) && modelAllowed(m)"
+                  :disabled="!providerAllowed(p.id)"
                   @change="
-                    selectScope(
-                      'allowed_model_ids',
-                      allModels.map((item) => item.id),
-                      m.id,
-                      $event.target.checked,
-                    )
+                    selectScope('allowed_model_ids', dispatchedIds, m.id, $event.target.checked)
                   "
                 />
                 <span>{{ m.name }}</span
-                ><small v-if="!m.user_enabled" class="badge">{{ tr('未下发') }}</small>
+                ><small v-if="!m.user_enabled" class="badge">{{ tr('未全局下发') }}</small>
               </label>
             </div>
           </section>

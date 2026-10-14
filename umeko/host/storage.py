@@ -543,19 +543,23 @@ class Store:
         return self.user_model_access(user_id)
 
     def allowed_model_rows(self, user_id: str) -> list[dict]:
-        """Internal model rows; dispatch and per-user scope apply only to human workbenches."""
+        """Internal rows: humans inherit global dispatch or use explicit personal grants.
+
+        Personal grants may include undispatched models, always within the provider scope.
+        """
         human = self.is_human_user(user_id)
         access = self.user_model_access(user_id) if human else {"allowed_provider_ids": None, "allowed_model_ids": None}
         with self.connect() as db:
             rows = db.execute("""
-              SELECT m.id AS model_id, m.name AS model, m.vision, m.max_concurrent_requests,
+              SELECT m.id AS model_id, m.name AS model, m.vision, m.max_concurrent_requests, m.user_enabled,
                      p.id AS provider_id, p.name AS provider, p.base_url, p.api_key, p.proxy
               FROM provider_models m JOIN providers p ON p.id=m.provider_id
-              WHERE (?=0 OR m.user_enabled=1) ORDER BY p.created_at,m.created_at,m.id
-            """, (int(human),)).fetchall()
+              ORDER BY p.created_at,m.created_at,m.id
+            """).fetchall()
         return [dict(row) for row in rows
                 if (access["allowed_provider_ids"] is None or row["provider_id"] in access["allowed_provider_ids"])
-                and (access["allowed_model_ids"] is None or row["model_id"] in access["allowed_model_ids"])]
+                and (not human or (row["user_enabled"] if access["allowed_model_ids"] is None
+                                   else row["model_id"] in access["allowed_model_ids"]))]
 
     def effective_user_model_prefs(self, user_id: str) -> dict:
         prefs = self.user_model_prefs(user_id)

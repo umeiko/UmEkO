@@ -395,7 +395,7 @@ def create_admin_app(settings: Settings, service: AgentService, store: Store, pu
 
     @app.get("/admin/v1/users/{user_id}/model-access")
     def user_model_access(user_id: str) -> dict:
-        """用户模型权限；null 跟随全部下发，空数组不开放，指定列表取交集。"""
+        """用户模型权限；null 跟随全局下发，空数组不开放，指定列表可单独授权未下发模型；仍需开放对应供应商。"""
         try:
             access = store.user_model_access(user_id)
         except KeyError as exc:
