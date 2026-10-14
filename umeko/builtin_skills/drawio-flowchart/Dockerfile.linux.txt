@@ -1,5 +1,5 @@
 # Build from an unpacked drawio-flowchart SkillHub ZIP, at its SKILL.md root.
-# docker build -f drawio-flowchart/Dockerfile.linux.txt -t umeko-drawio:1.0.1 .
+# docker build -f drawio-flowchart/Dockerfile.linux.txt -t umeko-drawio:1.0.2 .
 FROM ubuntu:24.04
 ARG DRAWIO_VERSION=32.4.1
 ARG DRAWIO_SHA256=f4455b3bba3d3b539c3cd069218fc64f0462b1b01610fe8d11acc3ca8566f32b

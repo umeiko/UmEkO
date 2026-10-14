@@ -85,8 +85,23 @@ def main() -> None:
                              capture_output=True, text=True)
     if not missing.returncode or "missing" not in missing.stderr:
         raise RuntimeError("缺少渲染器时没有正确失败")
+    failure_file = root / "workspace/export-failure.json"
+    failure_file.write_text(json.dumps({"source_path": "generate/flowchart-source.xml", "formats": ["png"],
+                                       "output_name": "failure", "style_path": "attachments/linux-style.md"}), encoding="utf-8")
+    for renderer, expected in (("/missing/drawio", "renderer_unavailable"),
+                               ("/usr/local/bin/drawio-headless", "export_failed")):
+        failure = subprocess.run([sys.executable, str(runner), "generate_drawio.py", "--root", str(root),
+                                  "--args-file", str(failure_file)],
+                                 env={**os.environ, "UMEKO_DRAWIO_PATH": renderer, "DRAWIO_BINARY": "/missing/drawio"},
+                                 capture_output=True, text=True, encoding="utf-8", timeout=30)
+        body = json.loads(failure.stdout)
+        if (failure.returncode != 1 or body["ok"] or body.get("status") != "partial"
+                or body["errors"][0]["code"] != expected or not body["errors"][0]["message"]
+                or body["files"] != ["generate/failure.drawio"] or (root / "generate/failure.png").exists()):
+            raise RuntimeError(f"导出失败没有完整返回诊断与草稿：{body}")
     summary = {"ok": True, "font": font, "prepared": prepared["files"], "diagrams": records,
-               "visual_review_performed": False, "missing_renderer_rejected": True}
+               "visual_review_performed": False, "missing_renderer_rejected": True,
+               "export_failure_diagnostics_retained": True}
     (root / "generate/linux-smoke.json").write_text(json.dumps(summary, ensure_ascii=False, indent=2), encoding="utf-8")
     print(json.dumps(summary, ensure_ascii=False, indent=2))
 

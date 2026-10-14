@@ -8,7 +8,7 @@
     stdin  : {"args": {...}, "workdir": "<Session 产物目录绝对路径>",
               "session_root": "<Session 根绝对路径>"}
     stdout : 一行 JSON {"ok": bool, "result": "给模型的结论", "files": [...]}
-    stderr : 逐行进度文本（实时透传给用户工具卡片）
+    stderr : 进度文本（结束后尾行透传给工具卡片，失败诊断同时返回模型）
 
 沙箱约束：
     - 只能执行技能库目录内、且包名与 .md 同名的子目录下的 .py（防穿越）
@@ -30,6 +30,58 @@ from ..cancellation import CancelCheck
 from ..skillpacks import skill_packs_dir
 
 DEFAULT_TIMEOUT = 60  # 秒；硬上限由调用方传入
+MAX_DIAGNOSTIC_CHARS = 4000
+
+
+def _tail(value: str) -> str:
+    return value.strip()[-MAX_DIAGNOSTIC_CHARS:]
+
+
+def _script_result(out: str, err: str, code: int, *, timed_out: int | None = None) -> str:
+    """Keep failure evidence in the model's tool result, not only UI progress events."""
+    lines = [line for line in out.strip().splitlines() if line.strip()]
+    stderr = _tail(err)
+
+    def failure(message):
+        return (f"错误：{message}\n脚本退出码：{code}"
+                + (f"\nstdout 尾部：{_tail(out)}" if out.strip() else "")
+                + (f"\nstderr 尾部：{stderr}" if stderr else ""))
+
+    if timed_out is not None:
+        return failure(f"脚本执行超时（>{timed_out}s），已强制终止。请根据下方诊断检查脚本和运行环境。")
+    if not lines:
+        return failure("脚本无输出")
+    try:
+        result = json.loads(lines[-1])
+    except (json.JSONDecodeError, TypeError):
+        return failure("脚本输出不符合契约（最后一行须为 JSON 对象）")
+    if not isinstance(result, dict) or not isinstance(result.get("ok"), bool):
+        return failure("脚本结果须为 JSON 对象，ok 须为布尔值")
+    files = result.get("files", [])
+    if files is None:
+        files = []
+    if not isinstance(files, list) or any(not isinstance(path, str) for path in files):
+        return failure("脚本结果 files 须为文件路径数组")
+    ok = result["ok"] and code == 0
+    text = str(result.get("result") or "脚本未提供结果说明")
+    if not ok:
+        label = "脚本部分失败" if result.get("status") == "partial" else "脚本报告失败"
+        text = f"错误：{label}（退出码 {code}）：{text}"
+    for key in ("error", "errors", "warnings"):
+        value = result.get(key)
+        if value:
+            if isinstance(value, list) and all(isinstance(item, str) for item in value):
+                detail = "；".join(item for item in value if item not in text)
+            else:
+                detail = value if isinstance(value, str) else json.dumps(value, ensure_ascii=False)
+            # Some scripts already include warnings in their summary; retain new evidence only.
+            if detail and detail not in text:
+                text += f"\n{key}：{_tail(detail)}"
+    if stderr and not ok:
+        text += f"\nstderr 尾部：{stderr}"
+    if files:
+        text += "\n产物文件：" + "、".join(files)
+    return text
 
 
 def _resolve_script(pack: str, script: str) -> Path:
@@ -66,7 +118,7 @@ def run_skill_script(
     should_cancel: CancelCheck = None,
     on_progress: Callable[[str], None] | None = None,
 ) -> str:
-    """执行技能包脚本，返回给模型的文本（stdout 最后一行 JSON 的 result）。"""
+    """执行脚本，将结果、退出码与失败诊断一起返回给模型。"""
     try:
         target = _resolve_script(pack, script)
     except ValueError as e:
@@ -108,6 +160,7 @@ def run_skill_script(
 
     watcher = threading.Thread(target=_watch_cancel, daemon=True)
     watcher.start()
+    timed_out = None
     try:
         out, err = proc.communicate(
             input=json.dumps(payload, ensure_ascii=False),
@@ -116,10 +169,7 @@ def run_skill_script(
     except subprocess.TimeoutExpired:
         proc.kill()
         out, err = proc.communicate()
-        return (
-            f"错误：脚本执行超时（>{timeout}s），已强制终止。"
-            "请检查脚本内是否有死循环，或让管理员在面板调大超时。"
-        )
+        timed_out = timeout
     watcher.join(timeout=1)
 
     if cancelled["flag"]:
@@ -128,16 +178,4 @@ def run_skill_script(
     for line in (err or "").strip().splitlines()[-5:]:
         if on_progress is not None and line.strip():
             on_progress(line.strip())
-    # stdout 最后一行 = 结果 JSON
-    lines = [ln for ln in (out or "").strip().splitlines() if ln.strip()]
-    if not lines:
-        return f"错误：脚本无输出（stderr 尾部：{(err or '').strip()[-300:]}）"
-    try:
-        result = json.loads(lines[-1])
-        ok = bool(result.get("ok"))
-        text = str(result.get("result", ""))
-        files = result.get("files") or []
-        suffix = f"\n产物文件：{'、'.join(str(f) for f in files)}" if files else ""
-        return (text if ok else f"脚本报告失败：{text}") + suffix
-    except (json.JSONDecodeError, TypeError):
-        return f"脚本输出不符合契约（最后一行须为 JSON）：{lines[-1][:300]}"
+    return _script_result(out or "", err or "", proc.returncode, timed_out=timed_out)

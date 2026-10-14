@@ -15,6 +15,34 @@ SCRIPTS = {
 }
 
 
+def diagnostic(value):
+    if isinstance(value, bytes):
+        value = value.decode("utf-8", errors="replace")
+    return str(value or "").strip()[-4000:]
+
+
+def script_result(completed):
+    """A nonzero exit must retain a valid failure JSON and its actual output files."""
+    try:
+        lines = completed.stdout.strip().splitlines()
+        result = json.loads(lines[-1])
+        if not isinstance(result, dict) or not isinstance(result.get("ok"), bool):
+            raise ValueError("脚本未返回有效的 JSON 结果")
+    except (ValueError, IndexError):
+        result = {"ok": False, "status": "failed", "result": "脚本未返回有效的 JSON 结果", "files": []}
+        if completed.stdout.strip():
+            result["result"] += "\nstdout 尾部：" + diagnostic(completed.stdout)
+    if completed.returncode:
+        if result["ok"]:
+            result["ok"], result["status"] = False, "failed"
+        result["exit_code"] = completed.returncode
+        result["result"] = f"脚本退出码 {completed.returncode}：" + str(result.get("result", ""))
+    if not result["ok"] and completed.stderr:
+        result["stderr"] = diagnostic(completed.stderr)
+        result["result"] = str(result.get("result", "")) + "\nstderr 尾部：" + result["stderr"]
+    return result
+
+
 def main() -> int:
     parser = argparse.ArgumentParser(description="运行本包的确定性脚本，不调用模型")
     parser.add_argument("script", choices=SCRIPTS)
@@ -46,13 +74,13 @@ def main() -> int:
         )
         if completed.stderr:
             print(completed.stderr, file=sys.stderr, end="")
-        if completed.returncode:
-            raise ValueError(f"脚本退出码 {completed.returncode}")
-        result = json.loads(completed.stdout)
-        if not isinstance(result, dict) or not isinstance(result.get("ok"), bool):
-            raise ValueError("脚本未返回有效的 JSON 结果")
+        result = script_result(completed)
     except (OSError, ValueError, subprocess.TimeoutExpired) as exc:
         result = {"ok": False, "result": str(exc), "files": []}
+        if isinstance(exc, subprocess.TimeoutExpired):
+            result["stderr"] = diagnostic(exc.stderr)
+            if result["stderr"]:
+                result["result"] += "\nstderr 尾部：" + result["stderr"]
     print(json.dumps(result, ensure_ascii=False))
     return 0 if result["ok"] else 1
 

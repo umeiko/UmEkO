@@ -101,6 +101,26 @@ def test_packaged_runner_prepares_and_generates_both_diagram_types(packages, tmp
         assert any(c.get("vertex") == "1" for c in xml.iter("mxCell"))
     code, failed = run(pack, root, "generate_drawio.py", {"source_path": "generate/不存在.xml", "formats": []})
     assert code != 0 and not failed["ok"] and failed["files"] == []
+    config = pack / "drawio-flowchart/config.json"
+    data = json.loads(config.read_text(encoding="utf-8"))
+    data["drawio_path"] = str(tmp_path / "missing-renderer")
+    config.write_text(json.dumps(data), encoding="utf-8")
+    code, failed = run(pack, root, "generate_drawio.py", {"source_path": "generate/source.xml", "formats": ["png"]})
+    assert code == 1 and not failed["ok"] and failed["status"] == "partial" and failed["exit_code"] == 1
+    assert failed["files"] == ["generate/flowchart.drawio"] and (root / failed["files"][0]).is_file()
+    assert failed["errors"][0]["code"] == "renderer_unavailable" and "图片导出未完成" in failed["result"]
+
+
+def test_portable_runner_retains_stderr_in_failure_json(tmp_path):
+    pack = tmp_path / "package"
+    (pack / "scripts").mkdir(parents=True)
+    (pack / "drawio-flowchart").mkdir()
+    shutil.copy2(REPO / "scripts/skillhub/run.py", pack / "scripts/run.py")
+    (pack / "drawio-flowchart/generate_drawio.py").write_text(
+        'import sys\nprint("ImportError: fixture dependency missing",file=sys.stderr)\nsys.exit(7)', encoding="utf-8")
+    code, failed = run(pack, tmp_path / "task", "generate_drawio.py", {})
+    assert code == 1 and not failed["ok"] and failed["exit_code"] == 7
+    assert "fixture dependency missing" in failed["result"] and "fixture dependency missing" in failed["stderr"]
 
 
 def test_packaged_report_contains_inspected_image(packages, tmp_path):

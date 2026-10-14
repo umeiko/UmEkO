@@ -13,8 +13,9 @@
 它们补充了 SkillHub 发布标识／展示名／版本，同时保留 Agent Skills 的名称与描述。
 发布标识为 `umeiko-doc-image-qc`、`umeiko-drawio-flowchart`、`umeiko-image-reasoning`，
 首次快照版本均为 `1.0.0`。没有向 SkillHub 提交上架申请，标识占用和审核由提交时检查。
-绘图包已更新为 `1.0.1`：补齐 Linux 原生安装、配置 `_help`、无桌面导出包装脚本、
-Docker 构建文件及无模型验收脚本。Linux 详细说明位于
+绘图包已更新为 `1.0.2`：补齐 Linux 原生安装、配置 `_help`、无桌面导出包装脚本、
+Docker 构建文件及无模型验收脚本，并明确返回缺少渲染器、导出失败和超时诊断。
+建议下载带版本号的 `drawio-flowchart-1.0.2.zip`。Linux 详细说明位于
 [linux-deployment.md](drawio-flowchart/drawio-flowchart/linux-deployment.md)。
 
 技能正文、附属规范和 Python 内核均来自当前运行时技能库，管理员已编辑的内容也在快照内。

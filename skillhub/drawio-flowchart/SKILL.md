@@ -3,7 +3,7 @@ name: drawio-flowchart
 description: 先提炼需求再生成、修改简明可编辑的 draw.io 流程图和架构图，支持默认或用户指定的 style.md 风格文件，导出 PNG/SVG/PDF；用户要求复检时才做一到两轮图像检查。
 slug: "umeiko-drawio-flowchart"
 displayName: "draw.io 流程图与架构图"
-version: "1.0.1"
+version: "1.0.2"
 summary: "先提炼需求再生成、修改简明可编辑的 draw.io 流程图和架构图，支持默认或用户指定的 style.md 风格文件，导出 PNG/SVG/PDF；用户要求复检时才做一到两轮图像检查。"
 homepage: "https://github.com/umeiko/UmEkO"
 ---
@@ -43,6 +43,8 @@ homepage: "https://github.com/umeiko/UmEkO"
 3. 将准备脚本返回的短任务交给 `delegate_task(task=...)`。现有文件子 Agent 通过 `read_document` 读取会话内的规则和需求，提炼作图清单并把 XML 写入准备脚本约定的 `source_path`，最终只返回选中的 `flowchart` / `architecture`、清单/XML 路径、最多 500 字摘要及未解决问题。子 Agent 不具备 `read_pack_file/run_skill_script/use_skill`，不要要求它调用这些工具；规则已由准备脚本转存成普通会话文件。
 4. 主 Agent 直接调用 `run_skill_script(pack="drawio-flowchart", script="generate_drawio.py", args='{"source_path":"generate/diagram-source.xml","output_name":"diagram","diagram_type":"architecture"}')`，将路径/名称替换成准备脚本与子 Agent 回报的值，图型使用子 Agent 选中的类型，不读取 XML 全文；未传图型时脚本从 XML 层次结构识别。字体默认方正兰亭黑简体 10.5。流程图采用 172px / 最小高 28px / 纵向间距 28px，`layout` 可覆盖流程图尺寸；架构图继续使用原内核的组件 180×60、最多四列、间距 20、标题区 30，层容器等宽左对齐、子容器最多一层。需要 PDF 时可传 `formats=["png","svg","pdf"]`。
 5. 脚本做结构校验和布局并导出文件。交付 `.drawio` 及实际成功导出的图片，用平台文件接口处理相对路径；不拼接 Host 或部署前缀。发生结构错误时，只把短错误、规则/清单/XML 路径转交 `delegate_task` 定向修正，之后重新运行脚本；不把 XML 搬回主 Agent，不无限重试。同一任务最多两次结构修正，仍失败则交付失败说明及保留的草稿路径。
+
+脚本的 `ok=false/status=partial` 或工具返回“部分失败”表示请求的图片导出没有全部完成，不能当作成功。根据具体格式、错误码和诊断说明原因，只交付 `files` 中实际生成的文件，保留有效 `.drawio`。缺少或无法启动 draw.io、依赖库错误、权限错误及导出超时属于运行环境问题：向用户报告具体原因及需要管理员修复的配置，不把它们当作 XML 错误，也不反复委派子 Agent 重写 XML。`formats=[]` 明确表示只生成 `.drawio`，不检查导出环境。
 
 ## 使用 style.md 风格文件
 

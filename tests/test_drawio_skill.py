@@ -45,8 +45,9 @@ def run_script(tmp_path, args, pack=PACK, script="generate_drawio.py"):
                             text=True, encoding="utf-8", capture_output=True, timeout=20,
                             env={**os.environ, "PYTHONIOENCODING": "utf-8",
                                  "UMEKO_DRAWIO_PATH": str(tmp_path / "not-installed")})
-    assert result.returncode == 0, result.stderr
-    return json.loads(result.stdout), root
+    body = json.loads(result.stdout)
+    assert result.returncode == (0 if body["ok"] else 1), result.stderr
+    return body, root
 
 
 @pytest.mark.parametrize("user_prefix,admin_prefix", [("", ""), ("/teams/docs/workbench", "/operations/umeko/admin")])
@@ -156,10 +157,64 @@ def test_default_installer_discovers_other_packages_without_domain_rules(tmp_pat
     assert not install_builtin_skills(store, library)
 
 
+@pytest.mark.parametrize("newline", ["\n", "\r\n"])
+def test_stock_upgrade_preserves_configuration_custom_edits_and_deletions(tmp_path, monkeypatch, newline):
+    import hashlib
+    from umeko.host import builtin_skills
+
+    assets, library = tmp_path / "bundled", tmp_path / "library"
+    (assets / "fixture").mkdir(parents=True)
+    (library / "fixture").mkdir(parents=True)
+    entry = "fixture.md"
+    old_entry = "---\nname: fixture\ndescription: Old stock\n---\nOld instructions\n"
+    new_entry = old_entry.replace("Old", "New")
+    old_script, new_script = "print('old')\n", "print('new')\n"
+    (assets / entry).write_text(new_entry, encoding="utf-8")
+    (assets / "fixture/run.py").write_text(new_script, encoding="utf-8")
+    (assets / "stock-upgrades.json").write_text(json.dumps({
+        entry: [hashlib.sha256(old_entry.encode()).hexdigest()],
+        "fixture/run.py": [hashlib.sha256(old_script.encode()).hexdigest()],
+    }), encoding="utf-8")
+    monkeypatch.setattr(builtin_skills, "ASSETS", assets)
+    script, config = library / "fixture/run.py", library / "fixture/config.json"
+    (library / entry).write_bytes(old_entry.replace("\n", newline).encode())
+    script.write_bytes(old_script.replace("\n", newline).encode())
+    config.write_text('{"custom":"retain"}', encoding="utf-8")
+    store = Store(tmp_path / "fixture.sqlite")
+    store.upsert_default_skill(entry, old_entry.replace("\n", newline))
+    store.set_default_skill_enabled(entry, False)
+    store.set_config({installation_key(entry): "1"})
+    assert install_builtin_skills(store, library)
+    assert script.read_bytes() == (assets / "fixture/run.py").read_bytes()
+    assert (library / entry).read_text(encoding="utf-8") == store.default_skill(entry) == new_entry
+    assert not store.default_skills()[0]["enabled"]
+    assert config.read_text() == '{"custom":"retain"}'
+    assert not install_builtin_skills(store, library)
+    store.upsert_default_skill(entry, "Custom admin instructions")
+    (library / entry).write_text(old_entry, encoding="utf-8")
+    assert install_builtin_skills(store, library)
+    assert store.default_skill(entry) == "Custom admin instructions"
+    assert not store.default_skills()[0]["enabled"]
+    script.write_text("# Custom implementation", encoding="utf-8")
+    (library / entry).write_text("Custom library instructions", encoding="utf-8")
+    store.upsert_default_skill(entry, "Custom admin instructions")
+    assert not install_builtin_skills(store, library)
+    assert script.read_text() == "# Custom implementation"
+    assert store.default_skill(entry) == "Custom admin instructions"
+    assert (library / entry).read_text() == "Custom library instructions"
+    script.unlink()
+    (library / entry).unlink()
+    store.delete_default_skill(entry)
+    assert not install_builtin_skills(store, library)
+    assert not script.exists() and not (library / entry).exists() and store.default_skill(entry) is None
+
+
 def test_standalone_flow_layout_and_optional_renderer(tmp_path):
     result, root = run_script(tmp_path, {"xml": FLOW, "layout": {"node_width": 172, "gap_y": 28}})
-    assert result["ok"] and result["files"] == ["generate/flowchart.drawio"]
+    assert not result["ok"] and result["status"] == "partial" and result["files"] == ["generate/flowchart.drawio"]
     assert result["visual_review_performed"] is False and result["warnings"]
+    assert {e["format"] for e in result["errors"]} == {"png", "svg"}
+    assert all(e["code"] == "renderer_unavailable" for e in result["errors"])
     xml = ET.parse(root / result["files"][0])
     nodes = xml.findall('.//mxCell[@vertex="1"]')
     assert len(nodes) == 4
@@ -347,6 +402,55 @@ def test_invalid_structure_and_paths_leave_no_output(tmp_path, args):
     assert list((root / "generate").iterdir()) == []
 
 
+@pytest.mark.parametrize("renderer_failure", [False, True])
+def test_export_diagnosis_enters_agents_next_model_request(tmp_path, monkeypatch, renderer_failure):
+    from copy import deepcopy
+
+    app = app_for(tmp_path)
+    service = app.state.agent_service
+    service.store.set_default_skill_enabled(FLOWCHART_SKILL, True)
+    owner = service.store.create_user("diagram-errors", "fixture-pass")
+    state = service.create_session(user_id=owner["id"])
+    # Existing Python is intentionally not a renderer; its --export rejection is a real subprocess failure.
+    renderer = sys.executable if renderer_failure else str(tmp_path / "missing-drawio")
+    monkeypatch.setenv("UMEKO_DRAWIO_PATH", renderer)
+    (state.root / "generate/source.xml").write_text(FLOW, encoding="utf-8")
+
+    class FixtureLLM:
+        last_usage = None
+
+        def __init__(self):
+            self.requests = []
+
+        def chat_with_tools_stream(self, messages, tools, **kwargs):
+            self.requests.append(deepcopy(messages))
+            if len(self.requests) == 1:
+                return ChatCompletionMessage(role="assistant", content=None, tool_calls=[{
+                    "id": "export", "type": "function", "function": {"name": "run_skill_script", "arguments": json.dumps({
+                        "pack": "drawio-flowchart", "script": "generate_drawio.py", "args": json.dumps({
+                            "source_path": "generate/source.xml", "formats": ["png"]})})}}])
+            return ChatCompletionMessage(role="assistant", content="导出失败，草稿已保留。")
+
+        def close(self):
+            pass
+
+    model = FixtureLLM()
+    state.agent._llm = model
+    try:
+        state.agent.chat("生成 PNG")
+        response = next(m["content"] for m in model.requests[1] if m.get("role") == "tool" and m.get("tool_call_id") == "export")
+        assert response.startswith("错误：脚本部分失败")
+        assert "generate/flowchart.drawio" in response and "图片导出未完成" in response
+        assert not (state.root / "generate/flowchart.png").exists()
+        if renderer_failure:
+            assert "退出码 2" in response and "--export" in response and "export_failed" in response
+        else:
+            assert "renderer_unavailable" in response and "UMEKO_DRAWIO_PATH" in response
+    finally:
+        service.evict_session(state.id)
+        service.run_manager.shutdown()
+
+
 def test_architecture_layout(tmp_path):
     result, root = run_script(tmp_path, {"xml": ARCH, "diagram_type": "architecture", "formats": []})
     assert result["ok"]
@@ -406,10 +510,30 @@ def test_export_returns_fresh_files_and_drops_failed_stale_preview(tmp_path, mon
     (workdir / "flowchart.svg").write_text("old preview", encoding="utf-8")
     result = module.generate({"args": {"xml": FLOW}, "workdir": str(workdir), "session_root": str(root)})
     assert result["files"] == ["generate/flowchart.drawio", "generate/flowchart.png"]
+    assert not result["ok"] and result["status"] == "partial"
     assert "svg 导出失败" in result["result"] and not (workdir / "flowchart.svg").exists()
     assert "libasound.so.2 missing" in result["result"]
     assert str(root) not in result["result"] and "fixture-drawio" not in result["result"]
     assert not list(workdir.glob("*.export.*"))
+
+
+def test_export_timeout_retains_renderer_diagnosis_and_draft(tmp_path, monkeypatch):
+    spec = importlib.util.spec_from_file_location("drawio_timeout_test", PACK / "generate_drawio.py")
+    module = importlib.util.module_from_spec(spec)
+    spec.loader.exec_module(module)
+    monkeypatch.setattr(module, "_renderer", lambda config: ("fixture-drawio", None))
+    root = tmp_path / "session"
+    workdir = root / "generate"
+
+    def timeout(command, **kwargs):
+        raise subprocess.TimeoutExpired(command, kwargs["timeout"], stderr=b"Renderer process gone: fixture-drawio")
+
+    monkeypatch.setattr(module.subprocess, "run", timeout)
+    result = module.generate({"args": {"xml": FLOW, "formats": ["png"]}, "workdir": str(workdir), "session_root": str(root)})
+    assert not result["ok"] and result["status"] == "partial"
+    assert result["errors"][0]["code"] == "export_timeout" and "Renderer process gone" in result["result"]
+    assert "fixture-drawio" not in result["result"] and result["files"] == ["generate/flowchart.drawio"]
+    assert (root / result["files"][0]).is_file() and not list(workdir.glob("*.export.*"))
 
 
 def test_packaged_skill_is_self_contained(tmp_path):

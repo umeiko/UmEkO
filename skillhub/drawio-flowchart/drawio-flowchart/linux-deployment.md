@@ -28,6 +28,32 @@ RPM 发行版可选官方 `.rpm` 并安装对应的 Xvfb/xauth/字体包；AppIm
 
 ## config.json 怎么填
 
+### 下载并安装原字体
+
+方正兰亭黑简体原文件提供在 [assets Release](https://github.com/umeiko/UmEkO/releases/tag/assets)：
+[FZLanTingHeiS-R-GB.ttf](https://github.com/umeiko/UmEkO/releases/download/assets/FZLanTingHeiS-R-GB.ttf)，
+[SHA256SUMS.txt](https://github.com/umeiko/UmEkO/releases/download/assets/SHA256SUMS.txt)。
+项目维护方确认公司已取得商业授权；字体授权独立于项目代码许可。
+
+```sh
+curl --fail --location --retry 3 \
+  https://github.com/umeiko/UmEkO/releases/download/assets/FZLanTingHeiS-R-GB.ttf \
+  --output /tmp/FZLanTingHeiS-R-GB.ttf
+printf '%s  %s\n' \
+  '5301bdfe967da491eec7edf29c6ba50cf44f27ad30a0d70a7f74247f3656199b' \
+  '/tmp/FZLanTingHeiS-R-GB.ttf' | sha256sum --check -
+sudo install -d -m 0755 /usr/local/share/fonts/umeko
+sudo install -m 0644 /tmp/FZLanTingHeiS-R-GB.ttf /usr/local/share/fonts/umeko/
+sudo fc-cache -f
+fc-match -f '%{family}\n' '方正兰亭黑简体'
+```
+
+确认返回的 family 包含 `方正兰亭黑简体` 或 `FZLanTingHeiS-R-GB`，然后保留配置中的
+`"font_family": "方正兰亭黑简体"`、`"font_size": "10.5"`。Docker 可将上面的字体目录
+只读挂载到容器同名路径；宿主已安装字体不代表容器内自动可用。
+
+### 配置字段
+
 `config.json` 是严格 JSON，不支持 `//` 或 `#` 注释；其中 `_help` 是说明字段，脚本忽略它，
 可以保留。配置以下字段即可：
 
@@ -73,7 +99,7 @@ fc-match '方正兰亭黑简体'
 将 SkillHub 的 `drawio-flowchart.zip` 解压到单独目录，进入包含 `SKILL.md` 的根目录：
 
 ```sh
-docker build --platform linux/amd64 -f drawio-flowchart/Dockerfile.linux.txt -t umeko-drawio:1.0.1 .
+docker build --platform linux/amd64 -f drawio-flowchart/Dockerfile.linux.txt -t umeko-drawio:1.0.2 .
 ```
 
 Dockerfile 是纯文本 `.txt`，以便随 SkillHub ZIP 上传。镜像安装并校验固定版本官方 `.deb`，
@@ -84,7 +110,7 @@ Dockerfile 是纯文本 `.txt`，以便随 SkillHub ZIP 上传。镜像安装并
 一条命令做无模型验收并自动删除测试容器：
 
 ```sh
-docker run --init --rm --shm-size=512m --network none --entrypoint python3 umeko-drawio:1.0.1 /skill/drawio-flowchart/linux_smoke.py
+docker run --init --rm --shm-size=512m --network none --entrypoint python3 umeko-drawio:1.0.2 /skill/drawio-flowchart/linux_smoke.py
 ```
 
 验收会准备委派任务、用内置 XML 示例生成有判断分支的流程图与分层架构图，
@@ -101,7 +127,7 @@ Docker 默认 64MB 可能造成连续导出时渲染进程崩溃，表现为 SVG
 
 ```sh
 docker run --init --rm --shm-size=512m --network none --mount "type=bind,src=<本次任务的绝对目录>,dst=/work" \
-  umeko-drawio:1.0.1 generate_drawio.py --root /work --args-file /work/workspace/generate-args.json
+  umeko-drawio:1.0.2 generate_drawio.py --root /work --args-file /work/workspace/generate-args.json
 ```
 
 任务目录需允许容器 UID 10001 写入 `generate/`。这是本次会话目录，不要挂载服务数据库、
@@ -116,7 +142,12 @@ Provider 配置或整个宿主磁盘。实际生成内容仍由 Agent 写 XML，
 - `Renderer process gone` / `Printing failed`：检查 Docker 共享内存，使用 `--shm-size=512m`。包装脚本关闭硬件加速并使用独立临时配置目录，避免无 GPU 和连续／并发导出的配置冲突。
 - 字体或框大小看起来不同：检查实际字体 family 和风格覆盖，安装原字体；不要通过缩小文字或改业务节点掩盖字体缺失。
 - 已有配置路径仍是 Windows 路径：先修改 `drawio_path`；非空配置优先于环境变量，旧路径会阻止自动查找。
-- PNG/SVG/PDF 导出失败：仍保留有效 `.drawio` 草稿，报告具体失败，不将上次图片作为本次成功结果。
+- PNG/SVG/PDF 导出失败：脚本退出码为 1，JSON 中 `ok=false/status=partial`，`errors/exports` 给出失败格式与具体原因；工具将诊断返回给模型，仍保留有效 `.drawio` 和实际成功导出的文件，不将上次图片作为本次成功结果。
+
+缺少二进制、加载依赖库失败、权限错误或超时，需要修复服务的导出环境，反复改 XML 无法解决。
+只需要可编辑草稿时显式传 `formats=[]`，此时不检查渲染器，成功返回 `ok=true`。
+独立包的 `scripts/run.py` 会保留非零退出时的结果 JSON、产物清单和 stderr；
+UmEkO 的 `run_skill_script` 同时将这些诊断放进模型的工具返回内容，无需只依赖界面的进度卡片。
 
 没有新增自动视觉复检；仍由用户要求时做一到两轮。Docker 验收是渲染与结构检查，不调用视觉模型。
 
