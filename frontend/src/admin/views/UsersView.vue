@@ -5,10 +5,13 @@ import { ref, reactive, computed, onMounted } from 'vue';
 import { api, ask, confirm, notify, run, sessionsFor } from '../state.js';
 import UiIcon from '../../shared/UiIcon.vue';
 import UiModal from '../../shared/UiModal.vue';
+import UserToolsModal from '../UserToolsModal.vue';
 import { encode } from '../../shared/api.js';
 const users = ref([]),
   error = ref(''),
   loading = ref(true);
+const toolsUser = ref(null),
+  toolsOpen = ref(false);
 const settingsUser = ref(null),
   settingsOpen = ref(false),
   settingsLoading = ref(false),
@@ -185,6 +188,14 @@ async function remove(u) {
                 <button :disabled="settingsLoading" @click="userSettings(u)">
                   {{ tr('用户设置') }}
                 </button>
+                <button
+                  @click="
+                    toolsUser = u;
+                    toolsOpen = true;
+                  "
+                >
+                  {{ tr('工具权限') }}
+                </button>
                 <button @click="sessionsFor(u)">{{ tr('查看会话') }}</button
                 ><button @click="password(u)">{{ tr('重置密码') }}</button
                 ><button @click="role(u)">{{ tr('修改角色') }}</button
@@ -308,6 +319,7 @@ async function remove(u) {
       </template>
     </UiModal>
   </section>
+  <UserToolsModal v-model="toolsOpen" :user="toolsUser" />
 </template>
 <style scoped>
 .model-access-provider {

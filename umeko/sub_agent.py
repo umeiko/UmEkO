@@ -33,6 +33,7 @@ SUBAGENT_TOOL_NAMES = {
     "image_reasoning",
     "archive_tool",
     "file_operate",
+    "download_url",
 }
 
 SUBAGENT_SYSTEM = """你是主 Agent 启动的文件处理子 Agent，只完成收到的单个任务。
@@ -92,6 +93,8 @@ class FileSubAgent:
         should_cancel: Callable[[], bool] | None = None,
         on_event: Callable[[str, dict], None] | None = None,
         file_operator: Callable | None = None,
+        allowed_tools: frozenset[str] | None = None,
+        tool_authorizer: Callable[[str], bool] | None = None,
     ):
         sub_config = settings.sub_model or settings.text_model
         sub_vision = (
@@ -103,6 +106,7 @@ class FileSubAgent:
         self._vision = sub_vision
         self._images = _SubAgentImages(self._vision)
         self._readable_root = readable_root
+        self._tool_authorizer = tool_authorizer
         self._readable_roots = tuple(readable_roots or ())
         self._max_tool_iterations = settings.max_subagent_tool_iterations
         self._system_prompt = SUBAGENT_SYSTEM + (
@@ -155,6 +159,9 @@ class FileSubAgent:
                 handler=self._image_reasoning,
             )
         self._should_cancel = should_cancel
+        if allowed_tools is not None:
+            self._skills = {name: skill for name, skill in self._skills.items() if name in allowed_tools}
+            self._system_prompt += "\n只调用本轮实际提供的工具；工具未开放时说明限制，不绕过权限。"
         self._on_event = on_event
         self._run_lock = threading.Lock()
 
@@ -348,6 +355,8 @@ class FileSubAgent:
         *,
         allowed_tools: set[str] | None = None,
     ) -> str:
+        if self._tool_authorizer is not None and not self._tool_authorizer(name):
+            return f"错误：当前没有使用工具 {name} 的权限，请联系管理员。"
         if allowed_tools is not None and name not in allowed_tools:
             return f"错误：本次子 Agent 任务无权使用工具 {name}"
         skill = self._skills.get(name)

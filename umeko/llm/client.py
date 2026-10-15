@@ -470,6 +470,10 @@ class LLMClient:
 
     def _tools_or_compat(self, kwargs, on_delta=None, on_tick=None, on_reasoning=None, should_cancel=None):
         tools, choice = kwargs["tools"], kwargs.get("tool_choice")
+        if not tools:
+            # A user may have no optional tools. Send a regular chat request to gateways
+            # that reject the presence of an empty tools field.
+            kwargs = {key: value for key, value in kwargs.items() if key not in {"tools", "tool_choice"}}
         # Always try native first, even after a previous request needed adaptation.
         try:
             resp = (self._stream_or_fallback(on_delta=on_delta, on_tick=on_tick,

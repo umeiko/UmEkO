@@ -2,7 +2,7 @@
 
 > 自动生成：请修改源码或生成器，不直接编辑本文件。
 
-共 **62** 个 HTTP 操作。[下载 OpenAPI](openapi-admin.json) · [数据结构](schemas.md)
+共 **66** 个 HTTP 操作。[下载 OpenAPI](openapi-admin.json) · [数据结构](schemas.md)
 
 路径为应用内部路由；带前缀部署时在公共 URL 前加 `UMEKO_ADMIN_BASE_PATH`。登录、原始字节体与 SSE 契约由生成器显式补充。
 
@@ -39,6 +39,10 @@
 | PUT | `/admin/v1/users/{user_id}/password` | Set Password |
 | GET | `/admin/v1/users/{user_id}/model-access` | User Model Access |
 | PUT | `/admin/v1/users/{user_id}/model-access` | Set User Model Access |
+| GET | `/admin/v1/tools` | Tools |
+| PUT | `/admin/v1/tools/{name}` | Set Tool Dispatch |
+| GET | `/admin/v1/users/{user_id}/tool-access` | User Tool Access |
+| PUT | `/admin/v1/users/{user_id}/tool-access` | Set User Tool Access |
 | PUT | `/admin/v1/users/{user_id}/role` | Set Role |
 | DELETE | `/admin/v1/users/{user_id}` | Delete User |
 | GET | `/admin/v1/users/{user_id}/sessions` | User Sessions |
@@ -449,6 +453,69 @@ Set User Model Access
 请求体：必填。
 
 `application/json` → `_UserModelAccessIn`
+
+| 响应码 | 内容 |
+| --- | --- |
+| 200 | application/json: object |
+| 422 | application/json: HTTPValidationError |
+
+## GET /admin/v1/tools
+
+Tools
+
+认证：`umeko_admin` Cookie。
+
+| 响应码 | 内容 |
+| --- | --- |
+| 200 | application/json: object |
+
+## PUT /admin/v1/tools/{name}
+
+Set Tool Dispatch
+
+认证：`umeko_admin` Cookie。
+
+| 参数 | 位置 | 必填 | 类型与约束 |
+| --- | --- | --- | --- |
+| `name` | path | 是 | `{"title": "Name", "type": "string"}` |
+
+请求体：必填。
+
+`application/json` → `_ToolDispatchIn`
+
+| 响应码 | 内容 |
+| --- | --- |
+| 200 | application/json: object |
+| 422 | application/json: HTTPValidationError |
+
+## GET /admin/v1/users/{user_id}/tool-access
+
+User Tool Access
+
+认证：`umeko_admin` Cookie。
+
+| 参数 | 位置 | 必填 | 类型与约束 |
+| --- | --- | --- | --- |
+| `user_id` | path | 是 | `{"title": "User Id", "type": "string"}` |
+
+| 响应码 | 内容 |
+| --- | --- |
+| 200 | application/json: object |
+| 422 | application/json: HTTPValidationError |
+
+## PUT /admin/v1/users/{user_id}/tool-access
+
+Set User Tool Access
+
+认证：`umeko_admin` Cookie。
+
+| 参数 | 位置 | 必填 | 类型与约束 |
+| --- | --- | --- | --- |
+| `user_id` | path | 是 | `{"title": "User Id", "type": "string"}` |
+
+请求体：必填。
+
+`application/json` → `_UserToolAccessIn`
 
 | 响应码 | 内容 |
 | --- | --- |

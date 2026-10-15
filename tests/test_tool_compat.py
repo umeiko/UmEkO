@@ -102,6 +102,20 @@ def test_supported_native_requests_are_unchanged(sdk_factory, monkeypatch):
     assert "".join(chunks) == "Native answer"
 
 
+@pytest.mark.parametrize("streaming", [False, True])
+def test_no_granted_tools_uses_regular_chat_request(sdk_factory, monkeypatch, streaming):
+    client = LLMClient(ModelConfig("fixture", "fixture-only", "https://unused.invalid"))
+    def handle(request):
+        body = json.loads(request.content)
+        assert "tools" not in body and "tool_choice" not in body
+        return model_response("Answer without tools", body["stream"])
+    sdk = sdk_factory(handle)
+    monkeypatch.setattr(client, "_get_client", lambda: sdk)
+    reply = (client.chat_with_tools_stream(MESSAGES, [], lambda text: None) if streaming
+             else client.chat_with_tools(MESSAGES, []))
+    assert reply.content == "Answer without tools"
+
+
 @pytest.mark.parametrize("status,message", [(400, "context length exceeded"), (400, "Invalid image data"),
                                              (401, ERROR), (429, ERROR), (500, ERROR)])
 def test_unrelated_errors_do_not_use_tool_compatibility(sdk_factory, monkeypatch, status, message):

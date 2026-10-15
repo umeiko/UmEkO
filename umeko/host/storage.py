@@ -99,6 +99,13 @@ class Store:
               allowed_provider_ids TEXT, allowed_model_ids TEXT,
               updated_at TEXT NOT NULL
             );
+            CREATE TABLE IF NOT EXISTS tool_dispatch (
+              name TEXT PRIMARY KEY, enabled INTEGER NOT NULL CHECK(enabled IN (0,1))
+            );
+            CREATE TABLE IF NOT EXISTS user_tool_access (
+              user_id TEXT PRIMARY KEY REFERENCES users(id) ON DELETE CASCADE,
+              allowed_tool_names TEXT, updated_at TEXT NOT NULL
+            );
             CREATE TABLE IF NOT EXISTS tool_events (
               id INTEGER PRIMARY KEY AUTOINCREMENT,
               session_id TEXT NOT NULL REFERENCES agent_sessions(id) ON DELETE CASCADE,
@@ -514,6 +521,50 @@ class Store:
     def is_human_user(self, user_id: str) -> bool:
         with self.connect() as db:
             return db.execute("SELECT 1 FROM users WHERE id=? AND kind='human'", (user_id,)).fetchone() is not None
+
+    def tool_dispatch(self) -> list[dict]:
+        from ..tool_catalog import tool_catalog
+        with self.connect() as db:
+            flags = {row["name"]: bool(row["enabled"]) for row in db.execute("SELECT * FROM tool_dispatch")}
+        return [{**tool, "enabled": tool["required"] or flags.get(tool["name"], True)} for tool in tool_catalog()]
+
+    def set_tool_dispatch(self, name: str, enabled: bool) -> dict:
+        from ..tool_catalog import CONFIGURABLE_TOOLS, REQUIRED_TOOLS
+        if name in REQUIRED_TOOLS:
+            raise ValueError("机器任务答案提交是协议必需工具，不能停用")
+        if name not in CONFIGURABLE_TOOLS:
+            raise KeyError(name)
+        if not isinstance(enabled, bool):
+            raise ValueError("enabled 必须为布尔值")
+        with self.connect() as db:
+            db.execute("INSERT OR REPLACE INTO tool_dispatch VALUES (?,?)", (name, int(enabled)))
+        return next(tool for tool in self.tool_dispatch() if tool["name"] == name)
+
+    def user_tool_access(self, user_id: str) -> dict:
+        with self.connect() as db:
+            if db.execute("SELECT 1 FROM users WHERE id=? AND kind='human'", (user_id,)).fetchone() is None:
+                raise KeyError(user_id)
+            row = db.execute("SELECT allowed_tool_names FROM user_tool_access WHERE user_id=?", (user_id,)).fetchone()
+        return {"allowed_tool_names": json.loads(row[0]) if row and row[0] is not None else None}
+
+    def set_user_tool_access(self, user_id: str, allowed_tool_names: list[str] | None) -> dict:
+        from ..tool_catalog import CONFIGURABLE_TOOLS
+        self.user_tool_access(user_id)
+        if allowed_tool_names is not None:
+            if (not isinstance(allowed_tool_names, list) or any(not isinstance(name, str) for name in allowed_tool_names)
+                    or not set(allowed_tool_names) <= CONFIGURABLE_TOOLS):
+                raise ValueError("请选择有效的可配置工具，协议必需工具自动保留")
+            allowed_tool_names = list(dict.fromkeys(allowed_tool_names))
+        with self.connect() as db:
+            db.execute("INSERT OR REPLACE INTO user_tool_access VALUES (?,?,?)",
+                       (user_id, json.dumps(allowed_tool_names) if allowed_tool_names is not None else None, _now()))
+        return self.user_tool_access(user_id)
+
+    def effective_tool_names(self, user_id: str) -> frozenset[str]:
+        from ..tool_catalog import REQUIRED_TOOLS
+        scope = self.user_tool_access(user_id)["allowed_tool_names"] if self.is_human_user(user_id) else None
+        return REQUIRED_TOOLS | frozenset(scope if scope is not None else (
+            tool["name"] for tool in self.tool_dispatch() if tool["enabled"]))
 
     def user_model_access(self, user_id: str) -> dict:
         with self.connect() as db:

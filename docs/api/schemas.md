@@ -1749,6 +1749,25 @@
 }
 ```
 
+### _ToolDispatchIn
+
+```json
+{
+  "additionalProperties": false,
+  "properties": {
+    "enabled": {
+      "title": "Enabled",
+      "type": "boolean"
+    }
+  },
+  "required": [
+    "enabled"
+  ],
+  "title": "_ToolDispatchIn",
+  "type": "object"
+}
+```
+
 ### _UserCreate
 
 ```json
@@ -1817,6 +1836,35 @@
     "allowed_model_ids"
   ],
   "title": "_UserModelAccessIn",
+  "type": "object"
+}
+```
+
+### _UserToolAccessIn
+
+```json
+{
+  "additionalProperties": false,
+  "properties": {
+    "allowed_tool_names": {
+      "anyOf": [
+        {
+          "items": {
+            "type": "string"
+          },
+          "type": "array"
+        },
+        {
+          "type": "null"
+        }
+      ],
+      "title": "Allowed Tool Names"
+    }
+  },
+  "required": [
+    "allowed_tool_names"
+  ],
+  "title": "_UserToolAccessIn",
   "type": "object"
 }
 ```

@@ -89,6 +89,8 @@ class UmekoAgent:
         on_subagent_event: Callable[[str, dict], None] | None = None,
         on_event: Callable[[str, dict], None] | None = None,
         file_operator: Callable | None = None,
+        allowed_tools: frozenset[str] | None = None,
+        tool_authorizer: Callable[[str], bool] | None = None,
     ):
         self._settings = settings
         self._session = session
@@ -103,6 +105,7 @@ class UmekoAgent:
         self._readable_root = readable_root
         self._readable_roots = readable_roots
         self._on_progress = on_progress  # 界面层进度提示
+        self._tool_authorizer = tool_authorizer
         # 显式视觉配置优先；未配置时，原生视觉主模型也可作为工具使用。
         vision_config = settings.vision_model or (settings.text_model if self._vision else None)
         vision_llm = (
@@ -135,6 +138,8 @@ class UmekoAgent:
             should_cancel=should_cancel,
             on_event=self._fanout_subagent(on_subagent_event),
             file_operator=file_operator,
+            allowed_tools=allowed_tools,
+            tool_authorizer=tool_authorizer,
         )
         skills.append(
             Skill(
@@ -160,7 +165,7 @@ class UmekoAgent:
             )
         )
         skills.extend(extra_skills)  # 领域工具注入点
-        self._skills = {s.name: s for s in skills}
+        self._skills = {s.name: s for s in skills if allowed_tools is None or s.name in allowed_tools}
         self._tools = [s.to_openai_tool() for s in self._skills.values()]
         system = system_prompt + image_input_guidance(
             native_vision=self._vision,
@@ -169,6 +174,8 @@ class UmekoAgent:
         )
         if readable_root is not None:
             system += _SERVER_SESSION_PATH_POLICY
+        if allowed_tools is not None:
+            system += "\n只调用本轮实际提供的工具。所需工具未开放时说明权限或配置限制，不猜测工具名或绕过限制。"
         self._messages: list[dict] = [{"role": "system", "content": system}]
         self._skill_results: dict[str, str] = {}
         # 上下文占用锚点：最近一次主循环请求返回的 usage.prompt_tokens
@@ -534,6 +541,8 @@ class UmekoAgent:
         return d
 
     def _execute(self, name: str, arguments_json: str) -> str | ToolResult:
+        if self._tool_authorizer is not None and not self._tool_authorizer(name):
+            return f"错误：当前没有使用工具 {name} 的权限，请联系管理员。"
         skill = self._skills.get(name)
         if skill is None:
             return f"错误：未知工具 {name}"

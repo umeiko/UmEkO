@@ -83,6 +83,25 @@ CLI 的导入文件只包含内层文档。导入按 Provider / 模型名称合�
 
 ## 用户与会话
 
+“Tools 管理”提供平台内置工具的逐项下发开关，包含文件、技能脚本、图像推理、委派及命令工具。
+在用户列表点击“工具权限”，可让该用户跟随全局下发，或保存自己的工具清单；清单可包含
+未全局下发的工具。权限作用于普通会话、主 Agent、子 Agent 和机器任务的临时工作台；
+服务账号和免鉴权机器身份跟随全局下发。模型视觉能力、命令执行器配置及原有文件边界仍需满足。
+
+| 方法 | 路径 | 用途 |
+| --- | --- | --- |
+| GET | `/admin/v1/tools` | 工具目录、全局 `enabled`、`required`、下载上限 |
+| PUT | `/admin/v1/tools/{name}` | `{"enabled":false}` 修改全局下发 |
+| GET | `/admin/v1/users/{user_id}/tool-access` | 工具目录及该用户的 `allowed_tool_names` |
+| PUT | `/admin/v1/users/{user_id}/tool-access` | `{"allowed_tool_names":null}` 跟随全局；`[]` 关闭可配置工具；名称数组单独授权 |
+
+保存后下一轮重新装配工具列表，已有会话与恢复会话也适用；执行前再次检查权限，撤销后不能凭
+旧工具名调用，也不能通过委派绕过。权限保存于服务数据库，不修改源码。
+`submit_results` 是机器任务协议必需工具，不提供停用开关，不接受用户自选授权；它只在机器任务
+和对应临时工作台中注入，普通会话和子 Agent 均不暴露。
+
+`download_url` 从网址下载文件到当前工作区，最大 20 MB，使用方式见[文件与技能](files-skills.md#url-download)。
+
 | 方法 | 路径 | 用途 |
 | --- | --- | --- |
 | GET / POST | `/admin/v1/users` | 用户列表 / 创建 `{username,password,role}` |

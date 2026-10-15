@@ -22,6 +22,7 @@ from ..tree import build_tree, render_text
 from .base import Skill
 from .script_runner import run_skill_script
 from .pack_reader import read_pack_file
+from .download import download_url
 
 _MAX_DOC_BYTES = 200 * 1024
 _MAX_FIND_RESULTS = 20
@@ -1045,4 +1046,20 @@ def build_file_tools(
             ),
         )
     )
+    skills.append(Skill(
+        name="download_url",
+        description=("从公网 HTTP/HTTPS 文件网址下载文件，最大 20 MB（20×1024×1024 字节）。"
+                     "失败、超限或取消时清除未完成文件，返回原因。默认保存到 workspace/downloads/，"
+                     "path 可指定 workspace/ 或 generate/ 下的会话相对路径；不读取或执行文件内容。"
+                     "已有文件默认不覆盖。" if readable_root else
+                     "从公网 HTTP/HTTPS 网址下载最大 20 MB 的文件到当前产物目录，默认 downloads/；不执行内容。"),
+        parameters={"type": "object", "additionalProperties": False, "properties": {
+            "url": {"type": "string", "description": "可直接下载文件的 HTTP/HTTPS 网址"},
+            "path": {"type": "string", "description": "可选目标相对路径；默认使用服务器建议或网址中的文件名"},
+            "overwrite": {"type": "boolean", "default": False}}, "required": ["url"]},
+        handler=lambda url, path="", overwrite=False: download_url(
+            url, path, overwrite, root=readable_root or writable_root,
+            allowed_roots=tuple(readable_root / name for name in ("workspace", "generate")) if readable_root else (writable_root,),
+            default_dir="workspace/downloads" if readable_root else "downloads", should_cancel=should_cancel),
+    ))
     return [skill for skill in skills if getattr(session, "allowed_skill_packs", None) is None or skill.name != "create_skill"]

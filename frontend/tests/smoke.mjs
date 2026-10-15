@@ -12,6 +12,7 @@ import { checkAgentDisclosure } from './agent-disclosure.mjs';
 import { checkTemporaryWorkspace } from './temporary-workspace.mjs';
 import { checkModelDisclosure, checkModelDisclosureControls } from './model-disclosure.mjs';
 import { checkUserModelAccess } from './user-model-access.mjs';
+import { checkToolAccess } from './tool-access.mjs';
 const require = createRequire(import.meta.url);
 const { chromium } = require(process.env.UMEKO_PLAYWRIGHT || 'playwright');
 const root = fileURLToPath(new URL('../../', import.meta.url));
@@ -61,6 +62,7 @@ async function checkAdminLanguages(page, context, adminBase) {
     ['access', 'Service Access'],
     ['providers', 'Models & Providers'],
     ['dskills', 'Skill Library'],
+    ['tools', 'Tools Management'],
     ['users', 'Users'],
     ['sessions', 'Sessions'],
     ['resources', 'Resources'],
@@ -1158,6 +1160,7 @@ try {
       );
       // Native Vue model settings persist in the real admin API.
       await checkUserModelAccess(page, context, adminBase, publicBase, state, prefix, screenshot);
+      await checkToolAccess(page, context, adminBase, state, prefix, screenshot);
       await page.locator('#tab-providers').click();
       await page.locator('#pd-name').waitFor();
       await page.locator('#ml-' + state.text_model).fill('2');

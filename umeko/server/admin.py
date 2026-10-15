@@ -16,7 +16,7 @@ from typing import Literal
 from fastapi import FastAPI, HTTPException, Request, Response
 from fastapi.responses import HTMLResponse, JSONResponse
 from fastapi.staticfiles import StaticFiles
-from pydantic import BaseModel, ConfigDict, Field
+from pydantic import BaseModel, ConfigDict, Field, StrictBool
 from .. import __version__
 from ..host.identities import SCOPES
 
@@ -82,6 +82,16 @@ class _UserModelAccessIn(BaseModel):
     model_config = ConfigDict(extra="forbid")
     allowed_provider_ids: list[str] | None
     allowed_model_ids: list[str] | None
+
+
+class _ToolDispatchIn(BaseModel):
+    model_config = ConfigDict(extra="forbid")
+    enabled: StrictBool
+
+
+class _UserToolAccessIn(BaseModel):
+    model_config = ConfigDict(extra="forbid")
+    allowed_tool_names: list[str] | None
 
 
 class _DefaultSkillIn(BaseModel):
@@ -408,6 +418,35 @@ def create_admin_app(settings: Settings, service: AgentService, store: Store, pu
         """保存用户的供应商和模型开放范围，下一轮调用时重新检查。"""
         try:
             return store.set_user_model_access(user_id, **payload.model_dump())
+        except KeyError as exc:
+            raise HTTPException(404, "用户不存在") from exc
+        except ValueError as exc:
+            raise HTTPException(400, str(exc)) from exc
+
+    @app.get("/admin/v1/tools")
+    def tools() -> dict:
+        return {"tools": store.tool_dispatch()}
+
+    @app.put("/admin/v1/tools/{name}")
+    def set_tool_dispatch(name: str, payload: _ToolDispatchIn) -> dict:
+        try:
+            return store.set_tool_dispatch(name, payload.enabled)
+        except KeyError as exc:
+            raise HTTPException(404, "工具不存在") from exc
+        except ValueError as exc:
+            raise HTTPException(400, str(exc)) from exc
+
+    @app.get("/admin/v1/users/{user_id}/tool-access")
+    def user_tool_access(user_id: str) -> dict:
+        try:
+            return {**store.user_tool_access(user_id), "tools": store.tool_dispatch()}
+        except KeyError as exc:
+            raise HTTPException(404, "用户不存在") from exc
+
+    @app.put("/admin/v1/users/{user_id}/tool-access")
+    def set_user_tool_access(user_id: str, payload: _UserToolAccessIn) -> dict:
+        try:
+            return store.set_user_tool_access(user_id, payload.allowed_tool_names)
         except KeyError as exc:
             raise HTTPException(404, "用户不存在") from exc
         except ValueError as exc:

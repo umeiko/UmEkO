@@ -72,6 +72,7 @@ class SessionState:
     )
     agent_snapshot: dict | None = field(default=None, repr=False)
     result_submission: ResultSubmission | None = field(default=None, repr=False)
+    tool_access: frozenset[str] = field(default_factory=frozenset, repr=False)
 
 
 class AgentService:
@@ -480,6 +481,7 @@ class AgentService:
         if machine_results:
             system_prompt += MACHINE_RESULTS_PROMPT
         submission = ResultSubmission(root) if machine_results else None
+        tool_access = self.store.effective_tool_names(user_id)
         agent = UmekoAgent(
             effective,
             session,
@@ -496,12 +498,15 @@ class AgentService:
                 holder["run"] and holder["run"].cancel_requested()
             ),
             on_event=on_event,
+            allowed_tools=tool_access,
+            tool_authorizer=lambda name: name in self.store.effective_tool_names(user_id),
         )
         state = SessionState(
             session_id, _now(), root, session, agent, user_id=user_id, title=title,
             active_run_holder=holder, builtin_resources=builtin_resources,
             agent_snapshot=agent_snapshot,
             result_submission=submission,
+            tool_access=tool_access,
         )
         with self._lock:
             self.sessions[session_id] = state
@@ -580,7 +585,7 @@ class AgentService:
             if (self._base_settings.registry_managed or self.store.list_providers()
                     or any(value is not None for value in access.values())):
                 raise ValueError("当前没有对你开放的模型，请联系管理员设置模型权限")
-        if effective != session.agent.settings:
+        if effective != session.agent.settings or self.store.effective_tool_names(session.user_id) != session.tool_access:
             record = self.store.session_by_id(session.id)
             self.evict_session(session.id)
             session = self.create_session(user_id=record["user_id"], title=record["title"],

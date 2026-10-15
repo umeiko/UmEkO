@@ -535,6 +535,20 @@
         "title": "_ServiceAccountPatch",
         "type": "object"
       },
+      "_ToolDispatchIn": {
+        "additionalProperties": false,
+        "properties": {
+          "enabled": {
+            "title": "Enabled",
+            "type": "boolean"
+          }
+        },
+        "required": [
+          "enabled"
+        ],
+        "title": "_ToolDispatchIn",
+        "type": "object"
+      },
       "_UserCreate": {
         "properties": {
           "password": {
@@ -595,6 +609,30 @@
           "allowed_model_ids"
         ],
         "title": "_UserModelAccessIn",
+        "type": "object"
+      },
+      "_UserToolAccessIn": {
+        "additionalProperties": false,
+        "properties": {
+          "allowed_tool_names": {
+            "anyOf": [
+              {
+                "items": {
+                  "type": "string"
+                },
+                "type": "array"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Allowed Tool Names"
+          }
+        },
+        "required": [
+          "allowed_tool_names"
+        ],
+        "title": "_UserToolAccessIn",
         "type": "object"
       }
     },
@@ -2869,6 +2907,87 @@
         ]
       }
     },
+    "/admin/v1/tools": {
+      "get": {
+        "operationId": "tools_admin_v1_tools_get",
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "additionalProperties": true,
+                  "title": "Response Tools Admin V1 Tools Get",
+                  "type": "object"
+                }
+              }
+            },
+            "description": "Successful Response"
+          }
+        },
+        "security": [
+          {
+            "umeko_admin": []
+          }
+        ],
+        "summary": "Tools"
+      }
+    },
+    "/admin/v1/tools/{name}": {
+      "put": {
+        "operationId": "set_tool_dispatch_admin_v1_tools__name__put",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "name",
+            "required": true,
+            "schema": {
+              "title": "Name",
+              "type": "string"
+            }
+          }
+        ],
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/_ToolDispatchIn"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "additionalProperties": true,
+                  "title": "Response Set Tool Dispatch Admin V1 Tools  Name  Put",
+                  "type": "object"
+                }
+              }
+            },
+            "description": "Successful Response"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            },
+            "description": "Validation Error"
+          }
+        },
+        "security": [
+          {
+            "umeko_admin": []
+          }
+        ],
+        "summary": "Set Tool Dispatch"
+      }
+    },
     "/admin/v1/users": {
       "get": {
         "operationId": "users_admin_v1_users_get",
@@ -3220,6 +3339,106 @@
           }
         ],
         "summary": "User Sessions"
+      }
+    },
+    "/admin/v1/users/{user_id}/tool-access": {
+      "get": {
+        "operationId": "user_tool_access_admin_v1_users__user_id__tool_access_get",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "user_id",
+            "required": true,
+            "schema": {
+              "title": "User Id",
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "additionalProperties": true,
+                  "title": "Response User Tool Access Admin V1 Users  User Id  Tool Access Get",
+                  "type": "object"
+                }
+              }
+            },
+            "description": "Successful Response"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            },
+            "description": "Validation Error"
+          }
+        },
+        "security": [
+          {
+            "umeko_admin": []
+          }
+        ],
+        "summary": "User Tool Access"
+      },
+      "put": {
+        "operationId": "set_user_tool_access_admin_v1_users__user_id__tool_access_put",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "user_id",
+            "required": true,
+            "schema": {
+              "title": "User Id",
+              "type": "string"
+            }
+          }
+        ],
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/_UserToolAccessIn"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "additionalProperties": true,
+                  "title": "Response Set User Tool Access Admin V1 Users  User Id  Tool Access Put",
+                  "type": "object"
+                }
+              }
+            },
+            "description": "Successful Response"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            },
+            "description": "Validation Error"
+          }
+        },
+        "security": [
+          {
+            "umeko_admin": []
+          }
+        ],
+        "summary": "Set User Tool Access"
       }
     },
     "/health": {

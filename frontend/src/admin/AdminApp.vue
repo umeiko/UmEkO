@@ -15,10 +15,12 @@ import UsersView from './views/UsersView.vue';
 import SessionsView from './views/SessionsView.vue';
 import ResourcesView from './views/ResourcesView.vue';
 import SkillsView from './views/SkillsView.vue';
+import ToolsView from './views/ToolsView.vue';
 const tabs = computed(() => [
   ['access', tr('服务接入'), 'access', tr('接入方式、智能体与服务账号')],
   ['providers', tr('模型与供应商'), 'providers', tr('供应商、模型能力与并发控制')],
   ['dskills', tr('技能库'), 'skills', tr('技能文件、脚本与下发管理')],
+  ['tools', tr('Tools 管理'), 'code', tr('内置工具的全局下发与用户权限')],
   ['users', tr('用户管理'), 'users', tr('用户账号与权限')],
   ['sessions', tr('会话管理'), 'sessions', tr('会话历史与内存状态')],
   ['resources', tr('资源监控'), 'resources', tr('服务器资源、模型队列与调用任务')],
@@ -30,6 +32,7 @@ const views = {
   sessions: SessionsView,
   resources: ResourcesView,
   dskills: SkillsView,
+  tools: ToolsView,
 };
 const username = ref(''),
   password = ref(''),
