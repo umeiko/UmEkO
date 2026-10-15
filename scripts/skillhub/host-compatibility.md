@@ -12,7 +12,7 @@
 | `run_skill_script(pack, script, args)` | 用下方 `scripts/run.py` 运行相应脚本；`args` 内容保持原样 |
 | `delegate_task(task)` | 宿主的文件子 Agent／任务委派工具，交付文件路径和短摘要。宿主没有委派能力时，明确说明上下文隔离不可用，由当前 Agent 分段处理相同任务，保留落盘与短汇报纪律 |
 | `image_reasoning(prompt, image_paths)` | 宿主的多图视觉工具或当前模型的原生视觉输入；原生看图也视为视觉能力可用。不可用时按技能的缺失能力规则处理，不猜测图片 |
-| `write_working_doc` / `read_working_doc` | 将进度文档写到／读自 `generate/working-doc.md`，无需平台专属的工作文档服务 |
+| `write_file` / `read_document` | 将任务笔记写到／读自 `generate/working_doc.md`，无需专属工作文档工具 |
 | `archive_tool` | 宿主的压缩包列举／解压工具；保持目录层级，所有条目须落在本次任务目录内 |
 | 文件元数据／交付接口 | 宿主的文件列表、附件信息与产物交付能力；汇报相对任务目录的实际文件，不构造服务器地址 |
 

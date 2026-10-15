@@ -95,6 +95,8 @@ CLI 的导入文件只包含内层文档。导入按 Provider / 模型名称合�
 | GET | `/admin/v1/users/{user_id}/tool-access` | 工具目录及该用户的 `allowed_tool_names` |
 | PUT | `/admin/v1/users/{user_id}/tool-access` | `{"allowed_tool_names":null}` 跟随全局；`[]` 关闭可配置工具；名称数组单独授权 |
 
+已移除工作文档专用工具。读取权限时，`allowed_tool_names` 只含当前有效工具，`retired_tool_names` 列出旧记录中待清理的专用工具授权；旧授权不自动转换成范围更大的文件权限。保存有效工具选择后清理旧名；提交已移除的工具名会被拒绝。历史调用记录和笔记文件继续保留。
+
 保存后下一轮重新装配工具列表，已有会话与恢复会话也适用；执行前再次检查权限，撤销后不能凭
 旧工具名调用，也不能通过委派绕过。权限保存于服务数据库，不修改源码。
 `submit_results` 是机器任务协议必需工具，不提供停用开关，不接受用户自选授权；它只在机器任务

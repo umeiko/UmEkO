@@ -541,11 +541,16 @@ class Store:
         return next(tool for tool in self.tool_dispatch() if tool["name"] == name)
 
     def user_tool_access(self, user_id: str) -> dict:
+        from ..tool_catalog import CONFIGURABLE_TOOLS, RETIRED_TOOLS
         with self.connect() as db:
             if db.execute("SELECT 1 FROM users WHERE id=? AND kind='human'", (user_id,)).fetchone() is None:
                 raise KeyError(user_id)
             row = db.execute("SELECT allowed_tool_names FROM user_tool_access WHERE user_id=?", (user_id,)).fetchone()
-        return {"allowed_tool_names": json.loads(row[0]) if row and row[0] is not None else None}
+        names = json.loads(row[0]) if row and row[0] is not None else None
+        # A fixed-file grant must never become a grant to write arbitrary output files.
+        # Keep the old row for the administrator's notice; saving cleans retired names.
+        return {"allowed_tool_names": [name for name in names if name in CONFIGURABLE_TOOLS] if names is not None else None,
+                "retired_tool_names": [name for name in names or [] if name in RETIRED_TOOLS]}
 
     def set_user_tool_access(self, user_id: str, allowed_tool_names: list[str] | None) -> dict:
         from ..tool_catalog import CONFIGURABLE_TOOLS

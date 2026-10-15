@@ -118,6 +118,56 @@ def test_catalog_matches_native_tool_implementations(access):
     assert {tool.name for tool in tools} | {"delegate_task", "submit_results"} == CONFIGURABLE_TOOLS | REQUIRED_TOOLS
 
 
+def test_working_notes_use_only_general_file_tools(access):
+    e = access
+    state = e.service.create_session(user_id=e.owner["id"])
+    retired = {"read_working_doc", "write_working_doc"}
+    assert retired.isdisjoint({t["name"] for t in e.admin.get(e.api + "/tools").json()["tools"]})
+    assert retired.isdisjoint(state.agent._skills)
+    assert retired.isdisjoint(state.agent._subagent._skills)
+    assert retired.isdisjoint(t["function"]["name"] for t in state.agent._tools)
+    for name in retired:
+        assert e.admin.put(e.api + "/tools/" + name, json={"enabled": True}).status_code == 404
+        assert e.admin.put(e.api + f"/users/{e.owner['id']}/tool-access",
+                           json={"allowed_tool_names": [name]}).status_code == 400
+    path = "generate/working_doc.md"
+    result = state.agent._execute("write_file", json.dumps({"path": path, "content": "Saved task progress"}))
+    assert "已写入" in result
+    assert "Saved task progress" in state.agent._execute("read_document", json.dumps({"path": path}))
+    for name, args in [("write_working_doc", {"content": "must not replace"}), ("read_working_doc", {})]:
+        assert "已移除" in state.agent._execute(name, json.dumps(args))
+    assert (state.root / path).read_text(encoding="utf-8") == "Saved task progress"
+    e.store.add_tool_event(state.id, "main", "write_working_doc", '{"content":"Earlier notes"}', "Saved earlier")
+    assert e.store.tool_events(state.id)[-1]["name"] == "write_working_doc"
+
+
+@pytest.mark.parametrize("remaining", [[], ["list_dir"]])
+def test_retired_grants_do_not_expand_access_or_fall_back_to_global(access, remaining):
+    e = access
+    original = ["write_working_doc", *remaining, "read_working_doc"]
+    with e.store.connect() as db:
+        db.execute("INSERT OR REPLACE INTO user_tool_access VALUES (?,?,?)",
+                   (e.owner["id"], json.dumps(original), "fixture-time"))
+        db.execute("INSERT OR REPLACE INTO tool_dispatch VALUES ('write_working_doc',1)")
+    e.store.set_tool_dispatch("write_file", False)
+    url = e.api + f"/users/{e.owner['id']}/tool-access"
+    data = e.admin.get(url).json()
+    assert data["allowed_tool_names"] == remaining
+    assert set(data["retired_tool_names"]) == {"write_working_doc", "read_working_doc"}
+    assert e.store.effective_tool_names(e.owner["id"]) == REQUIRED_TOOLS | set(remaining)
+    state = e.service.create_session(user_id=e.owner["id"])
+    assert set(state.agent._skills) == set(remaining)
+    assert "权限" in state.agent._execute("write_file", '{"path":"must-not-exist.md","content":"no"}')
+    assert not (state.root / "generate/must-not-exist.md").exists()
+    # Deliberate administrator selection, not an automatic broadening of old grants.
+    e.admin.put(url, json={"allowed_tool_names": ["read_document"]}).raise_for_status()
+    assert e.admin.get(url).json()["retired_tool_names"] == []
+    assert Store(e.store.path).effective_tool_names(e.owner["id"]) == REQUIRED_TOOLS | {"read_document"}
+    with e.store.connect() as db:
+        assert json.loads(db.execute("SELECT allowed_tool_names FROM user_tool_access WHERE user_id=?",
+                                     (e.owner["id"],)).fetchone()[0]) == ["read_document"]
+
+
 def test_script_discovery_obeys_global_and_user_tool_permissions(access):
     e = access
     state = e.service.create_session(user_id=e.owner["id"])

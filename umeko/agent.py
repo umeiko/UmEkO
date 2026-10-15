@@ -24,6 +24,7 @@ from .images import image_data_url, validate_image
 from .llm import LLMClient, message_text
 from .prompts.vision import image_input_guidance
 from .session import Session
+from .tool_catalog import RETIRED_TOOLS
 from .skills import Skill, ToolResult, build_file_tools, resolve_readable_path
 from .sub_agent import FileSubAgent
 
@@ -542,6 +543,8 @@ class UmekoAgent:
         return d
 
     def _execute(self, name: str, arguments_json: str) -> str | ToolResult:
+        if name in RETIRED_TOOLS:
+            return f"错误：工具 {name} 已移除；{RETIRED_TOOLS[name]}。仅使用本轮已授权的工具。"
         if self._tool_authorizer is not None and not self._tool_authorizer(name):
             return f"错误：当前没有使用工具 {name} 的权限，请联系管理员。"
         skill = self._skills.get(name)

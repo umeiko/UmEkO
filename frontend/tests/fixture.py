@@ -136,6 +136,10 @@ def main():
     service, store = app.state.agent_service, app.state.store
     password = secrets.token_urlsafe(20)
     user = store.create_user("ui-admin", password, role="admin")
+    retired_user = store.create_user("ui-retired-tools", "fixture-retired-tools")
+    with store.connect() as db:
+        db.execute("INSERT INTO user_tool_access VALUES (?,?,?)", (
+            retired_user["id"], json.dumps(["write_working_doc", "read_working_doc"]), now()))
     provider = store.create_provider("FixtureProvider", "https://example.invalid/v1", "fixture-only")
     text = store.add_model(provider["id"],
                            "fixture-model-for-document-and-image-consistency-with-a-long-name", False)

@@ -3,6 +3,8 @@ import assert from 'node:assert/strict';
 export async function checkToolAccess(page, context, adminBase, state, prefix, screenshot) {
   const users = await (await context.request.get(adminBase + '/admin/v1/users')).json();
   const uid = users.find((u) => u.username === state.username).id;
+  const retiredUid = users.find((u) => u.username === 'ui-retired-tools').id;
+  await checkRetiredToolScope(page, context, adminBase, retiredUid);
   const scope = adminBase + `/admin/v1/users/${uid}/tool-access`;
   const dispatchUrl = adminBase + '/admin/v1/tools/download_url';
   const expected = new Set([
@@ -36,6 +38,12 @@ export async function checkToolAccess(page, context, adminBase, state, prefix, s
     const download = page.locator('#tool-dispatch-download_url');
     await download.waitFor();
     assert.ok(await download.isChecked());
+    assert.equal(
+      await page
+        .locator('#tool-dispatch-write_working_doc, #tool-dispatch-read_working_doc')
+        .count(),
+      0,
+    );
     assert.ok(await page.locator('#tool-dispatch-submit_results').isDisabled());
     await download.uncheck();
     await page.getByRole('status').filter({ hasText: '工具下发设置已更新' }).waitFor();
@@ -95,4 +103,45 @@ export async function checkToolAccess(page, context, adminBase, state, prefix, s
     await context.request.put(scope, { data: { allowed_tool_names: null } });
     await context.request.put(dispatchUrl, { data: { enabled: true } });
   }
+}
+
+async function checkRetiredToolScope(page, context, adminBase, uid) {
+  await page.locator('#tab-users').click();
+  const row = page.locator('#page-users tbody tr').filter({
+    has: page.getByText('ui-retired-tools', { exact: true }),
+  });
+  await row.getByRole('button', { name: '工具权限', exact: true }).click();
+  const dialog = page.locator('#user-tool-access[open]');
+  await dialog.locator('#user-tool-read_document').waitFor();
+  await dialog.locator('#retired-tool-notice').waitFor();
+  assert.equal(await dialog.locator('#user-inherit-tools').isChecked(), false);
+  assert.equal(await dialog.locator('#user-tool-write_file').isChecked(), false);
+  assert.equal(
+    await dialog.locator('#user-tool-write_working_doc, #user-tool-read_working_doc').count(),
+    0,
+  );
+  await dialog.locator('#retired-tool-notice .help-trigger').hover();
+  await page
+    .getByText(
+      '工作文档专用工具已移除。旧授权不会自动扩大为通用文件权限，请按需选择 read_document、write_file；保存后清理旧授权。',
+      { exact: true },
+    )
+    .waitFor();
+  await dialog.locator('#user-tool-read_document').check();
+  await dialog.locator('#user-tool-access-save').click();
+  await dialog.waitFor({ state: 'hidden' });
+  const saved = await (
+    await context.request.get(adminBase + `/admin/v1/users/${uid}/tool-access`)
+  ).json();
+  assert.deepEqual(saved.allowed_tool_names, ['read_document']);
+  assert.deepEqual(saved.retired_tool_names, []);
+  await page.reload();
+  await page.locator('#tab-users').click();
+  await row.getByRole('button', { name: '工具权限', exact: true }).click();
+  await dialog.locator('#user-tool-read_document').waitFor();
+  assert.ok(await dialog.locator('#user-tool-read_document').isChecked());
+  assert.equal(await dialog.locator('#user-tool-write_file').isChecked(), false);
+  assert.equal(await dialog.locator('#retired-tool-notice').count(), 0);
+  await dialog.locator('#user-tool-access-save').click();
+  await dialog.waitFor({ state: 'hidden' });
 }

@@ -182,6 +182,27 @@ def test_catalog_permissions_and_web_selection_are_distinct(engine):
     assert BODY in session.use_skill("image-check")  # Hidden from automatic catalogue, still permitted.
 
 
+def test_custom_legacy_instructions_get_guidance_without_reintroducing_tools(engine):
+    agent, session, directory = engine
+    entry = directory / "image-check.md"
+    original = pack("先 write_working_doc 记录进度，再 read_working_doc 续跑。")
+    entry.write_text(original, encoding="utf-8")
+    instructions = session.use_skill("image-check")
+    assert "旧指引工具名修正" in instructions and "read_document" in instructions and "write_file" in instructions
+    assert entry.read_text(encoding="utf-8") == original
+    assert {"write_working_doc", "read_working_doc"}.isdisjoint(agent._skills)
+
+
+def test_use_skill_only_loads_main_instructions_and_cannot_bypass_member_permission(engine):
+    agent, session, directory = engine
+    (directory / "image-check").mkdir()
+    (directory / "image-check/details.md").write_text("MEMBER_BODY", encoding="utf-8")
+    result = session.use_skill("image-check/details.md")
+    assert result.startswith("错误：") and "read_pack_file" in result and "MEMBER_BODY" not in result
+    assert not session.active_skill_packs()
+    assert "read_pack_file" in session.use_skill("image-check")
+
+
 def test_multimodal_request_keeps_metadata_and_image(engine, tmp_path):
     agent, _, _ = engine
     image = tmp_path / "image.png"

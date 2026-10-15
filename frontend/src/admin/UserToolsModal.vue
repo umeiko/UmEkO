@@ -1,6 +1,7 @@
 <script setup>
 import { ref, computed, watch } from 'vue';
 import UiModal from '../shared/UiModal.vue';
+import HelpTip from '../shared/HelpTip.vue';
 import { encode } from '../shared/api.js';
 import { useAdminI18n } from '../shared/adminI18n.js';
 import { api, notify } from './state.js';
@@ -8,6 +9,7 @@ const { tr } = useAdminI18n();
 const props = defineProps({ modelValue: Boolean, user: Object });
 const emit = defineEmits(['update:modelValue']);
 const tools = ref([]),
+  retired = ref([]),
   selected = ref(null),
   loading = ref(false),
   saving = ref(false),
@@ -29,11 +31,13 @@ watch(
     loading.value = true;
     error.value = '';
     tools.value = [];
+    retired.value = [];
     try {
       const data = await api('GET', `/admin/v1/users/${encode(uid)}/tool-access`);
       if (version === requestVersion) {
         tools.value = data.tools;
         selected.value = data.allowed_tool_names;
+        retired.value = data.retired_tool_names || [];
       }
     } catch (e) {
       if (version === requestVersion) error.value = e.message;
@@ -68,6 +72,17 @@ async function save() {
     @update:model-value="emit('update:modelValue', $event)"
   >
     <form id="user-tool-access-form" class="stack" @submit.prevent="save">
+      <p v-if="retired.length" id="retired-tool-notice" class="row muted" role="status">
+        {{ tr('旧工具授权已失效') }}
+        <HelpTip
+          warning
+          :text="
+            tr(
+              '工作文档专用工具已移除。旧授权不会自动扩大为通用文件权限，请按需选择 read_document、write_file；保存后清理旧授权。',
+            )
+          "
+        />
+      </p>
       <p class="muted">
         {{
           tr(

@@ -89,8 +89,6 @@ def test_agent_event_fanout():
         create_skill=lambda **kw: "ok",
         list_skill_packs=lambda **kw: "ok",
         use_skill=lambda **kw: "ok",
-        read_working_doc=lambda **kw: "ok",
-        write_working_doc=lambda **kw: "ok",
     )
     seen_events, seen_legacy = [], []
 

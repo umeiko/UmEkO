@@ -19,7 +19,7 @@ description: 检查单张或多张图片、Markdown 图文文档及文档压缩�
 
 ## 阶段 0：准备（主 Agent 直接做）
 
-1. `write_working_doc` 初始化进度文档（见下方模板），这是断点续跑的依据。
+1. `write_file(path="generate/working_doc.md", content=完整内容)` 初始化工作笔记（见下方模板），这是断点续跑的依据。
 2. 确认视觉能力：若 `image_reasoning` 工具不在你的工具列表里（无视觉模型配置），
    **立即停止并告知用户**"需要配置视觉模型才能做图片质检"，不要硬跑。
 3. **收到压缩包先解压**：用户附件若是压缩包（zip/7z/rar/tar 等），先用
@@ -55,7 +55,7 @@ description: 检查单张或多张图片、Markdown 图文文档及文档压缩�
 
 ## 阶段 2：逐图质检（子 Agent #2..N，每图一个）
 
-主 Agent `read_working_doc` 看进度，对每个**未完成**的本地图片派一个子 Agent：
+主 Agent `read_document(path="generate/working_doc.md")` 查看任务笔记，结合 qc-progress.md 看进度，对每个**未完成**的本地图片派一个子 Agent：
 
 > 任务：质检图片 `<图片引用路径>`（相对 Markdown 同目录解析）。
 > 1. `read_document generate/qc-manifest.md`，只看该图片对应小节的关联描述。
@@ -124,6 +124,6 @@ JSON 路径和文件是否存在，修正后重新渲染；不要把缺图的 ZI
 
 ## 断点续跑规则
 
-用户说"继续"时：`read_working_doc` + `read_document generate/qc-progress.md`
+用户说"继续"时：`read_document(path="generate/working_doc.md")` + `read_document(path="generate/qc-progress.md")`
 → 从第一个未完成图片继续阶段 2。qc-report.json 已有的条目不重复检查。阶段 3 的渲染由 run_skill_script 确定性完成。
 清单文件若不存在则重跑阶段 1。

@@ -19,14 +19,17 @@ TOOL_CATALOG = (
     ("list_skill_script", "查看技能脚本", "Inspect skill scripts", "skills"),
     ("run_skill_script", "执行技能脚本", "Run skill scripts", "skills"),
     ("create_skill", "创建技能", "Create skills", "skills"),
-    ("read_working_doc", "读取工作文档", "Read working notes", "coordination"),
-    ("write_working_doc", "写入工作文档", "Write working notes", "coordination"),
     ("delegate_task", "委派子 Agent", "Delegate to a subagent", "coordination"),
     ("run_command", "执行命令", "Run commands", "coordination"),
     ("submit_results", "提交机器任务答案", "Submit machine task results", "protocol"),
 )
 REQUIRED_TOOLS = frozenset({"submit_results"})
 CONFIGURABLE_TOOLS = frozenset(name for name, *_ in TOOL_CATALOG) - REQUIRED_TOOLS
+# Guidance for old histories/instructions only; these names have no executable handlers.
+RETIRED_TOOLS = {
+    "read_working_doc": "改用 read_document 读取产物目录的 working_doc.md（服务会话为 generate/working_doc.md）",
+    "write_working_doc": "改用 write_file 写入产物目录的 working_doc.md（服务会话为 generate/working_doc.md），局部修改用 replace_in_file",
+}
 
 
 def tool_catalog() -> list[dict]:

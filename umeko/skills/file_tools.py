@@ -824,8 +824,7 @@ def build_file_tools(
             description=(
                 "读取指定技能包的完整操作指引并遵照执行。"
                 "技能包名来自当前技能目录或 list_skill_packs。"
-                "也支持 包名/附属文件.md 形式读取包内附属文档"
-                "（如检查项清单等数据文件，清单见 list_skill_packs 输出）。"
+                "只加载主指引；附属文档及源码通过 read_pack_file 读取，脚本用法用 list_skill_script 查看。"
             ),
             parameters={
                 "type": "object",
@@ -835,33 +834,6 @@ def build_file_tools(
                 "required": ["name"],
             },
             handler=session.use_skill,
-        ),
-        Skill(
-            name="read_working_doc",
-            description=(
-                "读取固定的 working_doc.md 的快捷入口，与 read_document 读取该文件等价。"
-                "只返回普通文本笔记，不会自动恢复其他上下文。"
-            ),
-            parameters={"type": "object", "properties": {}},
-            handler=session.read_working_doc,
-        ),
-        Skill(
-            name="write_working_doc",
-            description=(
-                "整体覆盖固定的 working_doc.md 的快捷入口，与 write_file 写该文件等价。"
-                "不自动压缩上下文或注入后续请求；局部修订用 replace_in_file。"
-            ),
-            parameters={
-                "type": "object",
-                "properties": {
-                    "content": {
-                        "type": "string",
-                        "description": "工作文档的完整 markdown 内容",
-                    },
-                },
-                "required": ["content"],
-            },
-            handler=session.write_working_doc,
         ),
     ]
     if command_runner is not None:

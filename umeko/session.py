@@ -1,8 +1,8 @@
-"""通用会话状态：产物目录、工作文档与 Skill 挂载，供工具处理器读写。
+"""通用会话状态：产物目录与 Skill 挂载，供工具处理器读写。
 
 领域会话状态（如"当前图""当前任务"）由各领域项目在自己的 Session 中扩展；
-基座 Session 只管：产物落点（write_file 的写入边界）、工作文档（多信息源整合的
-中间产物）、Skill 的发现/挂载/卸载。
+基座 Session 只管产物落点（write_file 的写入边界）与 Skill 的发现/挂载/卸载。
+工作笔记使用普通文件工具，不另设专属状态或读写工具。
 """
 
 from __future__ import annotations
@@ -13,6 +13,7 @@ from pathlib import Path
 
 from .config import Settings
 from .skillpacks import SkillPack, get_skill_pack, load_skill_packs
+from .tool_catalog import RETIRED_TOOLS
 
 logger = logging.getLogger(__name__)
 
@@ -21,8 +22,6 @@ class Session:
     """一次 Agent 会话的通用状态。
 
     - output_dir：产物目录，write_file/replace_in_file 的写入边界，路径始终绝对；
-    - 工作文档（working_doc.md）：整合关键信息的中间产物，避免大段原文
-      长期堆在对话上下文里；
     - Skill 挂载：use_skill 读取技能包指引并登记为已启用，供主 Agent 编排使用。
     """
 
@@ -62,25 +61,6 @@ class Session:
     def skill_dir(self) -> Path | None:
         """当前会话的 Skill 目录；None 表示使用系统默认目录。"""
         return self._skill_dir
-
-    # ---------- 工作文档 ----------
-
-    @property
-    def working_doc_path(self) -> Path:
-        """工作文档路径：整合关键信息与中间结论的中间产物（markdown）。"""
-        return self._output_dir / "working_doc.md"
-
-    def read_working_doc(self) -> str:
-        """read_working_doc 工具的 handler。"""
-        if not self.working_doc_path.is_file():
-            return "（工作文档还没有内容，可用 write_working_doc 创建）"
-        return self.working_doc_path.read_text(encoding="utf-8")
-
-    def write_working_doc(self, content: str) -> str:
-        """write_working_doc 工具的 handler：整体覆盖写入（先读后改即可局部修订）。"""
-        self._output_dir.mkdir(parents=True, exist_ok=True)
-        self.working_doc_path.write_text(content, encoding="utf-8")
-        return f"工作文档已更新（{len(content)} 字符）：{self.working_doc_path}"
 
     # ---------- Skill 挂载 ----------
 
@@ -126,24 +106,9 @@ class Session:
         return [packs[name] for name in sorted(self._active_skill_names) if name in packs]
 
     def use_skill(self, name: str) -> str:
-        """读取技能包完整指引（use_skill 工具的 handler）。
-
-        支持 `包名/附属文件.md` 形式读取包内附属文档（如检查项清单等数据文件）；
-        附属文件不要求 front matter，纯内容注入。
-        """
+        """读取主指引；附属资源统一交给 read_pack_file。"""
         if "/" in name:
-            pack_name, _, member = name.partition("/")
-            try:
-                self.authorize_skill_pack(pack_name.strip().lower())
-                pack = get_skill_pack(pack_name, self._skill_dir)
-            except ValueError as e:
-                return f"错误：{e}"
-            from .skills.pack_reader import read_pack_file
-            result = read_pack_file(pack.name, member)
-            if result.startswith("错误："):
-                return result
-            self._active_skill_names.add(pack.name)
-            return result
+            return "错误：use_skill 只接受技能包名；附属文件请用 read_pack_file(pack=包名, member=文件名)。"
         try:
             self.authorize_skill_pack(name.strip().lower())
             pack = get_skill_pack(name, self._skill_dir)
@@ -152,9 +117,11 @@ class Session:
         self._active_skill_names.add(pack.name)
         members = self._pack_members(pack.name)
         suffix = (f"\n\n（该技能包还包含附属文件：{members}；"
-                  f"use_skill <包名>/<文件名> 可读取）") if members else ""
+                  f"用 read_pack_file(pack=\"{pack.name}\", member=文件名) 读取；脚本用法用 list_skill_script 查看）") if members else ""
+        retired = [f"{name} 已移除，{hint}。" for name, hint in RETIRED_TOOLS.items() if name in pack.instructions]
+        compatibility = ("[旧指引工具名修正：以下说明优先于正文中的旧名称]\n" + "\n".join(retired) + "\n\n") if retired else ""
         return (
-            f"以下是技能包 {pack.name} 的操作指引，请严格遵照执行：\n\n"
+            compatibility + f"以下是技能包 {pack.name} 的操作指引，请严格遵照执行：\n\n"
             f"{pack.instructions}{suffix}"
         )
 
