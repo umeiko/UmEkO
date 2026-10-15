@@ -130,6 +130,7 @@ class FileSubAgent:
             should_cancel=should_cancel,
             allow_force_read=True,
             file_operator=file_operator,
+            download_config=settings.download,
         )
         self._skills = {
             skill.name: skill

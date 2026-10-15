@@ -121,6 +121,7 @@ class UmekoAgent:
             readable_roots=readable_roots,
             should_cancel=should_cancel,
             file_operator=file_operator,
+            download_config=settings.download,
             on_tool_progress=(
                 lambda name, delta: self._emit(
                     ev.TOOL_PROGRESS, name=name, output_delta=delta

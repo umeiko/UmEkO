@@ -161,7 +161,7 @@ Linux 版 draw.io、Xvfb、`drawio_path`、完整 Docker 命令和无模型验�
 | 首次管理员账号 | `.env` 的 `UMEKO_ADMIN_USERNAME/PASSWORD` | 仅无管理员账号时用于引导 |
 
 `.env` 默认位于启动目录；exe 优先读取 exe 旁边的文件，也可通过 `--env` 指定。
-进程环境变量优先于 `.env`。`UMEKO_DATA_ROOT`、`MODEL_CA_FILE` 的相对路径以所选 `.env` 所在目录为准；
+进程环境变量优先于 `.env`。`UMEKO_DATA_ROOT`、`MODEL_CA_FILE`、`UMEKO_DOWNLOAD_CA_FILE` 的相对路径以所选 `.env` 所在目录为准；
 启动参数 `--data-root` 优先于环境变量，其相对路径以启动目录为准。
 已有本地工作台数据在 `local_data` 时，继续用 `--data-root local_data`；需要和云端共用 Provider 时指定同一目录。
 容器部署需持久化数据目录，CA 文件需挂载到容器可读的位置。
@@ -428,6 +428,43 @@ UMEKO **每次先尝试原生工具请求**。仅收到明确表示不支持工�
 客户端保留默认/公共 CA，追加公司 CA，仍验证证书和域名。
 文件不存在或格式错误会在启动时明确报错；域名不匹配、证书过期仍需运维修复。
 
+## 内网文件下载与 HTTPS 证书 { #download-network }
+
+文件下载与模型调用是独立链路。`MODEL_CA_FILE` 只用于模型；下载工具的企业 CA 用
+`UMEKO_DOWNLOAD_CA_FILE` 配置。两项可以指向同一份公司 CA 文件，下载仍保留默认公共 CA 并检查域名和有效期。
+
+从运维获取公司 CA 的 PEM 文件，配置服务使用的 `.env` 后重启：
+
+```ini
+UMEKO_DOWNLOAD_CA_FILE=/etc/umeko/certs/company-files-ca.pem
+UMEKO_DOWNLOAD_INTERNAL_HOSTS=files.company.internal
+```
+
+Windows 可填 `C:/certs/company-files-ca.pem`；相对路径以 `.env` 所在目录为准。
+Docker 要把 CA 文件只读挂载进容器，配置值填写容器中的路径，不是宿主机路径。
+证书文件不存在或格式错误会在启动时明确报错。服务器仍需能解析并连接文件主机。
+
+如果暂时拿不到 CA，需要允许指定文件站的自签名证书，可由管理员显式配置：
+
+```ini
+UMEKO_DOWNLOAD_INTERNAL_HOSTS=files.company.internal
+UMEKO_DOWNLOAD_TLS_INSECURE_HOSTS=files.company.internal
+```
+
+修改后重启，重新发起下载即可。此方式对列出的主机关闭证书和域名校验，无法验证文件来源；
+仅在明确接受这一点时使用，取得 CA 后可清空免校验列表并改用 CA 配置。
+没有全局关闭校验的开关，Agent 也不能通过工具参数选择关闭校验。成功结果会附带本次免校验主机的提示。
+
+两个主机列表相互独立：`INTERNAL_HOSTS` 开放网络访问，`TLS_INSECURE_HOSTS` 只控制证书校验。
+填写精确域名或 IP，多个用逗号分隔，不带协议、端口或路径，不支持 `*`、子域名通配符或网段。
+内网开放限于这些主机解析到的 RFC1918 IPv4 / IPv6 ULA 地址；本机回环、链路本地、保留和云元数据地址仍禁止。
+公网文件主机不需要加入 `INTERNAL_HOSTS`。每一次重定向都会重新匹配目标主机的网络与 TLS 策略，
+不会把一个主机的授权传给其他主机。20 MiB 大小限制、工作区边界和失败清理保持生效。
+
+遇到 `TLS_CERTIFICATE_VERIFY_FAILED` 时，Agent 和工具详情会收到文件主机、校验原因和上述配置名；
+不会自动以不校验方式重试。`TLS_ERROR` 表示其他 TLS 握手错误，`DNS_ERROR` 表示解析失败，
+`DOWNLOAD_TIMEOUT` 表示连接或读取超时。错误详情不会包含下载网址中的查询令牌。
+
 ## 验证
 
 部署完成后，从真实浏览器入口验证，而不只检查后端端口：
@@ -489,7 +526,8 @@ UMEKO **每次先尝试原生工具请求**。仅收到明确表示不支持工�
 | 提问请求 202，但一直没有回答 | 分开检查事件接口 `/v1/runs/{id}/events` 和模型调用结果，不能把 202 当作回答成功 |
 | 回答全部结束后才一次出现 | 每层 NGINX 关闭 `proxy_buffering`，核对外层代理的缓冲和超时设置 |
 | 上传文件返回 413 | 核对 NGINX 的 `client_max_body_size` 及其他入口限制；头像接口另有 2 MB 应用限制 |
-| `CERTIFICATE_VERIFY_FAILED` | 加载模型服务对应的 CA，核对文件可读、模型域名、证书有效期和证书链 |
+| 模型 `CERTIFICATE_VERIFY_FAILED` | 配置 `MODEL_CA_FILE`，核对文件可读、模型域名、证书有效期和证书链 |
+| 文件下载 `TLS_CERTIFICATE_VERIFY_FAILED` | 配置 `UMEKO_DOWNLOAD_CA_FILE`；临时兼容指定主机可用 `UMEKO_DOWNLOAD_TLS_INSECURE_HOSTS`，详见[内网文件下载](#download-network) |
 | 浏览器提示网站证书不可信 | 检查网站入口的 HTTPS 证书及浏览器的公司 CA 信任；`MODEL_CA_FILE` 只影响 Python 调用模型 |
 | 新进程里 Provider / 用户 / 历史消失 | `.env` 选择、实际数据目录和容器持久化挂载是否仍与原安装一致 |
 | 页面可以用，但管理面 9000 连不上 | 是否启用 `--no-admin`，以及管理面是否仍监听 `127.0.0.1`；它与用户面地址独立 |

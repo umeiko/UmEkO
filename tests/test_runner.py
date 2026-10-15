@@ -71,6 +71,7 @@ def test_agent_event_fanout():
     from types import SimpleNamespace
 
     from umeko.agent import UmekoAgent
+    from umeko.config import DownloadConfig
 
     settings = SimpleNamespace(  # 只喂 __init__ 真正读到的字段
         text_model=SimpleNamespace(),
@@ -81,6 +82,7 @@ def test_agent_event_fanout():
         context_window=10000,
         max_tool_iterations=3,
         max_subagent_tool_iterations=3,
+        download=DownloadConfig(),
     )
     session = SimpleNamespace(
         output_dir=None,

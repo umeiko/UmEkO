@@ -5,7 +5,7 @@ import ssl
 import certifi
 import pytest
 
-from umeko.config import ModelConfig, Settings, load_settings, normalize_base_path
+from umeko.config import DownloadConfig, ModelConfig, Settings, load_settings, normalize_base_path
 from umeko.host.configuration import LEGACY_MODEL_KEYS, migrate_legacy_models, resolve_provider_settings
 from umeko.host.service import AgentService
 from umeko.host.storage import Store
@@ -15,6 +15,7 @@ from umeko.llm import client as client_module
 @pytest.fixture
 def deployment_env(monkeypatch, tmp_path):
     for key in {*LEGACY_MODEL_KEYS, "UMEKO_DATA_ROOT", "UMEKO_BASE_PATH", "UMEKO_ADMIN_BASE_PATH", "UMEKO_PUBLIC_URL", "MODEL_CA_FILE",
+                "UMEKO_DOWNLOAD_CA_FILE", "UMEKO_DOWNLOAD_INTERNAL_HOSTS", "UMEKO_DOWNLOAD_TLS_INSECURE_HOSTS",
                 "TEXT_MODEL_CONTEXT_WINDOW", "MAX_TOOL_ITERATIONS", "MAX_SUBAGENT_TOOL_ITERATIONS"}:
         monkeypatch.delenv(key, raising=False)
     path = tmp_path / ".env"
@@ -102,6 +103,48 @@ def test_relative_ca_and_process_env_precedence(deployment_env, monkeypatch):
     monkeypatch.setenv("MODEL_CA_FILE", "missing.pem")
     with pytest.raises(RuntimeError, match="MODEL_CA_FILE"):
         load_settings(deployment_env)
+
+
+def test_download_ca_and_host_grants_are_explicit_and_independent(deployment_env, monkeypatch):
+    ca = deployment_env.parent / "company.pem"
+    ca.write_bytes(Path(certifi.where()).read_bytes())
+    deployment_env.write_text("MODEL_CA_FILE=company.pem\n", encoding="utf-8")
+    assert load_settings(deployment_env).download == DownloadConfig()
+    monkeypatch.setenv("UMEKO_DOWNLOAD_CA_FILE", "company.pem")
+    monkeypatch.setenv("UMEKO_DOWNLOAD_INTERNAL_HOSTS", "Files.Internal, 10.1.2.3,files.internal.")
+    monkeypatch.setenv("UMEKO_DOWNLOAD_TLS_INSECURE_HOSTS", "Files.Internal")
+    settings = load_settings(deployment_env)
+    assert settings.download == DownloadConfig(str(ca.resolve()), ("files.internal", "10.1.2.3"), ("files.internal",))
+    monkeypatch.setenv("UMEKO_DOWNLOAD_CA_FILE", "missing.pem")
+    with pytest.raises(RuntimeError, match="UMEKO_DOWNLOAD_CA_FILE"):
+        load_settings(deployment_env)
+
+
+@pytest.mark.parametrize("setting", ["UMEKO_DOWNLOAD_INTERNAL_HOSTS", "UMEKO_DOWNLOAD_TLS_INSECURE_HOSTS"])
+@pytest.mark.parametrize("value", ["*", "*.internal", "https://files.internal", "files.internal:443", "10.0.0.0/8"])
+def test_download_host_grants_reject_broad_or_ambiguous_values(deployment_env, monkeypatch, setting, value):
+    monkeypatch.setenv(setting, value)
+    with pytest.raises(RuntimeError, match=setting):
+        load_settings(deployment_env)
+
+
+def test_both_agent_roles_receive_server_download_policy(tmp_path, monkeypatch):
+    from umeko.skills import file_tools
+    config = DownloadConfig(internal_hosts=("files.internal",), insecure_tls_hosts=("files.internal",))
+    settings = Settings(ModelConfig("fixture", "fixture-key", "https://unused.invalid"), download=config)
+    service = AgentService(settings, tmp_path / "data", tmp_path / "output")
+    seen = []
+    monkeypatch.setattr(file_tools, "download_url", lambda *args, **kwargs: seen.append(kwargs["config"]) or "fixture")
+    try:
+        user = service.store.create_user("download-user", "fixture-password")
+        session = service.create_session(user_id=user["id"])
+        for agent in (session.agent, session.agent._subagent):
+            tool = agent._skills["download_url"]
+            assert set(tool.parameters["properties"]) == {"url", "path", "overwrite"}
+            assert tool.handler("https://files.internal/file.txt") == "fixture"
+        assert seen == [config, config]
+    finally:
+        service.run_manager.shutdown()
 
 
 def test_provider_switches_keep_ca_and_use_each_providers_proxy(tmp_path):

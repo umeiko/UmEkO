@@ -7,6 +7,7 @@
 from __future__ import annotations
 
 import os
+import ipaddress
 import re
 import ssl
 from dataclasses import dataclass, replace
@@ -32,6 +33,15 @@ class ModelConfig:
     # 注册表模型 ID：同一模型的所有客户端共用并发额度；0 表示不限制。
     model_id: str | None = None
     max_concurrent_requests: int = 0
+
+
+@dataclass(frozen=True)
+class DownloadConfig:
+    """仅由部署管理员配置的下载信任策略，不接受模型工具参数修改。"""
+
+    ca_file: str | None = None
+    internal_hosts: tuple[str, ...] = ()
+    insecure_tls_hosts: tuple[str, ...] = ()
 
 
 @dataclass(frozen=True)
@@ -67,6 +77,7 @@ class Settings:
     task_timeout_seconds: int = 3600
     # 管理面独立入口前缀；不继承用户面的 base_path。留空表示管理端口根路径。
     admin_base_path: str = ""
+    download: DownloadConfig = DownloadConfig()
 
 
 def normalize_base_path(value: str, setting_name: str = "UMEKO_BASE_PATH") -> str:
@@ -83,8 +94,8 @@ def normalize_base_path(value: str, setting_name: str = "UMEKO_BASE_PATH") -> st
     return value
 
 
-def _load_model_ca(env_path: Path) -> str | None:
-    value = (os.getenv("MODEL_CA_FILE") or "").strip()
+def _load_ca_file(env_path: Path, setting_name: str) -> str | None:
+    value = (os.getenv(setting_name) or "").strip()
     if not value:
         return None
     path = Path(value).expanduser()
@@ -94,8 +105,31 @@ def _load_model_ca(env_path: Path) -> str | None:
         # 启动即报错，避免直到提问时才发现证书文件缺失或格式错误。
         ssl.create_default_context().load_verify_locations(cafile=str(path))
     except (OSError, ssl.SSLError) as exc:
-        raise RuntimeError(f"MODEL_CA_FILE 无法加载 CA 证书：{path} ({exc})") from exc
+        raise RuntimeError(f"{setting_name} 无法加载 CA 证书：{path} ({exc})") from exc
     return str(path.resolve())
+
+
+def normalize_download_host(value: str) -> str:
+    """精确主机名或 IP；不支持 URL、端口、通配符及网段。"""
+    value = value.strip().rstrip(".").lower()
+    try:
+        return str(ipaddress.ip_address(value))
+    except ValueError:
+        pass
+    value = value.encode("idna").decode("ascii")
+    if len(value) > 253 or not re.fullmatch(
+        r"[a-z0-9](?:[a-z0-9-]{0,61}[a-z0-9])?(?:\.[a-z0-9](?:[a-z0-9-]{0,61}[a-z0-9])?)*", value
+    ):
+        raise ValueError("须为精确主机名或 IP，不含协议、端口、路径、通配符或网段")
+    return value
+
+
+def _load_download_hosts(setting_name: str) -> tuple[str, ...]:
+    try:
+        return tuple(dict.fromkeys(normalize_download_host(host) for host in
+                                   os.getenv(setting_name, "").split(",") if host.strip()))
+    except (ValueError, UnicodeError) as exc:
+        raise RuntimeError(f"{setting_name}：{exc}") from exc
 
 
 def normalize_public_url(value: str, base_path: str) -> str:
@@ -131,7 +165,7 @@ def resolve_env_path(env_path: str | Path | None = None) -> Path:
 def load_settings(env_path: str | Path | None = None, data_root: str | Path | None = None) -> Settings:
     env_path = resolve_env_path(env_path)
     load_dotenv(env_path)
-    model_ca = _load_model_ca(Path(env_path))
+    model_ca = _load_ca_file(Path(env_path), "MODEL_CA_FILE")
     root = Path(data_root) if data_root is not None else Path(os.getenv("UMEKO_DATA_ROOT") or "server_data")
     if data_root is None and not root.is_absolute():
         root = Path(env_path).resolve().parent / root
@@ -140,6 +174,11 @@ def load_settings(env_path: str | Path | None = None, data_root: str | Path | No
         context_window=max(1, int(os.getenv("TEXT_MODEL_CONTEXT_WINDOW", "128000"))),
         base_path=normalize_base_path(os.getenv("UMEKO_BASE_PATH", "")),
         admin_base_path=normalize_base_path(os.getenv("UMEKO_ADMIN_BASE_PATH", ""), "UMEKO_ADMIN_BASE_PATH"),
+        download=DownloadConfig(
+            ca_file=_load_ca_file(Path(env_path), "UMEKO_DOWNLOAD_CA_FILE"),
+            internal_hosts=_load_download_hosts("UMEKO_DOWNLOAD_INTERNAL_HOSTS"),
+            insecure_tls_hosts=_load_download_hosts("UMEKO_DOWNLOAD_TLS_INSECURE_HOSTS"),
+        ),
         data_root=str(root.resolve()),
         registry_managed=True,
         max_subagent_tool_iterations=max(

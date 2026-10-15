@@ -68,7 +68,7 @@
 
 ## Agent 网址下载工具 {#url-download}
 
-主 Agent 和文件子 Agent 可调用 `download_url`，将公网 HTTP/HTTPS 文件网址下载到本次工作区：
+主 Agent 和文件子 Agent 可调用 `download_url`，将 HTTP/HTTPS 文件网址下载到本次工作区：
 
 ```json
 {"url":"https://files.example.com/report.pdf","path":"workspace/downloads/report.pdf"}
@@ -81,8 +81,18 @@
 
 上限为 **20×1024×1024 字节**，先检查大小声明，再对实际接收字节计数；没有声明大小也受限。
 超限、下载中断、失败或取消时删除临时文件，保留原有文件。下载不解压、不执行内容，也不
-自动加载为 Skill。仅接受不含账号密码的 HTTP/HTTPS 网址，重定向也逐次检查；本机、内网、
-保留地址不能作为下载目标。DNS 解析结果固定用于连接，HTTPS 仍校验原域名证书。
+自动加载为 Skill。仅接受不含账号密码的 HTTP/HTTPS 网址，重定向也逐次检查。默认只允许公网；
+管理员可通过 `UMEKO_DOWNLOAD_INTERNAL_HOSTS` 精确开放内网文件主机。本机、链路本地、保留地址和
+元数据地址仍被拒绝。DNS 解析结果固定用于连接，HTTPS 默认校验原域名证书。
+
+下载使用独立的 `UMEKO_DOWNLOAD_CA_FILE` 追加企业 CA；`MODEL_CA_FILE` 只影响模型调用。
+管理员也可配置 `UMEKO_DOWNLOAD_TLS_INSECURE_HOSTS`，仅对指定主机跳过证书校验，不自动扩大到重定向的其他主机；
+成功结果会带 `warnings` 告知 Agent 本次未校验证书。模型不能通过工具参数修改这些设置。
+部署示例见[内网文件下载与 HTTPS 证书](../deployment.md#download-network)。
+
+证书校验失败返回 `TLS_CERTIFICATE_VERIFY_FAILED`、目标主机、校验原因和管理员处理方式；
+TLS 握手、DNS 和连接/读取超时分别带 `TLS_ERROR`、`DNS_ERROR`、`DOWNLOAD_TIMEOUT` 标识。
+错误作为工具结果回传给 Agent，同时保留在界面的工具调用详情中；失败不会伪装成已下载。
 
 管理员通过“Tools 管理”控制全局下发，通过用户的“工具权限”提供单独授权。
 

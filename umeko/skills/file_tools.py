@@ -12,6 +12,7 @@ from pathlib import Path
 from typing import Callable, Iterable, Protocol
 
 from ..cancellation import CancelCheck, raise_if_cancelled
+from ..config import DownloadConfig
 from ..archives import archive_members, extract_archive, create_zip
 from ..file_operations import bounded_path, operate_files
 from ..images import validate_image
@@ -581,6 +582,7 @@ def build_file_tools(
     allow_force_read: bool = False,
     on_tool_progress: Callable[[str, str], None] | None = None,
     file_operator: Callable | None = None,
+    download_config: DownloadConfig = DownloadConfig(),
 ) -> list[Skill]:
     """构建主 Agent 的工具表。vision_llm 不为 None 时注册通用 image_reasoning；
     command_runner 不为 None 时注册 run_command（界面层提供确认与进程管理）；
@@ -1048,11 +1050,13 @@ def build_file_tools(
     )
     skills.append(Skill(
         name="download_url",
-        description=("从公网 HTTP/HTTPS 文件网址下载文件，最大 20 MB（20×1024×1024 字节）。"
+        description=("从 HTTP/HTTPS 文件网址下载文件，最大 20 MB（20×1024×1024 字节）。"
+                     "默认允许公网；内网访问与证书信任由管理员部署配置控制，工具不能修改。"
                      "失败、超限或取消时清除未完成文件，返回原因。默认保存到 workspace/downloads/，"
                      "path 可指定 workspace/ 或 generate/ 下的会话相对路径；不读取或执行文件内容。"
                      "已有文件默认不覆盖。" if readable_root else
-                     "从公网 HTTP/HTTPS 网址下载最大 20 MB 的文件到当前产物目录，默认 downloads/；不执行内容。"),
+                     "从 HTTP/HTTPS 网址下载最大 20 MB 的文件到当前产物目录，默认 downloads/；"
+                     "内网与证书信任由管理员配置，不执行文件内容。"),
         parameters={"type": "object", "additionalProperties": False, "properties": {
             "url": {"type": "string", "description": "可直接下载文件的 HTTP/HTTPS 网址"},
             "path": {"type": "string", "description": "可选目标相对路径；默认使用服务器建议或网址中的文件名"},
@@ -1060,6 +1064,7 @@ def build_file_tools(
         handler=lambda url, path="", overwrite=False: download_url(
             url, path, overwrite, root=readable_root or writable_root,
             allowed_roots=tuple(readable_root / name for name in ("workspace", "generate")) if readable_root else (writable_root,),
-            default_dir="workspace/downloads" if readable_root else "downloads", should_cancel=should_cancel),
+            default_dir="workspace/downloads" if readable_root else "downloads", should_cancel=should_cancel,
+            config=download_config),
     ))
     return [skill for skill in skills if getattr(session, "allowed_skill_packs", None) is None or skill.name != "create_skill"]
