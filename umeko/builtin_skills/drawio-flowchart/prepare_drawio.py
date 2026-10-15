@@ -16,7 +16,7 @@ SKILL_SCRIPT = {
     "input_schema": {"type": "object", "additionalProperties": False, "properties": {
         "request": {"type": "string", "maxLength": 4000, "default": "", "description": "简短需求；长文档用 document_paths"},
         "document_paths": {"type": "array", "items": {"type": "string"}, "maxItems": 30, "default": [], "description": "当前会话已有文档的相对路径"},
-        "output_name": {"type": "string", "default": "flowchart", "description": "1–80 字符，不带路径或扩展名"},
+        "output_name": {"type": "string", "minLength": 1, "maxLength": 80, "pattern": r"^[\w-]+$", "default": "flowchart", "description": "1–80 字符，不带路径或扩展名"},
         "diagram_type": {"type": "string", "enum": ["auto", "flowchart", "architecture"], "default": "auto"},
         "style_path": {"type": "string", "default": "", "description": "可选风格 Markdown 的会话相对路径；空值使用包内默认风格"},
     }},

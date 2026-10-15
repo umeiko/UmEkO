@@ -39,7 +39,30 @@ SKILL_SCRIPT = {
 
 `input_schema` 描述调用者传入的 `args` 对象。`run_skill_script` 的 `args` 参数仍是 JSON 字符串，发现工具返回的 `invocation` 已按此格式构造示例。执行框架另外通过 stdin 注入 `workdir` 和 `session_root`，调用者不需要提供服务器绝对路径。
 
-脚本在 stdout 最后一行返回 JSON：`{"ok": true, "result": "结论", "files": ["generate/summary.md"]}`，stderr 用于诊断。`outputs` 说明产物含义，统一的 `output_schema` 描述结果结构。运行工具会把结论、产物与失败诊断返回模型，而非原样返回所有 stdout 字段。元数据用于发现与说明，当前不会作为执行时的参数校验器。
+脚本在 stdout 最后一行返回 JSON：`{"ok": true, "result": "结论", "files": ["generate/summary.md"]}`，stderr 用于诊断。`outputs` 说明产物含义，统一的 `output_schema` 描述结果结构。运行工具会把结论、产物与失败诊断返回模型，而非原样返回所有 stdout 字段。
+
+### 执行前参数检查与错误诊断
+
+执行器与发现工具共享同一份静态契约。`args` 必须是能解码成 JSON 对象的字符串；声明了 `input_schema` 的脚本还会检查必填项、类型、允许值、未知字段、数组成员、参数组合及声明的长度/数值约束。不会自动转换参数类型、填写默认值或猜测字段名。校验失败时脚本尚未执行，返回具体字段、要求与调用示例，例如：
+
+```text
+错误：参数校验失败： [SCRIPT_ARGUMENT_INVALID]
+- args.formats：期望 array，实际为 string
+脚本：drawio-flowchart/generate_drawio.py
+阶段：执行前检查；脚本尚未执行。
+```
+
+参数名、类型和枚举以实际返回的 `list_skill_script` 为准。`input_schema` 使用 JSON Schema 2020-12，支持本地 `#/$defs` 引用，不获取外部引用；声明本身损坏时提示管理员修复契约。没有声明的旧脚本只检查 `args` 对象格式，继续兼容执行；其业务参数错误仍以脚本实际诊断为准。
+
+错误会区分参数格式/校验、脚本定位、契约或 Python 语法、进程启动、超时、依赖加载、结果格式与脚本报告的失败，附带脚本名、阶段和适用的退出码。失败时保留 stdout/stderr 尾部、警告与已生成的产物列表。参数诊断不回显整份输入；业务错误不统一解释为路径问题。独立调用脚本时仍由脚本自己校验参数；执行器的校验不是操作系统沙箱。
+
+脚本可用可选的结构化 `error` 返回更具体的信息：
+
+```json
+{"ok":false,"result":"输入文件的数据结构不正确","files":[],"error":{"code":"INPUT_DATA_INVALID","field":"args.data_path","message":"输入 JSON 缺少 items 数组","hint":"补齐结构化检查结果后重新渲染"}}
+```
+
+执行器展示脚本声明的错误码、字段、原因和修正建议，不凭任意文本猜测业务错误类型。仅有原始失败信息时保留其原意；标准 Python `ModuleNotFoundError`/`ImportError` 诊断会提示检查运行环境。
 
 内置的报告渲染、绘图任务准备和图表生成脚本均已补充契约。升级时只更新可识别的原版内置文件，保留管理员修改与删除；自定义脚本需要维护者自己补充声明。
 

@@ -1003,6 +1003,7 @@ def build_file_tools(
                 "JSON 参数、stdout 一行 JSON 返回结果；执行中的进度会实时显示。"
                 "适合：报告渲染、格式转换、批量校验等确定性工作。"
                 "先 list_skill_script 查看入口、用法、参数及输入输出，再按声明执行；不要猜参数或运行辅助模块。"
+                "执行前会按 input_schema 校验参数；报错根据阶段、错误码和字段修正，不统一归因为路径问题。"
             ),
             parameters={
                 "type": "object",

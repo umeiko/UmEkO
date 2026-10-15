@@ -26,14 +26,19 @@ SKILL_SCRIPT = {
     "usage": "先生成完整 mxfile XML，推荐通过 source_path 传文件；也可传 xml 字符串。formats=[] 仅输出可编辑文件，图片导出需要服务器配置 draw.io。",
     "input_schema": {"type": "object", "additionalProperties": False,
                      "anyOf": [{"required": ["source_path"]}, {"required": ["xml"]}], "properties": {
-        "source_path": {"type": "string", "description": "已有 mxfile XML 的会话相对路径"},
-        "xml": {"type": "string", "description": "完整 XML；与 source_path 同传时优先使用此值"},
-        "output_name": {"type": "string", "default": "flowchart", "description": "1–80 字符，不带路径或扩展名"},
+        "source_path": {"type": "string", "minLength": 1, "pattern": r"\S", "description": "已有 mxfile XML 的会话相对路径"},
+        "xml": {"type": "string", "minLength": 1, "pattern": r"\S", "description": "完整 XML；与 source_path 同传时优先使用此值"},
+        "output_name": {"type": "string", "minLength": 1, "maxLength": 80, "pattern": r"^[\w-]+$", "default": "flowchart", "description": "1–80 字符，不带路径或扩展名"},
         "diagram_type": {"type": "string", "enum": ["auto", "flowchart", "architecture"], "default": "auto"},
         "formats": {"type": "array", "items": {"type": "string", "enum": ["png", "svg", "pdf"]}, "default": ["png", "svg"]},
         "style_path": {"type": "string", "default": "", "description": "可选风格 Markdown 的会话相对路径"},
         "restyle_reference_path": {"type": "string", "description": "可选原始 draw.io 文件路径，用于校验换肤时业务结构未变"},
-        "layout": {"type": "object", "description": "可选流程布局覆盖项，字段见同包 drawio_flow.py 的 FlowGrid；默认省略"},
+        "layout": {"type": "object", "additionalProperties": False, "properties": {
+            "node_width": {"type": ["number", "null"], "exclusiveMinimum": 0},
+            "node_height": {"type": ["number", "null"], "exclusiveMinimum": 0},
+            "gap_x": {"type": ["number", "null"], "exclusiveMinimum": 0},
+            "gap_y": {"type": ["number", "null"], "exclusiveMinimum": 0},
+        }, "description": "可选流程布局覆盖项；尺寸和间距为正数，null 表示沿用默认"},
     }},
     "outputs": ["generate/<output_name>.drawio：可编辑图表", "generate/<output_name>.<png|svg|pdf>：成功导出的格式", "stdout JSON 另含 status、exports、errors、warnings、diagram_type、visual_review_performed；导出失败可能保留草稿，必须检查 ok/status"],
     "example_args": {"source_path": "generate/approval-source.xml", "output_name": "approval", "diagram_type": "flowchart", "formats": []},
@@ -134,7 +139,12 @@ def _source(args, session_root):
     if relative.is_absolute() or not relative.parts or relative.parts[0] not in {"generate", "workspace", "attachments"}:
         raise ValueError("source_path 必须是会话内 generate/workspace/attachments 下的相对路径")
     source = (session_root / relative).resolve()
-    source.relative_to(session_root)
+    try:
+        source.relative_to(session_root)
+    except ValueError as exc:
+        raise ValueError("参数 source_path 越出当前会话目录") from exc
+    if not source.is_file():
+        raise ValueError(f"参数 source_path 指向的输入文件不存在或不是文件：{relative.as_posix()}")
     if source.stat().st_size > 1_000_000:
         raise ValueError("XML 输入超过 1 MB")
     return source.read_text(encoding="utf-8")

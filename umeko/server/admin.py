@@ -36,6 +36,7 @@ TEMPLATE_SCRIPT = """#!/usr/bin/env python
 - stdin  : {"args": {...}, "workdir": "<产物目录绝对路径>", "session_root": "<Session根绝对路径>"}
 - stdout : 一行 JSON {"ok": true, "result": "给模型的结论", "files": ["产物相对路径"]}
 - stderr : 逐行进度文本（实时展示给用户）
+- 参数先按 SKILL_SCRIPT.input_schema 校验。业务失败可返回 error 对象，字段为 code、field、message、hint。
 - 约束：不联网、不读密钥、只写 workdir/session_root 内；超时（默认60s）会被强杀
 \"\""
 

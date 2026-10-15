@@ -17,6 +17,7 @@ ASSETS = Path(__file__).resolve().parents[1] / "builtin_skills"
 REPORT_SCRIPT = Path("doc-image-qc/render_report.py")
 # SHA-256 of UTF-8 text with normalized newlines: bundled v1 and the earlier stock library script.
 _STOCK_REPORT_DIGESTS = {
+    "014912f4d5f06edf383581d1613c133a306fd829cd8c6068c27e262aa8866a06",
     "e3b61d1203ae91d4e3c7bbef9191f69cc844b0d48351744d3b25d1fb62e0ebfb",
     "19b4b417e2e74fd23787013e50a4a9c7aed39f47310540be13d95747799d3ef7",
     "9099203363b3e831dd7f0112cbfe280fb93b435f83ceb1def97bcd6150df1bc4",

@@ -139,3 +139,25 @@ def test_builtin_examples_execute_with_declared_inputs(library, tmp_path):
     assert (workdir / "approval-task.md").is_file()
     assert (workdir / "approval.drawio").is_file()
     assert (workdir / "qc-report-sample.zip").is_file()
+
+
+@pytest.mark.parametrize("pack,script,args,field", [
+    ("doc-image-qc", "render_report.py", {"path": "generate/report.json"}, "args.data_path"),
+    ("doc-image-qc", "render_report.py", {"data_path": ""}, "args.data_path"),
+    ("drawio-flowchart", "generate_drawio.py", {"formats": "png"}, "args.formats"),
+    ("drawio-flowchart", "generate_drawio.py", {"xml": "fixture", "layout": {"w": 100}}, "args.layout"),
+    ("drawio-flowchart", "prepare_drawio.py", {"document_paths": [7]}, "args.document_paths[0]"),
+])
+def test_real_builtin_contracts_reject_wrong_args_before_launch(library, tmp_path, monkeypatch, pack, script, args, field):
+    monkeypatch.setattr("umeko.skills.script_runner.subprocess.Popen", lambda *a, **kw: pytest.fail("bad args started builtin script"))
+    result = run_skill_script(pack, script, json.dumps(args), workdir=tmp_path / "generate", session_root=tmp_path)
+    assert "SCRIPT_ARGUMENT_INVALID" in result and field in result and "脚本尚未执行" in result
+
+
+def test_missing_input_file_is_distinct_from_parameter_schema_errors(library, tmp_path):
+    workdir = tmp_path / "generate"
+    workdir.mkdir()
+    result = run_skill_script("drawio-flowchart", "generate_drawio.py",
+                              '{"source_path":"workspace/missing.xml","formats":[]}', workdir=workdir, session_root=tmp_path)
+    assert "SCRIPT_REPORTED_FAILURE" in result and "source_path" in result and "输入文件不存在" in result
+    assert "SCRIPT_ARGUMENT_INVALID" not in result and "脚本尚未执行" not in result

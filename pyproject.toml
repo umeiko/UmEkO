@@ -8,6 +8,7 @@ dependencies = [
     "openai>=1.0.0",
     "python-dotenv>=1.0.0",
     "httpx>=0.24.0",
+    "jsonschema>=4.18,<5",
 ]
 
 [project.optional-dependencies]
