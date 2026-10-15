@@ -24,6 +24,7 @@ async function screenshot(page, name, prefix) {
   await mkdir(screenshotDir, { recursive: true });
   await page.locator('.toast').last().waitFor({ state: 'hidden' });
   await page.screenshot({
+    animations: 'disabled',
     path: path.join(screenshotDir, name + (prefix ? '-prefix' : '') + '.png'),
   });
 }
@@ -1018,6 +1019,49 @@ try {
       const locale = prefix ? 'en-US' : 'zh-CN';
       const appearance = prefix ? 'dark' : 'light';
       context = await browser.newContext({ viewport: { width: 1440, height: 1000 }, locale });
+      if (process.env.UMEKO_UI_FOCUS === 'tools') {
+        await context.addInitScript((theme) => {
+          localStorage.setItem('umeko:locale', 'zh-CN');
+          localStorage.setItem('umeko:theme', theme);
+        }, appearance);
+        const login = await context.request.post(adminBase + '/admin/login', {
+          data: { username: state.username, password: state.password },
+        });
+        assert.ok(login.ok());
+        const users = await (await context.request.get(adminBase + '/admin/v1/users')).json();
+        const uid = users.find((user) => user.username === state.username).id;
+        const page = await context.newPage();
+        await page.goto(adminBase + '/');
+        await page.locator('#tab-tools').waitFor();
+        await checkToolAccess(page, context, adminBase, state, prefix, screenshot);
+        await page.getByRole('button', { name: '退出登录', exact: true }).click();
+        await page.locator('.admin-login').waitFor();
+        assert.equal((await context.request.get(adminBase + '/admin/v1/tools')).status(), 401);
+        assert.equal(
+          (
+            await context.request.put(adminBase + '/admin/v1/tools/download_url', {
+              data: { enabled: true },
+            })
+          ).status(),
+          401,
+        );
+        assert.equal(
+          (await context.request.get(adminBase + `/admin/v1/users/${uid}/tool-access`)).status(),
+          401,
+        );
+        assert.equal(
+          (
+            await context.request.put(adminBase + `/admin/v1/users/${uid}/tool-access`, {
+              data: { allowed_tool_names: [] },
+            })
+          ).status(),
+          401,
+        );
+        console.log(
+          `Passed tools management: ${prefix || '/'} (categories, collapse, bilingual search, mobile, grants, save/refresh, prefix isolation and logout)`,
+        );
+        continue;
+      }
       if (process.env.UMEKO_UI_FOCUS === 'temporary') {
         await context.addInitScript(
           ({ language, theme }) => {

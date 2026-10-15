@@ -35,6 +35,7 @@ export async function checkToolAccess(page, context, adminBase, state, prefix, s
       );
     }
     await page.locator('#tab-tools').click();
+    await checkToolOrganization(page, prefix, screenshot);
     const download = page.locator('#tool-dispatch-download_url');
     await download.waitFor();
     assert.ok(await download.isChecked());
@@ -49,6 +50,7 @@ export async function checkToolAccess(page, context, adminBase, state, prefix, s
     await page.getByRole('status').filter({ hasText: '工具下发设置已更新' }).waitFor();
     await page.reload();
     await page.locator('#tab-tools').click();
+    await page.locator('#tool-group-toggle-files').click();
     await download.waitFor();
     assert.equal(await download.isChecked(), false);
     await screenshot(page, 'tools-management', prefix);
@@ -103,6 +105,76 @@ export async function checkToolAccess(page, context, adminBase, state, prefix, s
     await context.request.put(scope, { data: { allowed_tool_names: null } });
     await context.request.put(dispatchUrl, { data: { enabled: true } });
   }
+}
+
+async function checkToolOrganization(page, prefix, screenshot) {
+  const groups = page.locator('#page-tools .tool-group-toggle');
+  const rows = page.locator('#page-tools .tool-row:visible');
+  const search = page.locator('#tools-search');
+  const files = page.locator('#tool-group-toggle-files');
+  await files.waitFor();
+  assert.equal(await groups.count(), 5);
+  assert.equal(
+    await page.locator('#page-tools .tool-group-toggle[aria-expanded="true"]').count(),
+    0,
+  );
+  assert.equal(await rows.count(), 0);
+  await screenshot(page, 'tools-categories-collapsed', prefix);
+  await files.focus();
+  await files.press('Enter');
+  await page.locator('#tool-dispatch-download_url').waitFor();
+  assert.equal(await files.getAttribute('aria-expanded'), 'true');
+
+  await search.fill('  SKILL_SCRIPT  ');
+  await page.locator('#tool-dispatch-run_skill_script').waitFor();
+  assert.equal(await rows.count(), 2);
+  assert.equal(
+    await page.locator('#tool-group-toggle-skills').getAttribute('aria-expanded'),
+    'true',
+  );
+  await screenshot(page, 'tools-search-scripts', prefix);
+  await search.press('Escape');
+  await page.locator('#tool-dispatch-download_url').waitFor();
+  assert.equal(await files.getAttribute('aria-expanded'), 'true');
+  assert.equal(
+    await page.locator('#tool-group-toggle-skills').getAttribute('aria-expanded'),
+    'false',
+  );
+
+  await page.locator('#tools-category-vision').click();
+  await page.locator('#tool-dispatch-image_reasoning').waitFor();
+  assert.equal(await groups.count(), 1);
+  assert.equal(await rows.count(), 2);
+  await page.locator('#tools-category-all').click();
+  await page.locator('[data-language-select]').selectOption('en');
+  assert.match(await page.locator('#tools-category-skills').innerText(), /Skills and scripts/);
+  await search.fill('read DOCUMENT');
+  await page.locator('#tool-dispatch-read_document').waitFor();
+  assert.equal(await rows.count(), 1);
+  await search.fill('读取文档');
+  await page.locator('#tool-dispatch-read_document').waitFor();
+  assert.equal(await rows.count(), 1);
+  await search.fill('no-such-tool-fixture');
+  await page.getByText('No matching tools', { exact: true }).waitFor();
+  assert.equal(await rows.count(), 0);
+  await page.getByRole('button', { name: 'Reset filters', exact: true }).click();
+  await page.locator('#tool-dispatch-download_url').waitFor();
+  await page.locator('#tools-expand-all').click();
+  await page.locator('#tool-dispatch-submit_results').waitFor();
+  assert.equal(
+    await page.locator('#page-tools .tool-group-toggle[aria-expanded="true"]').count(),
+    5,
+  );
+  await page.setViewportSize({ width: 390, height: 844 });
+  assert.ok(
+    await page.locator('#page-tools').evaluate((el) => el.scrollWidth <= el.clientWidth + 1),
+  );
+  await screenshot(page, 'tools-categories-mobile', prefix);
+  await page.setViewportSize({ width: 1440, height: 1000 });
+  await page.locator('#tools-collapse-all').click();
+  assert.equal(await rows.count(), 0);
+  await files.click();
+  await page.locator('[data-language-select]').selectOption('zh-CN');
 }
 
 async function checkRetiredToolScope(page, context, adminBase, uid) {
