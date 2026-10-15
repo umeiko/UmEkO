@@ -31,8 +31,18 @@ def test_admin_prefix_assets_auth_and_management(tmp_path, prefix):
             assert login.status_code == 200
             assert f"Path={prefix or '/'}" in login.headers["set-cookie"]
             assert admin.get(prefix + "/admin/v1/me").json()["id"] == account["id"]
-            for route in ("users", "providers", "skill-library", "resources", "tasks", "agents", "service-accounts"):
+            for route in ("users", "providers", "skill-library", "tools", "resources", "tasks", "agents", "service-accounts"):
                 assert admin.get(prefix + "/admin/v1/" + route).status_code == 200
+            dispatch = prefix + "/admin/v1/tools/download_url"
+            access = prefix + f"/admin/v1/users/{account['id']}/tool-access"
+            assert admin.put(dispatch, json={"enabled": False}).status_code == 200
+            assert admin.put(access, json={"allowed_tool_names": ["download_url"]}).status_code == 200
+            # A new page load and subsequent reads retain the cookie and saved grants.
+            assert admin.get(prefix + "/").status_code == 200
+            assert admin.get(access).json()["allowed_tool_names"] == ["download_url"]
+            assert not next(tool for tool in admin.get(prefix + "/admin/v1/tools").json()["tools"]
+                            if tool["name"] == "download_url")["enabled"]
+            assert "download_url" in store.effective_tool_names(account["id"])
             created = admin.post(prefix + "/admin/v1/service-accounts", json={"name": "test-service"})
             assert created.status_code == 201
             assert admin.delete(prefix + "/admin/v1/service-accounts/" + created.json()["id"]).status_code == 204
@@ -41,6 +51,10 @@ def test_admin_prefix_assets_auth_and_management(tmp_path, prefix):
             logout = admin.post(prefix + "/admin/logout")
             assert logout.status_code == 204 and f"Path={prefix or '/'}" in logout.headers["set-cookie"]
             assert admin.get(prefix + "/admin/v1/me").status_code == 401
+            assert admin.get(prefix + "/admin/v1/tools").status_code == 401
+            assert admin.put(dispatch, json={"enabled": True}).status_code == 401
+            assert admin.get(access).status_code == 401
+            assert admin.put(access, json={"allowed_tool_names": None}).status_code == 401
         with TestClient(user_app) as user:
             assert user.get("/workbench/admin/v1/users").status_code == 404
     finally:

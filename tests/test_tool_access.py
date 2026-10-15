@@ -19,10 +19,16 @@ from umeko.tool_catalog import CONFIGURABLE_TOOLS, REQUIRED_TOOLS
 REAL_CHAT = UmekoAgent.chat
 
 
-@pytest.fixture(params=["", "/teams/docs/umeko"])
+@pytest.fixture(params=[
+    ("", ""),
+    ("/teams/docs/umeko", ""),
+    ("", "/operations/console"),
+    ("/teams/docs/umeko", "/operations/console"),
+])
 def access(tmp_path, request):
+    user_prefix, admin_prefix = request.param
     settings = Settings(ModelConfig("fixture", "fixture-only", "http://unused.invalid"),
-                        base_path=request.param, admin_base_path="/operations/console")
+                        base_path=user_prefix, admin_base_path=admin_prefix)
     app = create_app(settings, data_root=tmp_path / "data", workspace_root=tmp_path / "output")
     service, store = app.state.agent_service, app.state.store
     owner = store.create_user("tool-user", "fixture-password")
@@ -30,9 +36,9 @@ def access(tmp_path, request):
     other = store.create_user("other-user", "fixture-password")
     admin_app = create_admin_app(settings, service, store)
     with TestClient(app) as user, TestClient(admin_app) as admin:
-        admin.post("/operations/console/admin/login", json={"username": manager["username"], "password": "fixture-password"}).raise_for_status()
+        admin.post(admin_prefix + "/admin/login", json={"username": manager["username"], "password": "fixture-password"}).raise_for_status()
         yield SimpleNamespace(user=user, admin=admin, app=app, service=service, store=store, owner=owner, other=other,
-                              api="/operations/console/admin/v1", prefix=request.param)
+                              api=admin_prefix + "/admin/v1", prefix=user_prefix)
 
 
 def test_global_dispatch_personal_grants_and_roles(access):

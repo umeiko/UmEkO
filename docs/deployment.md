@@ -307,11 +307,37 @@ location /doc-master/consistency/image-text-admin/ {
 
 1. 页面资源均在管理前缀下，例如 `…/image-text-admin/static/ui/assets/…`，返回 200。
 2. 登录请求发往 `…/image-text-admin/admin/login`；登录后 `…/image-text-admin/admin/v1/me` 返回 200。
-3. 切换用户、模型、会话、技能、资源监控和服务接入各页，确认请求都在管理前缀下。
+3. 切换用户、模型、Tools 管理、会话、技能、资源监控和服务接入各页，确认请求都在管理前缀下。
 4. 退出后 `…/image-text-admin/admin/v1/me` 返回 401；未登录时管理 API 也应返回 401。
 
 旧版本只支持用户页前缀，管理页仍从域名根路径请求。部署本修复时需一起更新 Python 代码和随包的
 `umeko/server/static/ui`，重启并刷新页面；只修改 `.env` 或只替换 HTML 不足以修复旧管理脚本。
+
+### Tools 下发与用户工具权限的 ALB 验收
+
+Tools 使用同一个管理端请求入口，不需要单独配置 `base_url`。以上述配置为例，浏览器的请求地址为：
+
+| 操作 | 请求路径 |
+| --- | --- |
+| 读取工具下发状态 | `GET /doc-master/consistency/image-text-admin/admin/v1/tools` |
+| 保存某个工具的下发状态 | `PUT /doc-master/consistency/image-text-admin/admin/v1/tools/{name}` |
+| 读取、保存用户工具权限 | `GET/PUT /doc-master/consistency/image-text-admin/admin/v1/users/{id}/tool-access` |
+
+这些请求只加一次 `UMEKO_ADMIN_BASE_PATH`。Provider 的 `base_url` 仅用于访问上游模型；
+`UMEKO_PUBLIC_URL` 用于用户/机器服务公开地址，均不用于管理端请求。ALB 规则应覆盖整个管理前缀下的子路径，
+不能只转发管理首页或静态文件；每层转发中的方法、请求正文及 Cookie 都要保留。
+
+在测试账号上通过外部管理地址完成以下操作，避免修改生产用户的实际权限：
+
+1. 登录后在浏览器网络面板核对上述 GET/PUT 请求，确认没有漏前缀、重复前缀或误用用户前缀。
+2. 在 Tools 管理关闭一个工具，刷新页面确认仍关闭；在用户管理中为测试用户单独勾选该工具，保存并重新打开确认授权保留。
+3. 退出登录，核对管理员 Cookie 已删除，以上读取和保存接口均返回 401。
+4. 在仅开放这两个前缀的代理入口，确认无前缀 `/admin/v1/tools`、误用用户前缀的管理路径及相似的错误前缀均返回 404。
+   如果域名还承载其他系统，对应路径也必须避免被错误转入 UmEkO 管理端。
+
+自动回归覆盖根路径、用户与管理各自独立配置前缀，以及不同的多级前缀。浏览器测试经过移除一次前缀的 HTTP 代理；
+设置 `UMEKO_TEST_NGINX` 时使用真实 NGINX，CI 保持此配置。首页 200 或原始端口直连成功不足以证明 ALB 部署通过，
+生产仍需按实际 ALB/NGINX 转发规则从外部入口完成上述验收。
 
 ### MCP、A2A 与自动发现
 

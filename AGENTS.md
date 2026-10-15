@@ -14,6 +14,8 @@
 
 前端使用 `frontend/src/shared/api.js` 中的 `appUrl()`，前缀来自服务端注入的 `umeko-base-path`。管理页调用 `frontend/src/admin/state.js` 的 `api()`；该函数负责拼接前缀，调用参数仍是 `/admin/...` 这样的内部路由。不要重复拼接，不要绕过公共入口直接 `fetch('/admin/...')`。
 
+新增管理标签页和权限弹窗同样遵守此约定，包括 Tools 下发 `/admin/v1/tools` 与用户工具权限 `/admin/v1/users/{id}/tool-access`。它们只使用管理前缀，不读取 Provider 的 `base_url` 或用户服务的 `UMEKO_PUBLIC_URL`，也不为单个页面另建地址拼接方式。
+
 资源、普通请求、SSE/EventSource、上传、头像、预览、下载及跳转都遵循这个约定。后端首页统一通过 `render_ui(entry, base_path)` 注入前缀与资源地址，构建产物中的相对模块地址保持不变。
 
 机器协议通过 `umeko/server/task_api.py` 的 `public_base(settings, request)` 生成公开基址，通过 `task_view()` 生成产物下载 URL。它们同时考虑用户服务前缀与当前 `/agent/{slug}`，不要在各适配器内另写基址拼接逻辑。
@@ -43,6 +45,7 @@ NGINX/ALB 的规则必须转发前缀下全部子路径；SSE 和协议流要关
 修改上述入口时，至少验证根路径和多级前缀。浏览器场景使用不同的用户与管理前缀；代理根路径应返回 404，防止漏前缀的请求误打误撞成功。
 
 - Web/管理面：资源、登录、刷新后的登录状态、相关功能请求、退出与未登录 401。
+- Tools/用户权限：实际点击读取和保存，刷新后确认设置保留；全局关闭的工具仍能单独授予用户。检查浏览器实际 GET/PUT 地址只含一次管理前缀，退出后读写均为 401。代理必须拒绝漏前缀、误用用户前缀及相似但不匹配的前缀。
 - REST/机器协议：发现信息、任务提交/查询、相关流式输出和产物下载；需要凭据与免鉴权模式按改动范围验证。
 - MCP/A2A：使用官方客户端，检查返回地址确实含前缀且可以访问。`umeko://` 是 MCP 逻辑资源 URI，不是 HTTP 下载 URL，不应添加网页前缀。
 
@@ -50,11 +53,14 @@ NGINX/ALB 的规则必须转发前缀下全部子路径；SSE 和协议流要关
 
 ```sh
 python -m pytest tests/test_deployment.py tests/test_configuration.py -q
+python -m pytest tests/test_tool_access.py -q
 python -m pytest tests/test_protocols.py tests/test_agent_card.py tests/test_agents.py tests/test_service_access.py -q
 npm --prefix frontend run test:smoke
 ```
 
 设置 `UMEKO_TEST_NGINX` 为本机 NGINX 可执行文件路径后，协议测试和前端浏览器测试会使用真实 NGINX 验证移除前缀后的访问。CI 已配置此项，不要移除。协议测试的代理仅用于有前缀的 HTTP 场景，未设置时仍测试直接访问。测试使用隔离数据和受控回复，不读取项目 `.env`，不调用实际模型服务。
+
+验收报告区分原始端口直连、测试反向代理、CI 的真实 NGINX 与生产 ALB。没有读取生产代理规则并通过外部入口验收时，不能把本地通过表述为生产 ALB 已验证，也不能把可能的路径改写问题当作已确认的线上原因。
 
 前端源码改动后运行格式检查和构建，并一起提交 `umeko/server/static/ui/`；不要直接编辑构建文件。部署说明见 [docs/deployment.md](docs/deployment.md)，前端说明见 [docs/frontend.md](docs/frontend.md)。
 

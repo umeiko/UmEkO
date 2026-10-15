@@ -1804,6 +1804,24 @@ try {
       await page.locator('.sidebar-footer .icon-button').click();
       await page.locator('#l-user').waitFor();
       assert.equal((await context.request.get(adminBase + '/admin/v1/me')).status(), 401);
+      for (const route of ['/admin/v1/tools', '/admin/v1/users/not-logged-in/tool-access'])
+        assert.equal((await context.request.get(adminBase + route)).status(), 401);
+      assert.equal(
+        (
+          await context.request.put(adminBase + '/admin/v1/tools/download_url', {
+            data: { enabled: false },
+          })
+        ).status(),
+        401,
+      );
+      assert.equal(
+        (
+          await context.request.put(adminBase + '/admin/v1/users/not-logged-in/tool-access', {
+            data: { allowed_tool_names: [] },
+          })
+        ).status(),
+        401,
+      );
       assert.ok(!(await context.cookies()).some((c) => c.name === 'umeko_admin'));
       assert.ok(
         adminRequests.every((p) => p.startsWith(adminPrefix + '/')),

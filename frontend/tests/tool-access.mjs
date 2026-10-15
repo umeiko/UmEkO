@@ -5,7 +5,33 @@ export async function checkToolAccess(page, context, adminBase, state, prefix, s
   const uid = users.find((u) => u.username === state.username).id;
   const scope = adminBase + `/admin/v1/users/${uid}/tool-access`;
   const dispatchUrl = adminBase + '/admin/v1/tools/download_url';
+  const expected = new Set([
+    `GET ${adminBase}/admin/v1/tools`,
+    `PUT ${dispatchUrl}`,
+    `GET ${scope}`,
+    `PUT ${scope}`,
+  ]);
+  const requests = [];
+  const record = (request) => {
+    const url = new URL(request.url());
+    if (/\/admin\/v1\/(tools(?:\/|$)|users\/[^/]+\/tool-access$)/.test(url.pathname))
+      requests.push(`${request.method()} ${url.origin}${url.pathname}`);
+  };
+  page.on('request', record);
   try {
+    // These checks use the public gateway, not the backend's raw port.
+    if (prefix) {
+      const origin = new URL(adminBase).origin;
+      for (const path of ['/admin/v1/tools', `/admin/v1/users/${uid}/tool-access`]) {
+        assert.equal((await context.request.get(origin + path)).status(), 404);
+        assert.equal((await context.request.get(origin + prefix + path)).status(), 404);
+      }
+      const adminPrefix = new URL(adminBase).pathname;
+      assert.equal(
+        (await context.request.get(origin + adminPrefix + '-other/admin/v1/tools')).status(),
+        404,
+      );
+    }
     await page.locator('#tab-tools').click();
     const download = page.locator('#tool-dispatch-download_url');
     await download.waitFor();
@@ -59,7 +85,13 @@ export async function checkToolAccess(page, context, adminBase, state, prefix, s
     await dialog.locator('#user-tool-access-save').click();
     await dialog.waitFor({ state: 'hidden' });
     assert.deepEqual((await (await context.request.get(scope)).json()).allowed_tool_names, []);
+    assert.deepEqual(
+      new Set(requests),
+      expected,
+      'Browser reads and writes use exactly the admin origin and prefix, independently of the user prefix',
+    );
   } finally {
+    page.off('request', record);
     await context.request.put(scope, { data: { allowed_tool_names: null } });
     await context.request.put(dispatchUrl, { data: { enabled: true } });
   }
