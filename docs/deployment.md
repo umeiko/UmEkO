@@ -437,7 +437,7 @@ UMEKO **每次先尝试原生工具请求**。仅收到明确表示不支持工�
 
 ```ini
 UMEKO_DOWNLOAD_CA_FILE=/etc/umeko/certs/company-files-ca.pem
-UMEKO_DOWNLOAD_INTERNAL_HOSTS=files.company.internal
+UMEKO_DOWNLOAD_INTERNAL_HOSTS=files.example.internal
 ```
 
 Windows 可填 `C:/certs/company-files-ca.pem`；相对路径以 `.env` 所在目录为准。
@@ -447,8 +447,8 @@ Docker 要把 CA 文件只读挂载进容器，配置值填写容器中的路径
 如果暂时拿不到 CA，需要允许指定文件站的自签名证书，可由管理员显式配置：
 
 ```ini
-UMEKO_DOWNLOAD_INTERNAL_HOSTS=files.company.internal
-UMEKO_DOWNLOAD_TLS_INSECURE_HOSTS=files.company.internal
+UMEKO_DOWNLOAD_INTERNAL_HOSTS=files.example.internal
+UMEKO_DOWNLOAD_TLS_INSECURE_HOSTS=files.example.internal
 ```
 
 修改后重启，重新发起下载即可。此方式对列出的主机关闭证书和域名校验，无法验证文件来源；
@@ -456,7 +456,24 @@ UMEKO_DOWNLOAD_TLS_INSECURE_HOSTS=files.company.internal
 没有全局关闭校验的开关，Agent 也不能通过工具参数选择关闭校验。成功结果会附带本次免校验主机的提示。
 
 两个主机列表相互独立：`INTERNAL_HOSTS` 开放网络访问，`TLS_INSECURE_HOSTS` 只控制证书校验。
-填写精确域名或 IP，多个用逗号分隔，不带协议、端口或路径，不支持 `*`、子域名通配符或网段。
+填写精确域名或 IP，多个用**英文逗号**分隔，不带协议、端口或路径，不支持 `*`、子域名通配符或网段。
+
+多个内网文件主机可以这样配置：
+
+```ini
+UMEKO_DOWNLOAD_INTERNAL_HOSTS=files.example.internal,reports.example.internal
+UMEKO_DOWNLOAD_TLS_INSECURE_HOSTS=files.example.internal
+```
+
+这里允许访问两个内网主机，仅对 `files.example.internal` 跳过证书校验；
+`reports.example.internal` 仍需通过默认证书信任库或已配置的企业 CA 验证。
+以上域名均为占位示例，部署时替换成实际文件主机名，修改后重启服务。
+文件链接若重定向到其他内网主机，也要单独将目标主机加入内网列表，并按其证书情况配置 TLS 信任。
+
+如果多个站点共用同一公司 CA，只需配置一次 `UMEKO_DOWNLOAD_CA_FILE`，
+清空 `UMEKO_DOWNLOAD_TLS_INSECURE_HOSTS`，即可保留各站点的证书校验；
+`UMEKO_DOWNLOAD_INTERNAL_HOSTS` 仍须列出需要开放的全部内网文件主机。
+
 内网开放限于这些主机解析到的 RFC1918 IPv4 / IPv6 ULA 地址；本机回环、链路本地、保留和云元数据地址仍禁止。
 公网文件主机不需要加入 `INTERNAL_HOSTS`。每一次重定向都会重新匹配目标主机的网络与 TLS 策略，
 不会把一个主机的授权传给其他主机。20 MiB 大小限制、工作区边界和失败清理保持生效。

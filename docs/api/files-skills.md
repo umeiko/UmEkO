@@ -88,6 +88,9 @@
 下载使用独立的 `UMEKO_DOWNLOAD_CA_FILE` 追加企业 CA；`MODEL_CA_FILE` 只影响模型调用。
 管理员也可配置 `UMEKO_DOWNLOAD_TLS_INSECURE_HOSTS`，仅对指定主机跳过证书校验，不自动扩大到重定向的其他主机；
 成功结果会带 `warnings` 告知 Agent 本次未校验证书。模型不能通过工具参数修改这些设置。
+两个主机列表均支持英文逗号分隔的多个精确域名或 IP，且相互独立：可开放多个内网主机，
+仅对其中部分主机免校验证书。列表不接受协议、端口、路径或通配符，修改后重启生效。
+多个站点共用公司 CA 时可只配置一次 `UMEKO_DOWNLOAD_CA_FILE`，保留证书校验；内网访问白名单仍需逐一列出主机。
 部署示例见[内网文件下载与 HTTPS 证书](../deployment.md#download-network)。
 
 证书校验失败返回 `TLS_CERTIFICATE_VERIFY_FAILED`、目标主机、校验原因和管理员处理方式；
