@@ -34,6 +34,17 @@ import zipfile
 from pathlib import Path
 from urllib.parse import quote
 
+SKILL_SCRIPT = {
+    "description": "将已完成质检的结构化 JSON 渲染成 HTML、JSON 与包含原图的 ZIP；本脚本不做图像推理。",
+    "usage": "先按技能指引生成质检 JSON，再传入其会话相对路径。没有配套文档时 doc_dir 留空；图像路径可来自 workspace/、attachments/ 或 generate/。",
+    "input_schema": {"type": "object", "required": ["data_path"], "additionalProperties": False, "properties": {
+        "data_path": {"type": "string", "description": "质检 JSON 的会话相对路径，结构见 doc-image-qc 主文档；包含 document、items 和逐图 checks"},
+        "doc_dir": {"type": "string", "default": "", "description": "被检文档所在的会话相对目录，用于解析图片引用；纯图片检查可留空"},
+    }},
+    "outputs": ["generate/qc-report-<document>.html：可预览的质检报告", "generate/qc-report-<document>.json：结构化结果与图片打包诊断", "generate/qc-report-<document>.zip：报告、JSON 与可取得的原图；遗漏图片写入诊断"],
+    "example_args": {"data_path": "generate/qc-report.json", "doc_dir": ""},
+}
+
 
 # ---------- 模板（与平台米纸绿墨风格一致） ----------
 

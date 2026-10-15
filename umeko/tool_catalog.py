@@ -16,6 +16,7 @@ TOOL_CATALOG = (
     ("list_skill_packs", "列出技能包", "List skill packs", "skills"),
     ("use_skill", "加载技能", "Load skills", "skills"),
     ("read_pack_file", "读取技能附属文件", "Read skill resources", "skills"),
+    ("list_skill_script", "查看技能脚本", "Inspect skill scripts", "skills"),
     ("run_skill_script", "执行技能脚本", "Run skill scripts", "skills"),
     ("create_skill", "创建技能", "Create skills", "skills"),
     ("read_working_doc", "读取工作文档", "Read working notes", "coordination"),

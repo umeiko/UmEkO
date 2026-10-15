@@ -10,6 +10,20 @@ import sys
 sys.path.insert(0, str(Path(__file__).resolve().parent))
 from drawio_style import load_style
 
+SKILL_SCRIPT = {
+    "description": "根据需求准备绘图规范和文件子 Agent 的单个任务，不生成图表或调用模型。",
+    "usage": "传入简短需求和/或已有文档路径，随后把返回的 result 交给 delegate_task；完成 XML 后再运行 generate_drawio.py。",
+    "input_schema": {"type": "object", "additionalProperties": False, "properties": {
+        "request": {"type": "string", "maxLength": 4000, "default": "", "description": "简短需求；长文档用 document_paths"},
+        "document_paths": {"type": "array", "items": {"type": "string"}, "maxItems": 30, "default": [], "description": "当前会话已有文档的相对路径"},
+        "output_name": {"type": "string", "default": "flowchart", "description": "1–80 字符，不带路径或扩展名"},
+        "diagram_type": {"type": "string", "enum": ["auto", "flowchart", "architecture"], "default": "auto"},
+        "style_path": {"type": "string", "default": "", "description": "可选风格 Markdown 的会话相对路径；空值使用包内默认风格"},
+    }},
+    "outputs": ["generate/<output_name>-task.md：子 Agent 任务", "generate/<output_name>-rules*.md：对应图型的绘图规范", "stdout JSON 另含 source_path、outline_path、style_path；前两项是后续待写路径，不代表文件已生成"],
+    "example_args": {"request": "生成一个通用文档审批流程图", "output_name": "approval", "diagram_type": "flowchart"},
+}
+
 
 def prepare(payload):
     args = payload.get("args", {})

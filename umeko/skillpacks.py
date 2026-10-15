@@ -2,7 +2,7 @@
 
 frontmatter 声明 name/description，正文是写给主 Agent 的操作手册。主 Agent 用
 list_skill_packs 发现、use_skill 读取正文后按指引执行。
-适合接入社区流传的 SKILL.md 式技能包；需要执行脚本的技能不在本系统范围内。
+附属资源通过 read_pack_file 读取，脚本通过 list_skill_script 发现契约、run_skill_script 执行。
 目录可用 UMEKO_SKILL_DIR 环境变量覆盖；默认 ./skills（冻结时为 exe 旁 skills/）。
 """
 

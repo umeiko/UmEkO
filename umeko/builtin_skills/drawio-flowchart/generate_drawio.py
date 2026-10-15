@@ -21,6 +21,24 @@ from drawio_flow import apply_flow_layout, make_flow_grid
 from drawio_xml import apply_font, extract_xml, sanitize_xml
 from drawio_style import load_style, edge_visuals, apply_visuals, verify_restyle
 
+SKILL_SCRIPT = {
+    "description": "校验 draw.io XML 结构、确定性布局并按需导出 PNG/SVG/PDF；不调用模型或执行图像复检。",
+    "usage": "先生成完整 mxfile XML，推荐通过 source_path 传文件；也可传 xml 字符串。formats=[] 仅输出可编辑文件，图片导出需要服务器配置 draw.io。",
+    "input_schema": {"type": "object", "additionalProperties": False,
+                     "anyOf": [{"required": ["source_path"]}, {"required": ["xml"]}], "properties": {
+        "source_path": {"type": "string", "description": "已有 mxfile XML 的会话相对路径"},
+        "xml": {"type": "string", "description": "完整 XML；与 source_path 同传时优先使用此值"},
+        "output_name": {"type": "string", "default": "flowchart", "description": "1–80 字符，不带路径或扩展名"},
+        "diagram_type": {"type": "string", "enum": ["auto", "flowchart", "architecture"], "default": "auto"},
+        "formats": {"type": "array", "items": {"type": "string", "enum": ["png", "svg", "pdf"]}, "default": ["png", "svg"]},
+        "style_path": {"type": "string", "default": "", "description": "可选风格 Markdown 的会话相对路径"},
+        "restyle_reference_path": {"type": "string", "description": "可选原始 draw.io 文件路径，用于校验换肤时业务结构未变"},
+        "layout": {"type": "object", "description": "可选流程布局覆盖项，字段见同包 drawio_flow.py 的 FlowGrid；默认省略"},
+    }},
+    "outputs": ["generate/<output_name>.drawio：可编辑图表", "generate/<output_name>.<png|svg|pdf>：成功导出的格式", "stdout JSON 另含 status、exports、errors、warnings、diagram_type、visual_review_performed；导出失败可能保留草稿，必须检查 ok/status"],
+    "example_args": {"source_path": "generate/approval-source.xml", "output_name": "approval", "diagram_type": "flowchart", "formats": []},
+}
+
 
 def _label(cell):
     return re.sub(r"<[^>]+>", "", html.unescape(cell.get("value", ""))).strip()

@@ -69,6 +69,7 @@ nav:
   - 快速上手: quickstart.md
   - 架构设计:
       - 概览: architecture/index.md
+      - 技能与脚本工具: architecture/skills.md
       - 多智能体管理: architecture/agents.md
       - CLI: architecture/cli.md
       - Web Server: architecture/webserver.md

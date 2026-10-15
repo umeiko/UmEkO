@@ -43,6 +43,14 @@ import json
 import sys
 from pathlib import Path
 
+SKILL_SCRIPT = {
+    "description": "技能脚本模板：返回传入的参数，不生成文件。请与脚本逻辑一同维护此契约。",
+    "usage": "通过 run_skill_script 调用；args 是 JSON 对象字符串。",
+    "input_schema": {"type": "object", "properties": {}},
+    "outputs": ["stdout JSON：ok/result/files；模板的 files 为空数组"],
+    "example_args": {},
+}
+
 
 def main():
     payload = json.loads(sys.stdin.read() or "{}")

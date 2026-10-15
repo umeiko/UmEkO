@@ -22,6 +22,7 @@ from ..session import Session
 from ..tree import build_tree, render_text
 from .base import Skill
 from .script_runner import run_skill_script
+from .script_catalog import list_skill_script
 from .pack_reader import read_pack_file
 from .download import download_url
 
@@ -838,8 +839,8 @@ def build_file_tools(
         Skill(
             name="read_working_doc",
             description=(
-                "读取工作文档：多任务/多信息源场景下整合关键信息的中间产物"
-                "（markdown）。继续之前的复杂任务前先读它，避免遗漏上下文。"
+                "读取固定的 working_doc.md 的快捷入口，与 read_document 读取该文件等价。"
+                "只返回普通文本笔记，不会自动恢复其他上下文。"
             ),
             parameters={"type": "object", "properties": {}},
             handler=session.read_working_doc,
@@ -847,9 +848,8 @@ def build_file_tools(
         Skill(
             name="write_working_doc",
             description=(
-                "写入或修改工作文档（整体覆盖，先 read_working_doc 再改即可局部修订）。"
-                "用于把关键信息与中间结论整合成一份 markdown，"
-                "而不是全部堆在自己的对话上下文里。"
+                "整体覆盖固定的 working_doc.md 的快捷入口，与 write_file 写该文件等价。"
+                "不自动压缩上下文或注入后续请求；局部修订用 replace_in_file。"
             ),
             parameters={
                 "type": "object",
@@ -992,7 +992,8 @@ def build_file_tools(
             description=(
                 "读取技能包附属文件的内容（如检查项清单等数据文档），内容直接"
                 "进入当前上下文，无需预先下载。包名与文件名来自 list_skill_packs "
-                "或技能指引中标注的附属文件清单。读取的是服务器最新版。"
+                "或技能指引中标注的附属文件清单。附属文档和源码优先用本工具读取；"
+                "技能主指引用 use_skill。读取的是服务器最新版。"
             ),
             parameters={
                 "type": "object",
@@ -1006,6 +1007,20 @@ def build_file_tools(
         )
     )
 
+    skills.append(Skill(
+        name="list_skill_script",
+        description=("只读查看一个技能包中的 Python 脚本、用途、用法、参数 schema、输入输出与调用示例。"
+                     "pack 来自 list_skill_packs；可传 script 查看单个脚本。不会执行脚本。"
+                     "未声明契约的旧脚本会标记说明缺失，辅助模块不可当作任务入口。"),
+        parameters={"type": "object", "additionalProperties": False, "properties": {
+            "pack": {"type": "string", "description": "技能包名"},
+            "script": {"type": "string", "description": "可选，包内 .py 文件名，不带路径"},
+            "offset": {"type": "integer", "minimum": 0, "default": 0},
+            "limit": {"type": "integer", "minimum": 1, "maximum": 20, "default": 20},
+        }, "required": ["pack"]},
+        handler=lambda pack, script="", offset=0, limit=20: session.call_skill_pack(
+            pack, list_skill_script, script=script, offset=offset, limit=limit),
+    ))
     # 技能包脚本执行器（框架机制，无领域知识）：skills/<pack>/<script>.py
     skills.append(
         Skill(
@@ -1015,7 +1030,7 @@ def build_file_tools(
                 "保证一致）。只能执行技能库中同名包目录下的 .py。脚本通过 stdin 收 "
                 "JSON 参数、stdout 一行 JSON 返回结果；执行中的进度会实时显示。"
                 "适合：报告渲染、格式转换、批量校验等确定性工作。"
-                "先 list_skill_packs 确认包名，脚本名由技能包文档给出。"
+                "先 list_skill_script 查看入口、用法、参数及输入输出，再按声明执行；不要猜参数或运行辅助模块。"
             ),
             parameters={
                 "type": "object",

@@ -9,9 +9,11 @@ from __future__ import annotations
 import argparse
 import gc
 import json
+import os
 import sys
 from pathlib import Path
 from tempfile import TemporaryDirectory
+from unittest.mock import patch
 
 ROOT = Path(__file__).resolve().parents[1]
 sys.path.insert(0, str(ROOT))
@@ -168,8 +170,9 @@ def generate() -> dict[Path, str]:
     temporary_root = ROOT / "smoke" / "api-docs.local"
     assert temporary_root.resolve().is_relative_to(ROOT)
     temporary_root.mkdir(parents=True, exist_ok=True)
-    with TemporaryDirectory(dir=temporary_root) as folder:
+    with TemporaryDirectory(dir=temporary_root) as folder, patch.dict(os.environ):
         root = Path(folder)
+        os.environ["UMEKO_SKILL_DIR"] = str(root / "skills")
         settings = Settings(ModelConfig("documentation-placeholder", "", "https://unconfigured.invalid/v1"))
         app = create_app(settings, data_root=root / "data", workspace_root=root / "output")
         service = app.state.agent_service

@@ -118,6 +118,21 @@ def test_catalog_matches_native_tool_implementations(access):
     assert {tool.name for tool in tools} | {"delegate_task", "submit_results"} == CONFIGURABLE_TOOLS | REQUIRED_TOOLS
 
 
+def test_script_discovery_obeys_global_and_user_tool_permissions(access):
+    e = access
+    state = e.service.create_session(user_id=e.owner["id"])
+    assert "list_skill_script" in state.agent._skills
+    args = json.dumps({"pack": "doc-image-qc"})
+    e.admin.put(e.api + "/tools/list_skill_script", json={"enabled": False}).raise_for_status()
+    assert "权限" in state.agent._execute("list_skill_script", args)
+    assert "list_skill_script" not in e.service.create_session(user_id=e.owner["id"]).agent._skills
+    e.admin.put(e.api + f"/users/{e.owner['id']}/tool-access",
+                json={"allowed_tool_names": ["list_skill_script"]}).raise_for_status()
+    granted = e.service.create_session(user_id=e.owner["id"])
+    result = json.loads(granted.agent._execute("list_skill_script", args))
+    assert result["pack"] == "doc-image-qc" and result["scripts"]
+
+
 @pytest.mark.parametrize("machine_app", ["", "/teams/docs/umeko"], indirect=True)
 def test_machine_submission_survives_all_optional_tools_disabled(machine_client, monkeypatch):
     client, app, account, _ = machine_client

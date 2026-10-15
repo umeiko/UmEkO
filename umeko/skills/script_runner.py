@@ -88,17 +88,16 @@ def _resolve_script(pack: str, script: str) -> Path:
     """解析并校验脚本路径：必须在 skills/<pack>/<script>.py 且防穿越。"""
     if not pack or not script:
         raise ValueError("pack 与 script 不能为空")
-    if "/" in pack or "\\" in pack or ".." in pack:
+    if pack == "." or any(c in pack for c in ("/", "\\", "..", ":")):
         raise ValueError(f"非法技能包名：{pack}")
     script_name = Path(script).name  # 去掉任何路径成分
-    if script_name != script or not script_name.endswith(".py"):
+    if script_name != script or any(c in script for c in ("/", "\\", ":")) or not script_name.endswith(".py"):
         raise ValueError(f"非法脚本名（须为 xxx.py，不带路径）：{script}")
     base = skill_packs_dir().resolve()
-    candidate = (base / pack / script_name).resolve()
-    try:
-        candidate.relative_to(base)
-    except ValueError as e:
-        raise ValueError("脚本路径越界") from e
+    folder = base / pack
+    candidate = (folder / script_name).resolve()
+    if folder.resolve() != folder or candidate != folder / script_name:
+        raise ValueError("脚本路径越界或包含链接")
     if not candidate.is_file():
         available = sorted(p.name for p in (base / pack).glob("*.py")) if (base / pack).is_dir() else []
         raise ValueError(
