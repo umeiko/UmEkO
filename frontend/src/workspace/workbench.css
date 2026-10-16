@@ -991,6 +991,19 @@ button:focus-visible {
 .session-skill-tree .resource-open {
   flex: 1;
 }
+.session-skill-tree .resource-item.active {
+  background: transparent;
+  box-shadow: none;
+}
+.session-skill-tree > summary:focus-visible,
+.session-skill-tree .resource-open:focus-visible {
+  outline: none;
+}
+.session-skill-tree > summary:focus-visible .resource-name,
+.session-skill-tree .resource-open:focus-visible .resource-name {
+  text-decoration: underline;
+  text-underline-offset: 4px;
+}
 .session-skill-tree .resource-mount {
   flex: none;
   opacity: 0.65;
