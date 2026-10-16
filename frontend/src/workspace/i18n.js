@@ -2566,6 +2566,17 @@ const skillDropTexts = {
 };
 for (const [locale, text] of Object.entries(skillDropTexts))
   I18N_LOCALES[locale]['skill.dropTarget'] = text;
+const skillReadonlyTexts = {
+  'zh-CN': '只读',
+  'zh-TW': '唯讀',
+  en: 'Read only',
+  ko: '읽기 전용',
+  fr: 'Lecture seule',
+  de: 'Schreibgeschützt',
+  it: 'Sola lettura',
+};
+for (const [locale, text] of Object.entries(skillReadonlyTexts))
+  I18N_LOCALES[locale]['skill.readonly'] = text;
 const I18N_SUPPORTED = ['zh-CN', 'zh-TW', 'en', 'ko', 'fr', 'de', 'it'];
 let i18nCurrent = 'zh-CN';
 

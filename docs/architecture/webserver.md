@@ -56,6 +56,7 @@ NGINX 要关闭 SSE 缓冲，并给予长任务足够的读取超时。HTTPS 页
 ```text
 UMEKO_DATA_ROOT/
   umeko.db
+  skill_trust/<session_id>/   管理员下发代码的白名单与摘要，不对用户开放
   users/<user_id>/sessions/<session_id>/
     workspace/       用户工作区
     attachments/     对话附件

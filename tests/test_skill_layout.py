@@ -43,9 +43,10 @@ def test_legacy_files_move_once_and_conflicts_and_deletions_are_preserved(tmp_pa
     assert not (library / "sample/assets/config.json").exists()
 
 
-def test_model_edits_and_executes_only_its_dispatched_copy_and_restore_preserves_changes(tmp_path):
+def test_model_edits_prose_and_executes_only_administrator_dispatched_code(tmp_path):
     app = app_for(tmp_path)
     service = app.state.agent_service
+    member_path(service._skills_library_dir(), "drawio-correction", "prepare_correction.py").write_text(SCRIPT, encoding="utf-8")
     owner = service.store.create_user("copy-owner", "fixture-pass")
     definition = service.agent_registry.by_slug("flowchart-correction")
     snapshot = service.agent_registry.snapshot(definition)
@@ -54,7 +55,7 @@ def test_model_edits_and_executes_only_its_dispatched_copy_and_restore_preserves
     relative = "client/skills/drawio-correction/scripts/prepare_correction.py"
     original = (second.root / relative).read_bytes()
     tools = first.agent._skills
-    assert "文件已写入" in tools["write_file"].handler(path=relative, content=SCRIPT)
+    assert "只读" in tools["write_file"].handler(path=relative, content="forbidden")
     assert "SESSION_SCRIPT_MARKER" in tools["read_document"].handler(path=relative)
     assert "SESSION_SCRIPT_MARKER" in tools["run_skill_script"].handler(pack="drawio-correction", script="prepare_correction.py", args="{}")
     catalogue = tools["list_skill_script"].handler(pack="drawio-correction", script="prepare_correction.py")

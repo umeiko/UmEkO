@@ -1061,3 +1061,11 @@ button:focus-visible {
   white-space: nowrap;
   text-overflow: ellipsis;
 }
+.resource-readonly {
+  color: var(--muted);
+  font-size: 13px;
+  padding: 4px 8px;
+  border: 1px solid var(--line);
+  border-radius: 6px;
+  white-space: nowrap;
+}

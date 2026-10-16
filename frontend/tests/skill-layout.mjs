@@ -88,6 +88,33 @@ export async function checkSkillLayout(context, publicBase, adminBase, state, pr
   await work.locator('#markdown-view h1').getByText('Browser session style').waitFor();
   const menu = work.locator('#file-context-menu');
   const entry = (name) => tree.locator(`[data-skill-path="${name}"]`);
+  for (const member of ['scripts/prepare_correction.py', 'assets/config.json']) {
+    if (await entry(member).isHidden()) await entry(member.split('/')[0]).click();
+    await entry(member).click();
+    await work.locator('#preview-title').filter({ hasText: member }).waitFor();
+    assert.ok(await work.locator('#resource-editor').evaluate((element) => element.readOnly));
+    assert.ok(await work.locator('#save-resource').isHidden());
+    assert.ok(await work.locator('#resource-readonly').isVisible());
+    await entry(member).click({ button: 'right' });
+    for (const action of ['cut', 'rename', 'delete']) {
+      assert.ok(await menu.locator(`[data-file-action="${action}"]`).isDisabled());
+    }
+    await work.keyboard.press('Escape');
+    const url = publicBase + `/v1/sessions/${session.id}/skill-files/drawio-correction/${member}`;
+    assert.equal(
+      (await context.request.put(url, { data: { content: 'forbidden' } })).status(),
+      400,
+    );
+  }
+  await entry('references/style.md').click();
+  await work.locator('#preview-title').filter({ hasText: 'references/style.md' }).waitFor();
+  await work.locator('#markdown-source').click();
+  assert.equal(
+    await work.locator('#resource-editor').evaluate((element) => element.readOnly),
+    false,
+  );
+  assert.ok(await work.locator('#save-resource').isVisible());
+  assert.ok(await work.locator('#resource-readonly').isHidden());
   const create = async (directory, action, name) => {
     await entry(directory).click({ button: 'right' });
     await menu.locator(`[data-file-action="${action}"]`).click();

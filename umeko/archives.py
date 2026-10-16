@@ -13,6 +13,7 @@ import time
 
 from .cancellation import CancelCheck, raise_if_cancelled
 from .file_operations import is_link, validate_tree
+from .skill_security import guard_skill_write
 
 ARCHIVE_SUFFIXES = {".zip", ".7z", ".rar", ".tar", ".gz", ".bz2", ".xz", ".tgz", ".tbz2", ".txz", ".wim"}
 MAX_ARCHIVE_ENTRIES = 5000
@@ -167,6 +168,9 @@ def _native_members(archive: Path, binary: str, should_cancel: CancelCheck, dead
 
 def _extract_native(archive: Path, target: Path, members: list[Member], binary: str,
                     should_cancel: CancelCheck, deadline: float) -> None:
+    guard_skill_write(target)
+    for member in members:
+        guard_skill_write(target / _member_path(member.name))
     # One process extracts the entire archive after ALL paths/types have been checked.
     _run_7zip(binary, ["x", "-y", "-p", "-sccUTF-8", "-bso0", "-bsp0", f"-o{target}", "--", str(archive)],
               should_cancel, deadline, output=target)
@@ -223,6 +227,9 @@ def extract_archive(archive: Path, should_cancel: CancelCheck = None) -> Path:
         while target.exists() or target.is_symlink():
             target = archive.absolute().parent / f"{archive.stem}_{counter}"
             counter += 1
+        guard_skill_write(target)
+        for member in members:
+            guard_skill_write(target / _member_path(member.name))
         target.mkdir()
         try:
             _extract_native(prepared, target, members, binary, should_cancel, deadline)
@@ -243,6 +250,7 @@ def extract_archive(archive: Path, should_cancel: CancelCheck = None) -> Path:
 def write_zip(source: Path, destination: Path, should_cancel: CancelCheck = None) -> Path:
     """Write a new ZIP; directory downloads also use this native backend."""
     source, destination = source.absolute(), destination.absolute()
+    guard_skill_write(destination)
     validate_tree(source, should_cancel)
     binary = seven_zip_binary()
     if source == destination or source in destination.parents:

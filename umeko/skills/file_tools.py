@@ -15,6 +15,7 @@ from ..cancellation import CancelCheck, raise_if_cancelled
 from ..config import DownloadConfig
 from ..archives import archive_members, extract_archive, create_zip
 from ..file_operations import bounded_path, operate_files
+from ..skill_security import guard_skill_write
 from ..images import validate_image
 from ..llm import LLMClient
 from ..prompts.vision import IMAGE_REASONING_DESCRIPTION, IMAGE_REASONING_PROMPT_DESCRIPTION
@@ -135,6 +136,8 @@ def _writable_path(path: str, root: Path, display_root: Path | None = None, extr
     if display_root is not None and extra_roots:
         candidate = (p if p.is_absolute() else display_root / p).resolve()
         if any(candidate.is_relative_to(extra.resolve()) for extra in extra_roots):
+            candidate = bounded_path(display_root, p, extra_roots, allow_root=False)
+            guard_skill_write(candidate, roots=extra_roots)
             return candidate
     if not p.is_absolute():
         if (
@@ -148,6 +151,7 @@ def _writable_path(path: str, root: Path, display_root: Path | None = None, extr
     p = p.resolve()
     if p != root and root not in p.parents:
         raise ValueError(f"只允许写入产物目录（{root}）内的文件：{path}")
+    guard_skill_write(p)
     return p
 
 
@@ -701,7 +705,7 @@ def build_file_tools(
             description=(
                 "新建或整体覆盖一个文本文件（自动创建父目录）。"
                 "用于生成中间文档、或按用户要求输出其它格式的文件"
-                "（markdown、csv、纯文本等）。可写产物目录与当前会话 client/skills/ 技能副本；副本不会修改服务器技能库。"
+                "（markdown、csv、纯文本等）。技能副本中的 Python 和 config.json 只读，禁止新建或修改；其他文档可编辑。"
             ),
             parameters={
                 "type": "object",
@@ -722,7 +726,7 @@ def build_file_tools(
             description=(
                 "在文本文件中做精确字符串替换（先 read_document 拿到原文再改）。"
                 "old_text 必须与文件内容完全一致；多处匹配时需提供更长上下文或 "
-                "replace_all=true。可修改产物目录与当前会话 client/skills/ 技能副本。"
+                "replace_all=true。技能副本中的 Python 和 config.json 只读，不能修改。"
             ),
             parameters={
                 "type": "object",
@@ -1011,7 +1015,7 @@ def build_file_tools(
             name="run_skill_script",
             description=(
                 "执行技能包自带的确定性 Python 脚本（不消耗推理，样式与行为由脚本"
-                "保证一致）。只能执行技能库中同名包目录下的 .py。脚本通过 stdin 收 "
+                "保证一致）。只能执行管理员下发、位置正确且通过白名单和 MD5 完整性检查的 .py；辅助模块和 config.json 同时校验。脚本通过 stdin 收 "
                 "JSON 参数、stdout 一行 JSON 返回结果；执行中的进度会实时显示。"
                 "适合：报告渲染、格式转换、批量校验等确定性工作。"
                 "先 list_skill_script 查看入口、用法、参数及输入输出，再按声明执行；不要猜参数或运行辅助模块。"
@@ -1040,6 +1044,7 @@ def build_file_tools(
                 pack, run_skill_script, script=script, args=args,
                 workdir=writable_root,
                 session_root=readable_root,
+                trust=getattr(session, "script_trust", None),
                 should_cancel=should_cancel,
                 on_progress=(
                     (lambda text: on_tool_progress("run_skill_script", text))

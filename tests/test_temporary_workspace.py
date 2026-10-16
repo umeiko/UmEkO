@@ -286,8 +286,11 @@ def test_idle_lease_heartbeat_activity_and_metadata_preservation(machine_client)
         assert client.get(artifact["download_url"], headers={"Authorization": "Bearer " + account["token"]}).status_code == 404
     root = app.state.agent_service.sessions[sid].root if sid in app.state.agent_service.sessions else app.state.agent_service.data_root / "users" / activity["user_id"] / "sessions" / sid
     assert root.is_dir()
+    trust_records = app.state.agent_service.data_root / "skill_trust" / sid
+    assert trust_records.is_dir()
     assert app.state.task_service.cleanup_workspaces() == 1
     assert not root.exists()
+    assert not trust_records.exists()
     assert client.get(url + "/v1/temporary").status_code == 410
     assert client.post(url + "/v1/temporary/activity").status_code == 410
     assert app.state.store.messages(sid)  # Call records survive file/node reclamation.

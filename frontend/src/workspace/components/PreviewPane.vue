@@ -13,6 +13,9 @@ import UiIcon from '../../shared/UiIcon.vue';
         </div>
       </div>
       <div class="preview-actions">
+        <span id="resource-readonly" class="resource-readonly hidden" data-i18n="skill.readonly"
+          >只读</span
+        >
         <button id="save-resource" class="text-button hidden" type="button" data-i18n="action.save">
           保存
         </button>

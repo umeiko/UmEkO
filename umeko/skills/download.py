@@ -17,6 +17,7 @@ from urllib.parse import quote, unquote, urljoin, urlsplit
 from ..cancellation import CancelCheck, raise_if_cancelled
 from ..config import DownloadConfig, normalize_download_host
 from ..file_operations import bounded_path
+from ..skill_security import guard_skill_write
 
 MAX_DOWNLOAD_BYTES = 20 * 1024 * 1024
 MAX_REDIRECTS = 5
@@ -106,6 +107,8 @@ def download_url(url: str, path: str = "", overwrite: bool = False, *, root: Pat
         if path and (Path(path).is_absolute() or PureWindowsPath(path).drive):
             raise ValueError("下载目标必须使用当前工作区内的相对路径")
         target = bounded_path(root, path, allowed_roots) if path else None
+        if target is not None:
+            guard_skill_write(target)
         if target is not None and target.exists() and (not overwrite or not target.is_file()):
             raise ValueError("目标已存在，请换一个文件名；只有文件支持 overwrite=true")
         for step in range(MAX_REDIRECTS + 1):
@@ -132,6 +135,7 @@ def download_url(url: str, path: str = "", overwrite: bool = False, *, root: Pat
             raise ValueError("服务器未提供原始文件传输，请使用可直接下载的文件链接")
         if target is None:
             target = bounded_path(root, f"{default_dir}/{_filename(url, response.headers)}", allowed_roots)
+        guard_skill_write(target)
         if target.exists() and (not overwrite or not target.is_file()):
             raise ValueError("目标已存在，请换一个文件名；只有文件支持 overwrite=true")
         target.parent.mkdir(parents=True, exist_ok=True)
@@ -154,6 +158,7 @@ def download_url(url: str, path: str = "", overwrite: bool = False, *, root: Pat
         raise_if_cancelled(should_cancel)
         # Recheck containment after transfer; never overwrite existing files implicitly.
         bounded_path(root, target, allowed_roots)
+        guard_skill_write(target)
         if overwrite:
             temporary.replace(target)
         else:

@@ -9,6 +9,7 @@ import shutil
 from typing import Iterable
 
 from .cancellation import CancelCheck, raise_if_cancelled
+from .skill_security import guard_skill_write
 
 
 def is_link(path: Path) -> bool:
@@ -69,6 +70,7 @@ def operate_files(operation: str, path: str | Path, target: str | Path = "", *,
         raise ValueError("recursive 和 overwrite 必须为布尔值")
     source = bounded_path(root, path, allowed_roots)
     if operation == "mkdir":
+        guard_skill_write(source)
         if target or overwrite:
             raise ValueError("mkdir 不接受 target 或 overwrite")
         source.mkdir(parents=recursive)
@@ -77,6 +79,7 @@ def operate_files(operation: str, path: str | Path, target: str | Path = "", *,
         raise FileNotFoundError(str(path))
     validate_tree(source, should_cancel)
     if operation == "rm":
+        guard_skill_write(source)
         if target or overwrite:
             raise ValueError("rm 不接受 target 或 overwrite")
         if source.is_dir():
@@ -85,6 +88,9 @@ def operate_files(operation: str, path: str | Path, target: str | Path = "", *,
             source.unlink()
         return source
     destination = bounded_path(root, target, allowed_roots)
+    if operation == "mv":
+        guard_skill_write(source)
+    guard_skill_write(destination, source=source)
     if source == destination or source in destination.parents:
         raise ValueError("不能复制或移动到自身或自身内部")
     if not destination.parent.is_dir():

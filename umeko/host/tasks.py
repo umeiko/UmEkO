@@ -754,6 +754,7 @@ class TaskService:
                     root = session_root(self.service.data_root, row["user_id"], row["session_id"])
                     if root is not None:
                         shutil.rmtree(root)
+                    self.service.remove_script_trust(row["session_id"])
                     for run in list(self.service.runs.values()):
                         if run.session_id == row["session_id"] and run.finished:
                             self.service.run_manager.forget(run.id)

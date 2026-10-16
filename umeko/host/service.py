@@ -34,6 +34,7 @@ from ..tree import TreeNode, TreeBudget, build_tree, compile_filter
 from .profile import CLOUD_PROFILE, Profile
 from ..skillpacks import parse_skill_pack_text, skill_packs_dir
 from ..skill_layout import copy_package, entry_path, entries, file_metadata, migrate_library
+from ..skill_security import ScriptTrust, guard_skill_write, protected_name
 from .storage import Store
 from .results import MACHINE_RESULTS_PROMPT, SUBMISSION_REMINDER, ResultSubmission
 from .configuration import deployment_defaults, model_from_row, resolve_provider_settings
@@ -267,6 +268,7 @@ class AgentService:
 
     def create_workspace_entry(self, session_id: str, relative_path: str, entry_type: str, *, allow_skills: bool = False) -> Path:
         target = self._workspace_path(session_id, relative_path, must_exist=False, allow_root=False, allow_skills=allow_skills)
+        guard_skill_write(target)
         if target.exists():
             raise ValueError(f"已存在：{relative_path}")
         if not target.parent.is_dir():
@@ -341,12 +343,14 @@ class AgentService:
         stem = Path(clean_name).stem
         suffix = Path(clean_name).suffix
         path = target_dir / clean_name
+        guard_skill_write(path)
         counter = 1
         while path.exists():
             path = target_dir / f"{stem}_{counter}{suffix}"
             counter += 1
         self._workspace_path(session_id, path.relative_to(self.get_session(session_id).root).as_posix(),
                              must_exist=False, allow_root=False, allow_skills=allow_skills)
+        guard_skill_write(path)
         path.write_bytes(content)
         return path
 
@@ -390,11 +394,13 @@ class AgentService:
         target = root / "client" / "skills"
         target.mkdir(parents=True, exist_ok=True)
         migrate_library(target)
+        script_trust = ScriptTrust(target, self.data_root / "skill_trust" / session_id)
         # Skill 分发唯一通道：管理员在管理面「默认 Skill」维护（default_skills 表）。
         # 文件系统 skills/ 目录不再自动播种——是否下发由管理员决定；停用项不下发。
         dispatched = agent_snapshot["dispatched_skills"] if agent_snapshot else self.store.default_skills(enabled_only=True)
         for item in dispatched:
             dest = copy_package(self._skills_library_dir(), target, item["name"], item["content"])
+            script_trust.issue(item["name"], self._skills_library_dir())
             if parse_skill_pack_text(item["content"]) is not None:
                 builtin_resources["skills"].add(item["name"])
             # Dispatch complete, independent packages; subsequent reads/execution
@@ -406,6 +412,7 @@ class AgentService:
             skill_dir=root / "client" / "skills",
             allowed_skill_packs={Path(item["name"]).stem for item in dispatched} if agent_snapshot else None,
         )
+        session.script_trust = script_trust
         if agent_snapshot is None:
             session.catalog_skill_names = set()
         holder: dict[str, Run | None] = {"run": None}
@@ -748,6 +755,9 @@ class AgentService:
                 src_root, dst_root,
                 ignore=shutil.ignore_patterns("uploads"),
             )
+        trust_source = self.data_root / "skill_trust" / session_id
+        if trust_source.is_dir():
+            shutil.copytree(trust_source, self.data_root / "skill_trust" / new_id)
         # DB 记录复制（messages 遵守 cutoff、summary、session_files 重映射路径）
         self.store.clone_session(session_id, new_id, user_id, title)
         # session_files 的 path 指向旧 session 目录 → 改写为新目录
@@ -942,6 +952,14 @@ class AgentService:
             raise ValueError("Session 目录超出数据边界")
         shutil.rmtree(target, ignore_errors=True)
 
+        self.remove_script_trust(session_id)
+
+    def remove_script_trust(self, session_id: str) -> None:
+        from ..skill_layout import checked
+        target = checked(self.data_root / "skill_trust", session_id)
+        if target.is_dir():
+            shutil.rmtree(target)
+
     def delete_user_admin(self, user_id: str) -> None:
         """删除用户：驱逐其全部内存态 Session + DB 级联 + 磁盘目录。"""
         target = (self.data_root / "users" / user_id).resolve()
@@ -963,6 +981,7 @@ class AgentService:
             self.store.delete_user(user_id, connection=db)
         for row in sessions:
             self.evict_session(row["id"])
+            self.remove_script_trust(row["id"])
         shutil.rmtree(target, ignore_errors=True)
         for task in tasks:
             self.task_service._remove_staging(task["id"])
@@ -996,7 +1015,8 @@ class AgentService:
                 "name": pack_name + ".md",
                 "mounted": pack_name + ".md" in session.mounted_resources[kind],
                 "builtin": pack_name + ".md" in session.builtin_resources[kind],
-                "files": file_metadata(directory, pack_name, include_directories=True),
+                "files": [{**file, "readonly": protected_name(file["path"])}
+                          for file in file_metadata(directory, pack_name, include_directories=True)],
             })
         return resources
 
@@ -1033,6 +1053,7 @@ class AgentService:
         path = entry_path(directory, clean_name, create=True)
         if path.exists():
             raise ValueError(f"资源已存在：{clean_name}")
+        guard_skill_write(path)
         path.parent.mkdir(parents=True, exist_ok=True)
         path.write_text(content, encoding="utf-8")
         return {
@@ -1062,6 +1083,7 @@ class AgentService:
         session.mounted_resources[kind].discard(name)
         self.store.set_resource_mount(session_id, kind, name, False)
         if path.name == "SKILL.md":
+            guard_skill_write(path.parent)
             shutil.rmtree(path.parent)
         else:
             path.unlink()
@@ -1080,6 +1102,7 @@ class AgentService:
         path, current_mounted = self.client_resource(session_id, kind, name)
         if content is not None:
             self._validate_resource(content)
+            guard_skill_write(path)
             path.write_text(content, encoding="utf-8")
         if mounted is not None:
             if mounted:

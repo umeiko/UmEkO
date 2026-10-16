@@ -1,8 +1,8 @@
 """run_skill_script：技能包自带脚本的通用受限执行器（框架机制，无领域知识）。
 
 技能包结构约定：
-    skills/<pack-name>.md            提示词（现有机制）
-    skills/<pack-name>/<script>.py   包内脚本（本工具可执行）
+    skills/<pack-name>/SKILL.md            按需读取的指引
+    skills/<pack-name>/scripts/<script>.py 管理员下发的只读脚本
 
 脚本契约（管理员面板可下载模板）：
     stdin  : {"args": {...}, "workdir": "<Session 产物目录绝对路径>",
@@ -10,8 +10,9 @@
     stdout : 一行 JSON {"ok": bool, "result": "给模型的结论", "files": [...]}
     stderr : 进度文本（结束后尾行透传给工具卡片，失败诊断同时返回模型）
 
-沙箱约束：
-    - 只能执行技能库目录内、且包名与 .md 同名的子目录下的 .py（防穿越）
+执行门禁（不是操作系统沙箱）：
+    - 检查固定目录、管理员下发白名单和 MD5 / SHA-256，含辅助模块与 config.json
+    - 从校验后的私有副本执行，避免检查后替换；脚本仍是有服务器权限的可信代码
     - 独立子进程（venv 同解释器），默认 60s 超时强杀（取消请求也强杀）
     - stdout 只保留最后一行（结果）；stderr 保留尾部若干行
 """
@@ -24,11 +25,13 @@ import re
 import subprocess
 import sys
 import threading
+import tempfile
 from pathlib import Path
 from typing import Callable
 
 from ..cancellation import CancelCheck
 from ..skillpacks import skill_packs_dir
+from ..skill_security import ScriptTrust, SkillSecurityError
 from .script_contract import inspect_script, argument_issues, value_type
 
 DEFAULT_TIMEOUT = 60  # 秒；硬上限由调用方传入
@@ -125,7 +128,9 @@ def _resolve_script(pack: str, script: str, directory: Path | None = None) -> Pa
         raise ValueError("pack 与 script 不能为空")
     if pack == "." or any(c in pack for c in ("/", "\\", "..", ":")):
         raise ValueError(f"非法技能包名：{pack}")
-    script_name = Path(script).name  # 去掉任何路径成分
+    if "\\" in script or ":" in script or any(part in {"", ".", ".."} for part in script.split("/")):
+        raise ValueError("脚本路径须为规范包内路径，不能包含越界路径段或别名")
+    script_name = Path(script).name
     if "/" in script and not script.startswith("scripts/"):
         raise ValueError("脚本路径须位于 scripts/ 内")
     if not script_name.endswith(".py"):
@@ -155,6 +160,45 @@ def run_skill_script(
     should_cancel: CancelCheck = None,
     on_progress: Callable[[str], None] | None = None,
     directory: Path | None = None,
+    trust: ScriptTrust | None = None,
+) -> str:
+    """Require administrator provenance before executing a verified snapshot."""
+    for name, value in (("pack", pack), ("script", script)):
+        if not isinstance(value, str) or not value.strip():
+            return _preflight_error(pack, script, "SCRIPT_ARGUMENT_TYPE", f"{name} 须为非空 string，实际为 {value_type(value)}")
+    try:
+        _resolve_script(pack, script, directory)
+    except ScriptNotFoundError as exc:
+        return _preflight_error(pack, script, "SCRIPT_NOT_FOUND", str(exc))
+    except (ValueError, OSError) as exc:
+        return _preflight_error(pack, script, "SCRIPT_PATH_INVALID", str(exc))
+    try:
+        if trust is not None:
+            if Path(directory or skill_packs_dir()).resolve() != trust.skill_root:
+                raise SkillSecurityError("执行目录与管理员下发记录不一致")
+            with trust.execution(pack, script) as (_, snapshot):
+                return _execute_script(pack, script, args, workdir, session_root, timeout,
+                                       should_cancel, on_progress, snapshot)
+        library = skill_packs_dir().resolve()
+        selected = Path(directory or library).resolve()
+        if selected != library or (session_root and selected.is_relative_to(Path(session_root).resolve())):
+            raise SkillSecurityError("会话脚本缺少管理员下发的执行白名单，拒绝执行")
+        # Direct CLI/admin calls trust only the operator-controlled library,
+        # never a caller-selected directory or a session's own manifest.
+        with tempfile.TemporaryDirectory(prefix="umeko-script-trust-") as temporary:
+            local = ScriptTrust(library, Path(temporary))
+            local.issue(pack, library)
+            with local.execution(pack, script) as (_, snapshot):
+                return _execute_script(pack, script, args, workdir, session_root, timeout,
+                                       should_cancel, on_progress, snapshot)
+    except (ValueError, OSError, KeyError, TypeError) as exc:
+        return _preflight_error(pack, script, "SCRIPT_TRUST_REJECTED", str(exc))
+
+
+def _execute_script(
+    pack: str, script: str, args: str, workdir: Path | None, session_root: Path | None,
+    timeout: int, should_cancel: CancelCheck, on_progress: Callable[[str], None] | None,
+    directory: Path,
 ) -> str:
     """执行脚本，将结果、退出码与失败诊断一起返回给模型。"""
     for name, value in (("pack", pack), ("script", script)):
@@ -201,14 +245,21 @@ def run_skill_script(
     cancelled = {"flag": False}
 
     try:
+        bootstrap = ("import pathlib,runpy,sys; p=sys.argv[1]; "
+                     "[s.reconfigure(encoding='utf-8') for s in (sys.stdin,sys.stdout,sys.stderr) if hasattr(s,'reconfigure')]; "
+                     "sys.path.insert(0,str(pathlib.Path(p).parent)); sys.argv=[p]; "
+                     "runpy.run_path(p,run_name='__main__')")
         command = ([sys.executable, "--run-skill-script", pack, script]
-                   if getattr(sys, "frozen", False) else [sys.executable, str(target)])
+                   if getattr(sys, "frozen", False) else [sys.executable, "-I", "-B", "-c", bootstrap, str(target)])
+        environment = {key: value for key, value in os.environ.items()
+                       if key not in {"PYTHONPATH", "PYTHONHOME", "PYTHONSTARTUP", "PYTHONUSERBASE", "PYTHONINSPECT"}}
+        environment.update(PYTHONIOENCODING="utf-8", PYTHONDONTWRITEBYTECODE="1", UMEKO_SKILL_DIR=str(directory))
         proc = subprocess.Popen(
             command,
             stdin=subprocess.PIPE, stdout=subprocess.PIPE, stderr=subprocess.PIPE,
             text=True, encoding="utf-8", errors="replace",
             # Match the UTF-8 JSON contract on Windows as well as Unix.
-            env={**os.environ, "PYTHONIOENCODING": "utf-8", **({"UMEKO_SKILL_DIR": str(directory)} if directory else {})},
+            env=environment, cwd=target.parent,
             creationflags=getattr(subprocess, "CREATE_NO_WINDOW", 0),
         )
     except OSError as e:
@@ -237,6 +288,8 @@ def run_skill_script(
         out, err = proc.communicate()
         timed_out = timeout
     watcher.join(timeout=1)
+    for prefix in {str(directory), str(directory).replace("\\", "/")}:
+        err = (err or "").replace(prefix, "<skill-execution>")
 
     if cancelled["flag"]:
         return f"错误：脚本已被用户取消 [SCRIPT_CANCELLED]\n脚本：{pack}/{script}"

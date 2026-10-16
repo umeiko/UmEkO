@@ -8,6 +8,7 @@ from .config import Settings
 from .llm import LLMClient
 from .skillpacks import parse_skill_pack_text, skill_packs_dir
 from .skill_layout import entry_path
+from .skill_security import guard_skill_write
 
 _NAME_RE = re.compile(r"^[a-z0-9][a-z0-9_-]*$")
 
@@ -36,6 +37,10 @@ class SkillAgent:
         target = entry_path(self._directory, name, create=True)
         if target.exists():
             return SkillResult(False, error=f"Skill {name!r} 已存在")
+        try:
+            guard_skill_write(target)
+        except ValueError as exc:
+            return SkillResult(False, error=str(exc))
         previous = ""
         feedback = ""
         for round_no in range(1, 4):
@@ -56,6 +61,7 @@ class SkillAgent:
             content = (match.group(1) if match else raw).strip() + "\n"
             parsed = parse_skill_pack_text(content)
             if parsed is not None and parsed.name == name:
+                guard_skill_write(target)
                 target.parent.mkdir(parents=True, exist_ok=True)
                 target.write_text(content, encoding="utf-8")
                 return SkillResult(True, target, rounds=round_no)

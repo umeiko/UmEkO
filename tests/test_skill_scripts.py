@@ -112,7 +112,7 @@ def test_template_metadata_and_actual_stdin_stdout_agree(library, tmp_path):
     fixture_script(library, TEMPLATE_SCRIPT)
     info = json.loads(list_skill_script("fixture", "run.py"))["scripts"][0]
     args = info["invocation"]["arguments"]
-    result = run_skill_script(**args, workdir=tmp_path / "generate", session_root=tmp_path)
+    result = run_skill_script(**args, workdir=tmp_path / "session/generate", session_root=tmp_path / "session")
     assert "收到参数" in result and not result.startswith("错误：")
 
 
@@ -150,14 +150,14 @@ def test_builtin_examples_execute_with_declared_inputs(library, tmp_path):
 ])
 def test_real_builtin_contracts_reject_wrong_args_before_launch(library, tmp_path, monkeypatch, pack, script, args, field):
     monkeypatch.setattr("umeko.skills.script_runner.subprocess.Popen", lambda *a, **kw: pytest.fail("bad args started builtin script"))
-    result = run_skill_script(pack, script, json.dumps(args), workdir=tmp_path / "generate", session_root=tmp_path)
+    result = run_skill_script(pack, script, json.dumps(args), workdir=tmp_path / "session/generate", session_root=tmp_path / "session")
     assert "SCRIPT_ARGUMENT_INVALID" in result and field in result and "脚本尚未执行" in result
 
 
 def test_missing_input_file_is_distinct_from_parameter_schema_errors(library, tmp_path):
-    workdir = tmp_path / "generate"
-    workdir.mkdir()
+    workdir = tmp_path / "session/generate"
+    workdir.mkdir(parents=True)
     result = run_skill_script("drawio-flowchart", "generate_drawio.py",
-                              '{"source_path":"workspace/missing.xml","formats":[]}', workdir=workdir, session_root=tmp_path)
+                              '{"source_path":"workspace/missing.xml","formats":[]}', workdir=workdir, session_root=workdir.parent)
     assert "SCRIPT_REPORTED_FAILURE" in result and "source_path" in result and "输入文件不存在" in result
     assert "SCRIPT_ARGUMENT_INVALID" not in result and "脚本尚未执行" not in result

@@ -377,7 +377,8 @@ def create_app(
                 raise HTTPException(404, "技能文件不存在")
             if path.stat().st_size > 1_000_000:
                 raise HTTPException(413, "技能文件过大")
-            return {"name": pack + "/" + member, "content": path.read_text(encoding="utf-8")}
+            from ..skill_security import protected_name
+            return {"name": pack + "/" + member, "content": path.read_text(encoding="utf-8"), "readonly": protected_name(path)}
         except (ValueError, UnicodeError) as exc:
             raise HTTPException(400, str(exc)) from exc
 
@@ -390,6 +391,8 @@ def create_app(
         try:
             session.session.authorize_skill_pack(pack)
             path = checked(session.root / "client/skills", slug(pack) + "/" + member)
+            from ..skill_security import guard_skill_write
+            guard_skill_write(path)
             if payload.content is None:
                 raise ValueError("content 必须提供")
             if len(payload.content.encode("utf-8")) > 1_000_000:
@@ -670,6 +673,7 @@ def create_app(
         if session and session.root.is_dir():
             import shutil
             shutil.rmtree(session.root)
+        service.remove_script_trust(session_id)
 
     @app.get("/v1/sessions/{session_id}/messages", response_model=list[MessageView], tags=["sessions"])
     def session_messages(session_id: str) -> list[MessageView]:
@@ -965,6 +969,7 @@ def create_app(
             from ..skill_layout import copy_package, slug
             skill_name = slug(skill_name)
             dest = copy_package(service._skills_library_dir(), session.root / "client" / "skills", skill_name, content)
+            session.session.script_trust.issue(skill_name, service._skills_library_dir())
             if parse_skill_pack_text(content) is not None:
                 session.mounted_resources["skills"].add(skill_name + ".md")
                 store.set_resource_mount(session.id, "skills", skill_name + ".md", True)

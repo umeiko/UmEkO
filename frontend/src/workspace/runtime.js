@@ -125,6 +125,7 @@ export function mountWorkspaceRuntime({ onTemporaryState = () => {} } = {}) {
       skills: document.querySelector('#skills-panel'),
     },
     saveResource: document.querySelector('#save-resource'),
+    resourceReadonly: document.querySelector('#resource-readonly'),
     deleteResource: document.querySelector('#delete-resource'),
     resourceEditor: document.querySelector('#resource-editor'),
     attachWorkspaceFile: document.querySelector('#attach-workspace-file'),
@@ -1630,14 +1631,20 @@ export function mountWorkspaceRuntime({ onTemporaryState = () => {} } = {}) {
         : `/v1/sessions/${targetSessionId}/client/${kind}/${encodeURIComponent(name)}`,
     );
     if (request !== previewRequest || targetSessionId !== sessionId) return;
-    selectedResource = { ...resource, kind, name, member, pack };
+    const readonly =
+      temporary ||
+      resource.readonly ||
+      isProtectedSkillPath(`client/skills/${pack}/${member || 'SKILL.md'}`);
+    selectedResource = { ...resource, kind, name, member, pack, readonly };
     document
       .querySelectorAll('.resource-item.active')
       .forEach((node) => node.classList.remove('active'));
     row.classList.add('active');
     ui.previewTitle.textContent = member ? `${pack}/${member}` : `${pack}/SKILL.md`;
     ui.previewTitle.title = ui.previewTitle.textContent;
-    ui.saveResource.classList.remove('hidden');
+    ui.saveResource.classList.toggle('hidden', readonly);
+    ui.resourceReadonly.classList.toggle('hidden', !readonly);
+    ui.resourceEditor.readOnly = readonly;
     ui.deleteResource.classList.toggle('hidden', resource.builtin || Boolean(member));
     if (temporary) {
       ui.saveResource.classList.add('hidden');
@@ -1647,7 +1654,12 @@ export function mountWorkspaceRuntime({ onTemporaryState = () => {} } = {}) {
     ui.attachWorkspaceFile.classList.add('hidden');
     ui.downloadFile.classList.add('hidden');
     ui.resourceEditor.value = resource.content || '';
-    previewSource = { text: ui.resourceEditor.value, path: member || name, resource: true };
+    previewSource = {
+      text: ui.resourceEditor.value,
+      path: member || name,
+      resource: true,
+      readonly,
+    };
     ui.markdownToolbar.classList.remove('hidden');
     setMarkdownMode(/\.md$/i.test(member || name) ? 'rendered' : 'source');
   }
@@ -1669,6 +1681,29 @@ export function mountWorkspaceRuntime({ onTemporaryState = () => {} } = {}) {
 
   function isSkillEntry(path) {
     return /^client\/skills\/[^/]+\/SKILL\.md$/.test(path);
+  }
+
+  function isProtectedSkillPath(path) {
+    return (
+      path.startsWith('client/skills/') &&
+      path
+        .split('/')
+        .slice(2)
+        .some(
+          (part) =>
+            /^(?:config\.json|__pycache__)$/i.test(part) ||
+            /\.(?:py|pyw|pyc|pyo|pyd|so|dll|pth)[ .]*$/i.test(part),
+        )
+    );
+  }
+
+  function hasProtectedSkillContent(path) {
+    return (
+      isProtectedSkillPath(path) ||
+      [...treeEntries.keys()].some(
+        (item) => item.startsWith(path + '/') && isProtectedSkillPath(item),
+      )
+    );
   }
 
   function activeTree() {
@@ -1715,6 +1750,17 @@ export function mountWorkspaceRuntime({ onTemporaryState = () => {} } = {}) {
     const protectedEntry = targets.some((entry) => isWorkspaceRoot(entry.path));
     const skillFiles = targets.some((entry) => entry.path.startsWith('client/skills/'));
     if (temporary && (skillFiles || target.path.startsWith('client/skills/'))) return false;
+    if (
+      ['cut', 'delete', 'rename'].includes(action) &&
+      targets.some((entry) => hasProtectedSkillContent(entry.path))
+    )
+      return false;
+    if (
+      action === 'paste' &&
+      target.path.startsWith('client/skills/') &&
+      fileClipboard?.entries.some((entry) => hasProtectedSkillContent(entry.path))
+    )
+      return false;
     if (
       ['cut', 'delete', 'rename'].includes(action) &&
       targets.some((entry) => isSkillEntry(entry.path))
@@ -2374,6 +2420,7 @@ export function mountWorkspaceRuntime({ onTemporaryState = () => {} } = {}) {
     if (
       !root &&
       !isSkillEntry(node.path) &&
+      !hasProtectedSkillContent(node.path) &&
       !(temporary && node.path.startsWith('client/skills/'))
     ) {
       element.draggable = true;
@@ -2742,6 +2789,7 @@ export function mountWorkspaceRuntime({ onTemporaryState = () => {} } = {}) {
   let previewRequest = 0;
 
   function resetPreviewViews() {
+    ui.resourceReadonly.classList.add('hidden');
     previewSource = null;
     ui.markdownSource.dataset.i18n = 'preview.source';
     ui.markdownSource.textContent = t('preview.source');
@@ -2772,8 +2820,8 @@ export function mountWorkspaceRuntime({ onTemporaryState = () => {} } = {}) {
     );
     ui.resourceEditor.classList.toggle('hidden', rendered || !previewSource.resource);
     if (previewSource.resource) {
-      ui.markdownSource.dataset.i18n = temporary ? 'preview.source' : 'preview.edit';
-      ui.markdownSource.textContent = t(temporary ? 'preview.source' : 'preview.edit');
+      ui.markdownSource.dataset.i18n = previewSource.readonly ? 'preview.source' : 'preview.edit';
+      ui.markdownSource.textContent = t(previewSource.readonly ? 'preview.source' : 'preview.edit');
       previewSource.text = ui.resourceEditor.value;
       if (rendered) {
         if (isMarkdown)
@@ -3015,7 +3063,7 @@ export function mountWorkspaceRuntime({ onTemporaryState = () => {} } = {}) {
     refresh.catch((error) => setStatus(error.message));
   });
   ui.saveResource.addEventListener('click', async () => {
-    if (!selectedResource) return;
+    if (!selectedResource || selectedResource.readonly) return;
     ui.saveResource.disabled = true;
     try {
       const current = selectedResource;

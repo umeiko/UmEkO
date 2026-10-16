@@ -1240,7 +1240,7 @@ try {
           .name,
         'Renamed Fixture',
       );
-      // Skill creation, dispatch, script editing and sandbox test in an isolated skill directory.
+      // Administrator skill creation, dispatch, editing and script test in a fixture library.
       await page.locator('#tab-dskills').click();
       await page.getByRole('button', { name: '新建技能', exact: true }).click();
       await page.locator('#field-name').fill('ui-skill');
