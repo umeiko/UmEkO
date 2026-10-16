@@ -46,6 +46,27 @@ import WorkspaceHelp from './WorkspaceHelp.vue';
         技能
       </button>
     </nav>
+    <div
+      id="workspace-upload-feedback"
+      class="workspace-upload-feedback hidden"
+      role="status"
+      aria-live="polite"
+    >
+      <div class="workspace-upload-head">
+        <p id="workspace-upload-summary"></p>
+        <button
+          id="workspace-upload-dismiss"
+          type="button"
+          class="icon-button"
+          data-i18n-aria="upload.dismiss"
+          aria-label="关闭上传提示"
+        >
+          <UiIcon name="close" :size="17" />
+        </button>
+      </div>
+      <progress id="workspace-upload-progress" max="1" value="0" class="hidden"></progress>
+      <ul id="workspace-upload-details"></ul>
+    </div>
     <div id="workspace-panel" class="sidebar-panel active">
       <div class="tree-filter">
         <input
@@ -67,27 +88,6 @@ import WorkspaceHelp from './WorkspaceHelp.vue';
         </button>
       </div>
       <div
-        id="workspace-upload-feedback"
-        class="workspace-upload-feedback hidden"
-        role="status"
-        aria-live="polite"
-      >
-        <div class="workspace-upload-head">
-          <p id="workspace-upload-summary"></p>
-          <button
-            id="workspace-upload-dismiss"
-            type="button"
-            class="icon-button"
-            data-i18n-aria="upload.dismiss"
-            aria-label="关闭上传提示"
-          >
-            <UiIcon name="close" :size="17" />
-          </button>
-        </div>
-        <progress id="workspace-upload-progress" max="1" value="0" class="hidden"></progress>
-        <ul id="workspace-upload-details"></ul>
-      </div>
-      <div
         id="file-tree"
         class="file-tree"
         role="tree"
@@ -100,6 +100,14 @@ import WorkspaceHelp from './WorkspaceHelp.vue';
       </div>
       <div class="drop-hint" data-i18n="drop.hint">拖入文件，保存到当前 Session</div>
     </div>
-    <div id="skills-panel" class="sidebar-panel resource-list"></div>
+    <div
+      id="skills-panel"
+      class="sidebar-panel resource-list file-tree"
+      role="tree"
+      aria-multiselectable="true"
+      tabindex="0"
+      data-i18n-aria="sidebar.skills"
+      aria-label="技能"
+    ></div>
   </aside>
 </template>

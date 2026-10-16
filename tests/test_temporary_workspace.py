@@ -138,6 +138,12 @@ def test_temporary_continuation_and_scope(machine_client, anonymous):
     assert resources[0]["mounted"] is True
     assert "PUBLIC_SKILL" in client.get(scope + "/client/skills/public.md").text
     assert client.get(scope + "/client/skills/private.md").status_code == 403
+    skill_file = "client/skills/public/references/temporary.txt"
+    assert client.post(scope + "/workspace/entries", json={"path": skill_file, "type": "file"}).status_code == 400
+    assert client.post(scope + "/workspace/files", params={"filename": "temporary.txt", "path": "client/skills/public"}, content=b"forbidden").status_code == 400
+    assert client.delete(scope + "/workspace/entries", params={"path": "client/skills/public/SKILL.md"}).status_code == 400
+    assert client.post(scope + "/workspace/transfer", json={"source": "attachments/input.txt", "target": skill_file, "operation": "copy"}).status_code == 400
+    assert client.get(scope + "/workspace/files/download", params={"path": "client/skills/private/SKILL.md"}).status_code == 403
     tree = client.get(scope + "/workspace/tree").json()
     assert {node["name"] for node in tree} == {"workspace", "attachments", "generate"}
     assert client.get(scope + "/workspace/files/content", params={"path": "attachments/input.txt"}).content == b"uploaded input"

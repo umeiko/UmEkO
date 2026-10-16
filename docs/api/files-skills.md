@@ -31,6 +31,8 @@
 
 工作区路径带虚拟根，例如 `workspace/data.csv`、`attachments/sample.png`、`generate/report.html`。文件树可能标记 `truncated`，不能据一个已截断列表判断整个目录没有其他文件。
 
+普通用户登录后的文件管理接口也支持当前会话已下发技能的 `client/skills/<技能名>/...` 路径。新建、上传、复制、移动、删除和下载只作用于独立副本，沿用会话归属与路径边界校验。技能根目录不可移动或删除，`SKILL.md` 入口只能经技能编辑接口校验保存，不能替换、重命名或删除。临时工作台的这些接口不开放技能路径，仍使用限定披露范围的只读技能接口。
+
 上传接口的 `path` 是已经存在的目标目录，可为 `workspace`、`attachments`、`generate` 或其子目录；省略时保存到 `workspace`。上传同名文件会自动追加 `_1`、`_2` 等后缀，返回实际 `path` 和 `filename`，不会覆盖原文件。空文件和无效目录返回 `400`。允许向顶层目录上传文件，但顶层目录本身仍不能移动或删除。
 
 新建：
@@ -116,7 +118,7 @@ TLS 握手、DNS 和连接/读取超时分别带 `TLS_ERROR`、`DNS_ERROR`、`DO
 
 技能内容须符合项目技能包格式，不能把普通任意 Markdown 当作有效技能。运行中的会话修改技能返回 `409`。
 
-`ClientResourceView` 为 `kind`、`name`、`mounted`、`builtin`、可空 `content` 及 `files`。列表中的 `files` 记录包内相对路径、字节大小与修改时间，供技能文件树使用。存储采用 `<技能名>/SKILL.md` 和 `scripts/`、`references/`、`assets/`；旧的 `.md` 名称作为 API 标识保持兼容。会话取得完整独立副本，模型可通过普通文件工具读写 `client/skills/`，技能脚本也从副本执行，修改不影响技能库和其他会话。详细字段见[数据结构](schemas.md)，完整参数见[用户参考](reference-user.md)。
+`ClientResourceView` 为 `kind`、`name`、`mounted`、`builtin`、可空 `content` 及 `files`。列表中的 `files` 记录包内文件和目录的相对路径、`type`、字节大小与修改时间，目录大小为 `0`，供技能文件树使用。存储采用 `<技能名>/SKILL.md` 和 `scripts/`、`references/`、`assets/`；旧的 `.md` 名称作为 API 标识保持兼容。会话取得完整独立副本，模型可通过普通文件工具读写 `client/skills/`，技能脚本也从副本执行，修改不影响技能库和其他会话。详细字段见[数据结构](schemas.md)，完整参数见[用户参考](reference-user.md)。
 
 `mounted: true` 表示**启用按需使用**：名称与简介进入当前会话的技能目录，相关任务才读取完整指引。它不强制每轮执行、不自动把全文追加到用户消息。设为 `false` 会从自动目录中移除，文件仍保留，可通过工具发现和明确指定使用；这不是权限开关。
 

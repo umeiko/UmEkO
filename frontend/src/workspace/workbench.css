@@ -963,17 +963,37 @@ button:focus-visible {
   display: inline-grid;
   place-items: center;
 }
+.filebar-actions .icon-button[hidden] {
+  display: none;
+}
 .session-skill-tree {
   margin: 5px 0;
 }
+.resource-list.file-tree.active {
+  display: block;
+  height: auto;
+  overflow: auto;
+}
 .session-skill-tree > summary {
+  grid-template-columns: 12px minmax(0, 1fr);
   cursor: pointer;
   list-style-position: inside;
 }
 .session-skill-tree > summary .resource-item {
   display: inline-flex;
-  width: calc(100% - 20px);
+  min-width: 0;
+  flex: 1;
+  margin: 0;
+  min-height: 32px;
+  padding: 2px 0;
   vertical-align: middle;
+}
+.session-skill-tree .resource-open {
+  flex: 1;
+}
+.session-skill-tree .resource-mount {
+  flex: none;
+  opacity: 0.65;
 }
 .session-skill-tree details {
   margin-left: 17px;
@@ -986,15 +1006,6 @@ button:focus-visible {
   padding: 7px 10px;
   font-size: 14px;
   cursor: pointer;
-}
-.skill-tree-folder::before {
-  content: '›';
-  width: 12px;
-  flex: none;
-  text-align: center;
-}
-.session-skill-tree details[open] > .skill-tree-folder::before {
-  transform: rotate(90deg);
 }
 .skill-tree-folder .tree-icon {
   width: 18px;
@@ -1018,6 +1029,14 @@ button:focus-visible {
 }
 .session-skill-file:hover {
   background: var(--hover);
+}
+.session-skill-file.selected {
+  background: var(--accent-soft);
+  color: var(--accent-dark);
+}
+.session-skill-file:focus-visible {
+  outline: 1px solid var(--accent);
+  outline-offset: -1px;
 }
 .session-skill-file svg {
   flex: none;

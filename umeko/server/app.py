@@ -369,10 +369,10 @@ def create_app(
     @app.get("/v1/sessions/{session_id}/skill-files/{pack}/{member:path}", tags=["client resources"])
     def read_session_skill_file(session_id: str, pack: str, member: str) -> dict:
         session = get_session(session_id)
-        from ..skill_layout import member_path
+        from ..skill_layout import checked, slug
         try:
             session.session.authorize_skill_pack(pack)
-            path = member_path(session.root / "client/skills", pack, member)
+            path = checked(session.root / "client/skills", slug(pack) + "/" + member)
             if not path.is_file():
                 raise HTTPException(404, "技能文件不存在")
             if path.stat().st_size > 1_000_000:
@@ -386,10 +386,10 @@ def create_app(
         session = get_session(session_id)
         if session.lock.locked():
             raise HTTPException(409, "会话正在执行 Run，暂时不能修改技能文件")
-        from ..skill_layout import member_path
+        from ..skill_layout import checked, slug
         try:
             session.session.authorize_skill_pack(pack)
-            path = member_path(session.root / "client/skills", pack, member, create=True)
+            path = checked(session.root / "client/skills", slug(pack) + "/" + member)
             if payload.content is None:
                 raise ValueError("content 必须提供")
             if len(payload.content.encode("utf-8")) > 1_000_000:
@@ -499,9 +499,9 @@ def create_app(
             raise HTTPException(404, f"资源不存在：{name}") from exc
 
     @app.get("/v1/sessions/{session_id}/workspace/files/content", tags=["workspace"])
-    def workspace_file(session_id: str, path: str = Query(min_length=1)):
+    def workspace_file(session_id: str, request: Request, path: str = Query(min_length=1)):
         try:
-            file_path = service.workspace_file(session_id, path)
+            file_path = service.workspace_file(session_id, path, allow_skills=not bool(getattr(request.state, "temporary_task", None)))
         except ValueError as exc:
             raise HTTPException(403, str(exc)) from exc
         except FileNotFoundError as exc:
@@ -512,11 +512,11 @@ def create_app(
         "/v1/sessions/{session_id}/workspace/files/raw/{file_path:path}",
         tags=["workspace"],
     )
-    def workspace_file_raw(session_id: str, file_path: str):
+    def workspace_file_raw(session_id: str, file_path: str, request: Request):
         """路径式文件访问：URL 自带位置信息，HTML 内的相对路径引用（图片/CSS）
         可被浏览器正确解析。用于 HTML 报告等产物的整页渲染（新标签页打开）。"""
         try:
-            resolved = service.workspace_file(session_id, file_path)
+            resolved = service.workspace_file(session_id, file_path, allow_skills=not bool(getattr(request.state, "temporary_task", None)))
         except ValueError as exc:
             raise HTTPException(403, str(exc)) from exc
         except FileNotFoundError as exc:
@@ -524,9 +524,9 @@ def create_app(
         return FileResponse(resolved, media_type=None)
 
     @app.get("/v1/sessions/{session_id}/workspace/files/download", tags=["workspace"])
-    def download_workspace_file(session_id: str, path: str = Query(min_length=1)):
+    def download_workspace_file(session_id: str, request: Request, path: str = Query(min_length=1)):
         try:
-            download_path, temporary = service.workspace_download(session_id, path)
+            download_path, temporary = service.workspace_download(session_id, path, allow_skills=not bool(getattr(request.state, "temporary_task", None)))
         except ValueError as exc:
             raise HTTPException(403, str(exc)) from exc
         except FileNotFoundError as exc:
@@ -551,12 +551,12 @@ def create_app(
         status_code=201,
         tags=["workspace"],
     )
-    def create_workspace_entry(session_id: str, payload: WorkspaceEntryCreate) -> WorkspaceFileView:
+    def create_workspace_entry(session_id: str, payload: WorkspaceEntryCreate, request: Request) -> WorkspaceFileView:
         session = get_session(session_id)
         if session.lock.locked():
             raise HTTPException(409, "Session 正在运行，暂时不能修改文件")
         try:
-            path = service.create_workspace_entry(session_id, payload.path, payload.type)
+            path = service.create_workspace_entry(session_id, payload.path, payload.type, allow_skills=not bool(getattr(request.state, "temporary_task", None)))
         except ValueError as exc:
             raise HTTPException(400, str(exc)) from exc
         return WorkspaceFileView(path=path.relative_to(session.root).as_posix(), filename=path.name,
@@ -567,13 +567,14 @@ def create_app(
         response_model=WorkspaceFileView,
         tags=["workspace"],
     )
-    def transfer_workspace_entry(session_id: str, payload: WorkspaceTransfer) -> WorkspaceFileView:
+    def transfer_workspace_entry(session_id: str, payload: WorkspaceTransfer, request: Request) -> WorkspaceFileView:
         session = get_session(session_id)
         if session.lock.locked():
             raise HTTPException(409, "Session 正在运行，暂时不能修改文件")
         try:
             path = service.transfer_workspace_entry(
-                session_id, payload.source, payload.target, payload.operation
+                session_id, payload.source, payload.target, payload.operation,
+                allow_skills=not bool(getattr(request.state, "temporary_task", None)),
             )
         except ValueError as exc:
             raise HTTPException(400, str(exc)) from exc
@@ -583,12 +584,12 @@ def create_app(
                                  size=path.stat().st_size if path.is_file() else 0)
 
     @app.delete("/v1/sessions/{session_id}/workspace/entries", status_code=204, tags=["workspace"])
-    def delete_workspace_entry(session_id: str, path: str = Query(min_length=1)) -> None:
+    def delete_workspace_entry(session_id: str, request: Request, path: str = Query(min_length=1)) -> None:
         session = get_session(session_id)
         if session.lock.locked():
             raise HTTPException(409, "Session 正在运行，暂时不能修改文件")
         try:
-            service.delete_workspace_entry(session_id, path)
+            service.delete_workspace_entry(session_id, path, allow_skills=not bool(getattr(request.state, "temporary_task", None)))
         except ValueError as exc:
             raise HTTPException(400, str(exc)) from exc
         except FileNotFoundError as exc:
@@ -599,12 +600,12 @@ def create_app(
         response_model=WorkspaceFileView,
         tags=["workspace"],
     )
-    def extract_workspace_archive(session_id: str, payload: WorkspaceExtract) -> WorkspaceFileView:
+    def extract_workspace_archive(session_id: str, payload: WorkspaceExtract, request: Request) -> WorkspaceFileView:
         session = get_session(session_id)
         if session.lock.locked():
             raise HTTPException(409, "Session 正在运行，暂时不能修改文件")
         try:
-            target = service.extract_archive(session_id, payload.path)
+            target = service.extract_archive(session_id, payload.path, allow_skills=not bool(getattr(request.state, "temporary_task", None)))
         except ValueError as exc:
             raise HTTPException(400, str(exc)) from exc
         except FileNotFoundError as exc:
@@ -631,7 +632,8 @@ def create_app(
             raise HTTPException(400, "文件内容不能为空")
         try:
             saved = service.save_workspace_file(
-                session_id, filename, content, relative_dir=path
+                session_id, filename, content, relative_dir=path,
+                allow_skills=not bool(getattr(request.state, "temporary_task", None)),
             )
         except ValueError as exc:
             raise HTTPException(400, str(exc)) from exc

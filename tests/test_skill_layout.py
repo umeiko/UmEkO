@@ -109,3 +109,45 @@ def test_skill_tree_and_member_preview_save_use_independent_prefixes_and_auth(tm
         assert client.post(prefix + "/v1/auth/logout").status_code == 204
         assert client.get(url).status_code == 401
         assert client.put(url, json={"content": "forbidden"}).status_code == 401
+
+
+@pytest.mark.parametrize("prefix", ["", "/teams/diagrams/work"])
+def test_skill_file_management_is_session_scoped_and_preserves_entry(tmp_path, prefix):
+    app = app_for(tmp_path, prefix)
+    with TestClient(app) as client:
+        client.post(prefix + "/v1/auth/register", json={"username": "skill-files", "password": "fixture-pass"}).raise_for_status()
+        sid = client.post(prefix + "/v1/sessions", json={}).json()["id"]
+        service = app.state.agent_service
+        state = service.get_session(sid)
+        base = prefix + f"/v1/sessions/{sid}"
+        package = "client/skills/drawio-correction"
+        original = (state.root / package / "SKILL.md").read_bytes()
+        folder = package + "/references/samples"
+        assert client.post(base + "/workspace/entries", json={"path": folder, "type": "directory"}).status_code == 201
+        resources = client.get(base + "/client/skills").json()
+        files = next(item["files"] for item in resources if item["name"] == "drawio-correction.md")
+        assert any(f["path"] == "references/samples" and f["type"] == "directory" for f in files)
+        path = folder + "/sample.txt"
+        assert client.post(base + "/workspace/entries", json={"path": path, "type": "file"}).status_code == 201
+        assert client.put(base + "/skill-files/drawio-correction/references/samples/sample.txt", json={"content": "session-only"}).status_code == 200
+        moved = folder + "/renamed.txt"
+        assert client.post(base + "/workspace/transfer", json={"source": path, "target": moved, "operation": "move"}).status_code == 200
+        assert client.get(base + "/workspace/files/download", params={"path": moved}).content == b"session-only"
+        assert client.post(base + "/workspace/transfer", json={"source": moved, "target": "workspace/sample.txt", "operation": "copy"}).status_code == 200
+        assert client.get(base + "/workspace/files/content", params={"path": "workspace/sample.txt"}).content == b"session-only"
+        with state.lock:
+            assert client.delete(base + "/workspace/entries", params={"path": moved}).status_code == 409
+            assert client.post(base + "/workspace/files", params={"filename": "busy.txt", "path": folder}, content=b"forbidden").status_code == 400
+        assert not (state.root / folder / "busy.txt").exists()
+        assert client.delete(base + "/workspace/entries", params={"path": folder}).status_code == 204
+        for protected in [package, package + "/SKILL.md"]:
+            assert client.delete(base + "/workspace/entries", params={"path": protected}).status_code == 400
+            assert client.post(base + "/workspace/transfer", json={"source": protected, "target": "workspace/renamed", "operation": "move"}).status_code == 400
+        assert (state.root / package / "SKILL.md").read_bytes() == original
+        for forbidden in ["client/skills/unknown/references/file.txt", "client/private.txt", "../outside.txt"]:
+            assert client.post(base + "/workspace/entries", json={"path": forbidden, "type": "file"}).status_code == 400
+        other_sid = client.post(prefix + "/v1/sessions", json={}).json()["id"]
+        assert not (service.get_session(other_sid).root / package / "references/samples").exists()
+        assert not (service._skills_library_dir() / "drawio-correction/references/samples").exists()
+        client.post(prefix + "/v1/auth/logout").raise_for_status()
+        assert client.delete(base + "/workspace/entries", params={"path": folder}).status_code == 401

@@ -2555,6 +2555,17 @@ for (const [locale, [expiry, busy]] of Object.entries(temporaryLeaseTexts)) {
   I18N_LOCALES[locale]['temporary.expiry'] = expiry;
   I18N_LOCALES[locale]['temporary.busy'] = busy;
 }
+const skillDropTexts = {
+  'zh-CN': '请将文件拖入一个技能目录。',
+  'zh-TW': '請將檔案拖入一個技能目錄。',
+  en: 'Drop files onto a skill folder.',
+  ko: '파일을 스킬 폴더에 놓으세요.',
+  fr: 'Déposez les fichiers dans un dossier de compétence.',
+  de: 'Dateien auf einen Skill-Ordner ziehen.',
+  it: 'Trascina i file in una cartella della competenza.',
+};
+for (const [locale, text] of Object.entries(skillDropTexts))
+  I18N_LOCALES[locale]['skill.dropTarget'] = text;
 const I18N_SUPPORTED = ['zh-CN', 'zh-TW', 'en', 'ko', 'fr', 'de', 'it'];
 let i18nCurrent = 'zh-CN';
 

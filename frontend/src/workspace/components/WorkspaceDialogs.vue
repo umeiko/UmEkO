@@ -45,46 +45,6 @@ import WorkspaceHelp from './WorkspaceHelp.vue';
       </div>
     </form>
   </dialog>
-  <dialog id="resource-dialog" class="resource-dialog">
-    <form id="resource-dialog-form" method="dialog">
-      <div class="panel-heading">
-        <h2 id="resource-dialog-title" data-i18n="skill.new">新建 Skill</h2>
-        <WorkspaceHelp help-key="skill.help" />
-      </div>
-      <label for="resource-name" data-i18n="form.name">名称</label>
-      <input
-        id="resource-name"
-        name="name"
-        autocomplete="off"
-        required
-        pattern="[A-Za-z0-9_-]+"
-        autofocus
-      />
-      <label for="resource-description" data-i18n="skill.description">需求描述</label>
-      <textarea
-        id="resource-description"
-        rows="6"
-        data-i18n-placeholder="skill.descPlaceholder"
-        placeholder="描述适用场景、触发条件、操作规范或直接粘贴完整需求"
-      ></textarea>
-      <div class="dialog-actions">
-        <button
-          id="resource-dialog-cancel"
-          class="text-button"
-          type="button"
-          data-i18n="action.cancel"
-        >
-          取消
-        </button>
-        <button class="text-button" type="submit" value="blank" data-i18n="skill.blank">
-          空白模板
-        </button>
-        <button class="attach-button" type="submit" value="generate" data-i18n="skill.generate">
-          AI 生成
-        </button>
-      </div>
-    </form>
-  </dialog>
   <dialog id="tool-detail-dialog" class="tool-detail-dialog">
     <div class="tool-detail-shell">
       <header class="tool-detail-head">

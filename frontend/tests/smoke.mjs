@@ -1737,11 +1737,16 @@ try {
       await toggle.click();
       await work.locator('.sidebar-tab[data-section="skills"]').click();
       const clientSkillName = 'browser-skill-with-a-long-name-for-document-image-checking.md';
-      await work.locator('#skills-panel input[type=file]').setInputFiles({
-        name: clientSkillName,
-        mimeType: 'text/markdown',
-        buffer: Buffer.from(skillSample),
-      });
+      assert.equal(await work.locator('#skills-panel .resource-toolbar').count(), 0);
+      assert.ok(
+        (
+          await context.request.post(
+            publicBase + `/v1/sessions/${session.id}/client/skills?filename=${clientSkillName}`,
+            { data: skillSample, headers: { 'Content-Type': 'text/markdown; charset=utf-8' } },
+          )
+        ).ok(),
+      );
+      await work.locator('#refresh-tree').click();
       const clientSkill = work
         .locator('.resource-open')
         .filter({ hasText: clientSkillName.replace(/\.md$/, '') });

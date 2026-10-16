@@ -128,12 +128,6 @@ export function mountWorkspaceRuntime({ onTemporaryState = () => {} } = {}) {
     deleteResource: document.querySelector('#delete-resource'),
     resourceEditor: document.querySelector('#resource-editor'),
     attachWorkspaceFile: document.querySelector('#attach-workspace-file'),
-    resourceDialog: document.querySelector('#resource-dialog'),
-    resourceDialogForm: document.querySelector('#resource-dialog-form'),
-    resourceDialogTitle: document.querySelector('#resource-dialog-title'),
-    resourceName: document.querySelector('#resource-name'),
-    resourceDescription: document.querySelector('#resource-description'),
-    resourceDialogCancel: document.querySelector('#resource-dialog-cancel'),
     authDialog: document.querySelector('#auth-dialog'),
     authForm: document.querySelector('#auth-form'),
     authUsername: document.querySelector('#auth-username'),
@@ -204,7 +198,6 @@ export function mountWorkspaceRuntime({ onTemporaryState = () => {} } = {}) {
   let selectedFile = null;
   let selectedResource = null;
   let activeSection = 'workspace';
-  let creatingResourceKind = null;
   let managingSession = null;
   let sessionLoadToken = 0;
   let fileMenuTarget = null;
@@ -1449,13 +1442,17 @@ export function mountWorkspaceRuntime({ onTemporaryState = () => {} } = {}) {
   });
 
   function switchSection(section) {
+    closeFileMenu();
+    treeState.clear();
     activeSection = section;
+    ui.fileActions.hidden = section === 'skills';
     for (const tab of ui.sidebarTabs)
       tab.classList.toggle('active', tab.dataset.section === section);
     for (const [name, panel] of Object.entries(ui.panels))
       panel.classList.toggle('active', name === section);
     ui.sidebarTitle.dataset.i18n = section === 'workspace' ? 'sidebar.files' : 'sidebar.skills';
     ui.sidebarTitle.textContent = t(ui.sidebarTitle.dataset.i18n);
+    applyTreeSelection();
   }
 
   for (const tab of ui.sidebarTabs) {
@@ -1475,27 +1472,8 @@ export function mountWorkspaceRuntime({ onTemporaryState = () => {} } = {}) {
       ]),
     );
     panel.replaceChildren();
-    const toolbar = document.createElement('div');
-    toolbar.className = 'resource-toolbar';
-    const create = document.createElement('button');
-    create.type = 'button';
-    create.className = 'resource-tool';
-    create.textContent = t('resource.create');
-    create.addEventListener('click', () => openCreateResourceDialog(kind));
-    const importLabel = document.createElement('label');
-    importLabel.className = 'resource-tool';
-    importLabel.textContent = t('resource.import');
-    const importInput = document.createElement('input');
-    importInput.type = 'file';
-    importInput.accept = '.md,text/markdown';
-    importInput.multiple = true;
-    importInput.addEventListener('change', () => {
-      importResources(kind, [...importInput.files]);
-      importInput.value = '';
-    });
-    importLabel.append(importInput);
-    toolbar.append(create, importLabel);
-    if (!temporary) panel.append(toolbar);
+    for (const path of treeEntries.keys())
+      if (path.startsWith('client/skills/')) treeEntries.delete(path);
     if (!resources.length) {
       const empty = document.createElement('p');
       empty.className = 'resource-empty';
@@ -1525,7 +1503,9 @@ export function mountWorkspaceRuntime({ onTemporaryState = () => {} } = {}) {
       };
       renderMounted();
       mounted.disabled = temporary;
-      mounted.addEventListener('click', async () => {
+      mounted.addEventListener('click', async (event) => {
+        event.stopPropagation();
+        event.preventDefault();
         mounted.disabled = true;
         const nextMounted = !resource.mounted;
         const mutation = (async () => {
@@ -1572,34 +1552,60 @@ export function mountWorkspaceRuntime({ onTemporaryState = () => {} } = {}) {
       });
       row.append(open, mounted);
       const group = document.createElement('details');
-      group.className = 'session-skill-tree';
+      group.className = 'session-skill-tree tree-dir';
       group.dataset.skill = resource.name;
       group.open = expandedDirectories.get(resource.name) || false;
       const summary = document.createElement('summary');
       summary.append(row);
+      const packPath = `client/skills/${resource.name.replace(/\.md$/, '')}`;
+      bindTreeEntry(summary, {
+        path: packPath,
+        name: resource.name.replace(/\.md$/, ''),
+        type: 'directory',
+      });
+      bindDirectoryDrop(group, packPath, summary);
       group.append(summary);
+      summary.setAttribute('aria-expanded', String(group.open));
+      group.addEventListener('toggle', () => {
+        summary.setAttribute('aria-expanded', String(group.open));
+        applyTreeSelection();
+      });
       function appendFiles(nodes, container) {
         for (const node of nodes) {
+          const entry = {
+            ...node,
+            path: `${packPath}/${node.path}`,
+            type: node.directory ? 'directory' : 'file',
+          };
           if (node.directory) {
             const folder = document.createElement('details');
+            folder.className = 'tree-dir';
             folder.dataset.skill = `${resource.name}/${node.path}`;
             folder.open = expandedDirectories.get(folder.dataset.skill) ?? true;
             const heading = document.createElement('summary');
             heading.append(treeIcon(node.name, true), document.createTextNode(node.name));
             heading.className = 'skill-tree-folder';
+            bindTreeEntry(heading, entry);
+            bindDirectoryDrop(folder, entry.path, heading);
+            heading.dataset.skillPath = node.path;
             folder.append(heading);
+            heading.setAttribute('aria-expanded', String(folder.open));
+            folder.addEventListener('toggle', () => {
+              heading.setAttribute('aria-expanded', String(folder.open));
+              applyTreeSelection();
+            });
             appendFiles(node.children, folder);
             container.append(folder);
           } else {
             const file = document.createElement('button');
             file.type = 'button';
-            file.className = 'session-skill-file';
+            file.className = 'session-skill-file tree-file';
             file.title = `${resource.name.replace(/\.md$/, '')}/${node.path}`;
             file.dataset.skillPath = node.path;
             const text = document.createElement('span');
             text.textContent = node.name;
             file.append(treeIcon(node.name), text);
-            file.addEventListener('click', () => openResource(kind, resource.name, row, node.path));
+            bindTreeEntry(file, entry);
             container.append(file);
           }
         }
@@ -1607,121 +1613,7 @@ export function mountWorkspaceRuntime({ onTemporaryState = () => {} } = {}) {
       appendFiles(skillTree(resource.files || []), group);
       panel.append(group);
     }
-    const hint = document.createElement('div');
-    hint.className = 'resource-drop-hint';
-    hint.textContent = t('resource.dropHint', { kind: t('sidebar.skills') });
-    if (!temporary) panel.append(hint);
-  }
-
-  function resourceTemplate(kind, name) {
-    return `---\nname: ${name}\ndescription: ${t('resource.templateDescription')}\n---\n\n${t('resource.templateBody')}\n`;
-  }
-
-  async function uploadResource(kind, file) {
-    if (!file.name.toLowerCase().endsWith('.md'))
-      throw new Error(t('resource.notMarkdown', { name: file.name }));
-    const content = await file.text();
-    return api(
-      `/v1/sessions/${sessionId}/client/${kind}?filename=${encodeURIComponent(file.name)}`,
-      {
-        method: 'POST',
-        headers: { 'Content-Type': 'text/markdown; charset=utf-8' },
-        body: content,
-      },
-    );
-  }
-
-  async function importResources(kind, files) {
-    if (temporary) return setStatus(t('temporary.locked'));
-    if (!files.length) return;
-    try {
-      for (const file of files) await uploadResource(kind, file);
-      await refreshResources(kind);
-      setStatus(t('resource.imported', { count: files.length, kind: t('sidebar.skills') }), true);
-    } catch (error) {
-      setStatus(error.message);
-    }
-  }
-
-  function openCreateResourceDialog(kind) {
-    creatingResourceKind = kind;
-    ui.resourceDialogTitle.textContent = t('skill.new');
-    ui.resourceName.value = 'my-skill';
-    ui.resourceDescription.value = '';
-    ui.resourceDialog.showModal();
-    ui.resourceName.select();
-  }
-
-  ui.resourceDialogCancel.addEventListener('click', () => ui.resourceDialog.close());
-  ui.resourceDialogForm.addEventListener('submit', async (event) => {
-    event.preventDefault();
-    const kind = creatingResourceKind;
-    const entered = ui.resourceName.value;
-    const action = event.submitter?.value || 'generate';
-    if (!kind || !entered) return;
-    const key = entered
-      .trim()
-      .toLowerCase()
-      .replace(/[^a-z0-9_-]+/g, '-')
-      .replace(/^-+|-+$/g, '');
-    if (!key) return setStatus(t('resource.nameInvalid'));
-    try {
-      let resource;
-      if (action === 'generate') {
-        const description = ui.resourceDescription.value.trim();
-        if (!description) return setStatus(t('resource.descriptionRequired'));
-        setStatus(t('resource.generating', { name: key }));
-        resource = await api(`/v1/sessions/${sessionId}/client/${kind}/generate`, {
-          method: 'POST',
-          headers: { 'Content-Type': 'application/json' },
-          body: JSON.stringify({ name: key, description }),
-        });
-      } else {
-        resource = await api(
-          `/v1/sessions/${sessionId}/client/${kind}?filename=${encodeURIComponent(`${key}.md`)}`,
-          {
-            method: 'POST',
-            headers: { 'Content-Type': 'text/markdown; charset=utf-8' },
-            body: resourceTemplate(kind, key),
-          },
-        );
-      }
-      await refreshResources(kind);
-      const row = [...ui.panels[kind].querySelectorAll('.resource-item')].find(
-        (node) =>
-          node.querySelector('.resource-name')?.textContent === resource.name.replace(/\.md$/, ''),
-      );
-      if (row) await openResource(kind, resource.name, row);
-      ui.resourceDialog.close();
-      setStatus(
-        t(action === 'generate' ? 'resource.generated' : 'resource.created', {
-          name: resource.name,
-        }),
-        true,
-      );
-    } catch (error) {
-      setStatus(error.message);
-    }
-  });
-
-  for (const kind of ['skills']) {
-    const panel = ui.panels[kind];
-    for (const eventName of ['dragenter', 'dragover']) {
-      panel.addEventListener(eventName, (event) => {
-        event.preventDefault();
-        if (temporary) return;
-        panel.classList.add('dragging');
-      });
-    }
-    panel.addEventListener('dragleave', (event) => {
-      if (!panel.contains(event.relatedTarget)) panel.classList.remove('dragging');
-    });
-    panel.addEventListener('drop', (event) => {
-      event.preventDefault();
-      event.stopPropagation();
-      panel.classList.remove('dragging');
-      importResources(kind, [...event.dataTransfer.files]);
-    });
+    if (activeSection === 'skills') applyTreeSelection();
   }
 
   async function openResource(kind, name, row, member = '') {
@@ -1772,7 +1664,35 @@ export function mountWorkspaceRuntime({ onTemporaryState = () => {} } = {}) {
     return `${directory.replace(/\/$/, '')}/${name}`;
   }
   function isWorkspaceRoot(path) {
-    return !path.includes('/');
+    return !path.includes('/') || /^client\/skills\/[^/]+$/.test(path);
+  }
+
+  function isSkillEntry(path) {
+    return /^client\/skills\/[^/]+\/SKILL\.md$/.test(path);
+  }
+
+  function activeTree() {
+    return activeSection === 'skills' ? ui.panels.skills : ui.tree;
+  }
+
+  async function openTreeFile(path, element) {
+    const match = path.match(/^client\/skills\/([^/]+)\/(.+)$/);
+    if (!match) return previewFile(path, element);
+    if (!/\.(md|markdown|py|js|ts|json|ya?ml|txt|csv|xml|sh|css|html)$/i.test(path))
+      return previewFile(path, element);
+    const group = [...ui.panels.skills.querySelectorAll('.session-skill-tree')].find(
+      (item) => item.dataset.skill === match[1] + '.md',
+    );
+    return openResource(
+      'skills',
+      match[1] + '.md',
+      group.querySelector('.resource-item'),
+      match[2],
+    );
+  }
+
+  async function refreshFileTrees(targetSessionId = sessionId) {
+    await Promise.all([refreshTree(targetSessionId), refreshResources('skills', targetSessionId)]);
   }
 
   function validateEntryName(name) {
@@ -1793,6 +1713,14 @@ export function mountWorkspaceRuntime({ onTemporaryState = () => {} } = {}) {
   function fileActionAvailable(action, target, targets) {
     const multi = targets.length > 1;
     const protectedEntry = targets.some((entry) => isWorkspaceRoot(entry.path));
+    const skillFiles = targets.some((entry) => entry.path.startsWith('client/skills/'));
+    if (temporary && (skillFiles || target.path.startsWith('client/skills/'))) return false;
+    if (
+      ['cut', 'delete', 'rename'].includes(action) &&
+      targets.some((entry) => isSkillEntry(entry.path))
+    )
+      return false;
+    if (action === 'attach' && skillFiles) return false;
     if (['copy', 'cut', 'delete'].includes(action))
       return targets.length && !protectedEntry && (!fileOperationBusy || action === 'copy');
     if (action === 'attach')
@@ -1820,7 +1748,10 @@ export function mountWorkspaceRuntime({ onTemporaryState = () => {} } = {}) {
       const action = button.dataset.fileAction;
       button.disabled = !fileActionAvailable(action, target, targets);
       button.hidden = targets.length > 1 && !['copy', 'cut', 'delete', 'attach'].includes(action);
-      if (action === 'attach' && targets.some((entry) => entry.type !== 'file'))
+      if (
+        action === 'attach' &&
+        targets.some((entry) => entry.type !== 'file' || entry.path.startsWith('client/skills/'))
+      )
         button.hidden = true;
       if (action === 'download') {
         button.textContent =
@@ -1912,8 +1843,15 @@ export function mountWorkspaceRuntime({ onTemporaryState = () => {} } = {}) {
       selectedFile = null;
       clearPreview();
     }
+    if (operation === 'move' && selectedResource) {
+      const path = `client/skills/${selectedResource.pack}/${selectedResource.member || 'SKILL.md'}`;
+      if (path === source || path.startsWith(source + '/')) {
+        selectedResource = null;
+        clearPreview();
+      }
+    }
     if (!refresh) return;
-    await refreshTree(targetSessionId);
+    await refreshFileTrees(targetSessionId);
     setStatus(
       t(operation === 'move' ? 'file.moved' : 'file.copiedTo', { name: entryName(target) }),
       true,
@@ -1937,7 +1875,7 @@ export function mountWorkspaceRuntime({ onTemporaryState = () => {} } = {}) {
       }
     } finally {
       fileOperationBusy = false;
-      await refreshTree(targetSessionId);
+      await refreshFileTrees(targetSessionId);
     }
     if (targetSessionId !== sessionId) return;
     if (failures.length)
@@ -1955,6 +1893,13 @@ export function mountWorkspaceRuntime({ onTemporaryState = () => {} } = {}) {
   }
 
   function removeEntryState(path) {
+    if (selectedResource) {
+      const resourcePath = `client/skills/${selectedResource.pack}/${selectedResource.member || 'SKILL.md'}`;
+      if (resourcePath === path || resourcePath.startsWith(path + '/')) {
+        selectedResource = null;
+        clearPreview();
+      }
+    }
     for (const selected of treeSelection)
       if (selected === path || selected.startsWith(path + '/')) treeSelection.delete(selected);
     if (selectedFile === path || selectedFile?.startsWith(path + '/')) {
@@ -2019,7 +1964,7 @@ export function mountWorkspaceRuntime({ onTemporaryState = () => {} } = {}) {
           headers: { 'Content-Type': 'application/json' },
           body: JSON.stringify({ path: target.path }),
         });
-        await refreshTree();
+        await refreshFileTrees();
         setStatus(t('file.extracted', { name: result.filename }), true);
       } catch (error) {
         setStatus(error.message);
@@ -2074,6 +2019,15 @@ export function mountWorkspaceRuntime({ onTemporaryState = () => {} } = {}) {
         if (entry.children) collect(entry.children);
       });
     collect(nodes);
+    const resources = await api(`/v1/sessions/${targetSessionId}/client/skills`);
+    if (targetSessionId !== sessionId) return;
+    for (const resource of resources)
+      occupied.add(`client/skills/${resource.name.replace(/\.md$/, '')}`);
+    for (const resource of resources)
+      for (const file of resource.files || [])
+        occupied.add(
+          `client/skills/${resource.name.replace(/\.md$/, '')}/${file.path || file.name}`,
+        );
     await workspaceBatch(
       clipboard.entries,
       async (entry, sid) => {
@@ -2120,7 +2074,7 @@ export function mountWorkspaceRuntime({ onTemporaryState = () => {} } = {}) {
           headers: { 'Content-Type': 'application/json' },
           body: JSON.stringify({ path, type: action === 'new-file' ? 'file' : 'directory' }),
         });
-        await refreshTree();
+        await refreshFileTrees();
         setStatus(t('file.created', { name }), true);
       }
       ui.fileEntryDialog.close();
@@ -2137,6 +2091,7 @@ export function mountWorkspaceRuntime({ onTemporaryState = () => {} } = {}) {
     );
   });
   ui.fileActions.addEventListener('click', (event) => {
+    if (activeSection === 'skills') return;
     const rect = event.currentTarget.getBoundingClientRect();
     openFileMenu(
       { path: 'workspace', name: 'workspace', type: 'directory' },
@@ -2185,7 +2140,7 @@ export function mountWorkspaceRuntime({ onTemporaryState = () => {} } = {}) {
 
   // ---------- 文件树选择、焦点与键盘：所有操作共用当前选中集合 ----------
   function treeRows() {
-    return [...ui.tree.querySelectorAll('.tree-file, .tree-dir > summary')];
+    return [...activeTree().querySelectorAll('.tree-file, .tree-dir > summary')];
   }
 
   function visibleTreeRows() {
@@ -2219,7 +2174,7 @@ export function mountWorkspaceRuntime({ onTemporaryState = () => {} } = {}) {
       visible[0];
     if (!treeState.focus && treeSelection.size) treeState.focus = focus?.dataset.path || null;
     if (!treeState.anchor && treeSelection.size) treeState.anchor = treeState.focus;
-    ui.tree.tabIndex = focus ? -1 : 0;
+    activeTree().tabIndex = focus ? -1 : 0;
     for (const row of rows) {
       const selected = treeSelection.has(row.dataset.path);
       (row.closest('.tree-file-row') || row).classList.toggle('selected', selected);
@@ -2268,111 +2223,114 @@ export function mountWorkspaceRuntime({ onTemporaryState = () => {} } = {}) {
     openFileMenu(node, x, y, selectedTreeEntries());
   }
 
-  listen(ui.tree, 'click', (event) => {
-    if (!event.target.closest('.tree-file, .tree-dir > summary, .tree-attach')) {
-      clearTreeSelection();
-      ui.tree.focus({ preventScroll: true });
-    }
-  });
+  for (const tree of [ui.tree, ui.panels.skills]) {
+    listen(tree, 'click', (event) => {
+      if (!event.target.closest('.tree-file, .tree-dir > summary, .tree-attach')) {
+        clearTreeSelection();
+        tree.focus({ preventScroll: true });
+      }
+    });
 
-  listen(ui.tree, 'keydown', (event) => {
-    if (event.altKey) return;
-    const rows = visibleTreeRows();
-    const path = event.target.closest('[data-path]')?.dataset.path || treeState.focus;
-    const entry = treeEntries.get(path);
-    const modifier = event.ctrlKey || event.metaKey;
-    if (modifier && event.key.toLowerCase() === 'a') {
-      event.preventDefault();
-      treeState.clear();
-      for (const row of rows)
-        if (!isWorkspaceRoot(row.dataset.path)) treeSelection.add(row.dataset.path);
-      treeState.anchor = treeState.focus = path || rows[0]?.dataset.path;
-      applyTreeSelection();
-      return;
-    }
-    if (modifier && ['c', 'x', 'v'].includes(event.key.toLowerCase())) {
-      const target = entry || treeEntries.get('workspace');
-      if (!target) return;
-      event.preventDefault();
-      const action = { c: 'copy', x: 'cut', v: 'paste' }[event.key.toLowerCase()];
-      executeFileAction(
-        action,
-        target,
-        action === 'paste' ? [target] : selectedTreeEntries(),
-      ).catch((error) => setStatus(error.message));
-      return;
-    }
-    if (event.key === 'Escape') {
-      event.preventDefault();
-      if (!ui.fileContextMenu.classList.contains('hidden')) closeFileMenu();
-      else clearTreeSelection();
-      return;
-    }
-    if (!entry) {
-      if (rows.length && ['ArrowDown', 'ArrowUp', 'Home', 'End'].includes(event.key)) {
+    listen(tree, 'keydown', (event) => {
+      if (event.altKey) return;
+      const rows = visibleTreeRows();
+      const path = event.target.closest('[data-path]')?.dataset.path || treeState.focus;
+      const entry = treeEntries.get(path);
+      const modifier = event.ctrlKey || event.metaKey;
+      if (modifier && event.key.toLowerCase() === 'a') {
         event.preventDefault();
-        focusTreeEntry(rows[event.key === 'End' ? rows.length - 1 : 0].dataset.path, event);
+        treeState.clear();
+        for (const row of rows)
+          if (!isWorkspaceRoot(row.dataset.path)) treeSelection.add(row.dataset.path);
+        treeState.anchor = treeState.focus = path || rows[0]?.dataset.path;
+        applyTreeSelection();
+        return;
       }
-      return;
-    }
-    if (event.key === 'ContextMenu' || (event.shiftKey && event.key === 'F10')) {
-      event.preventDefault();
-      const box = treeRow(path).getBoundingClientRect();
-      contextTreeEntry(entry, box.left + 20, box.bottom);
-      ui.fileContextMenu.querySelector('button:not([hidden]):not(:disabled)')?.focus();
-      return;
-    }
-    if (event.key === 'Delete') {
-      event.preventDefault();
-      executeFileAction('delete', entry, selectedTreeEntries()).catch((error) =>
-        setStatus(error.message),
-      );
-      return;
-    }
-    if (event.key === 'F2') {
-      event.preventDefault();
-      executeFileAction('rename', entry, selectedTreeEntries()).catch((error) =>
-        setStatus(error.message),
-      );
-      return;
-    }
-    const index = rows.findIndex((row) => row.dataset.path === path);
-    let next;
-    if (event.key === 'ArrowDown') next = Math.min(rows.length - 1, index + 1);
-    if (event.key === 'ArrowUp') next = Math.max(0, index - 1);
-    if (event.key === 'Home') next = 0;
-    if (event.key === 'End') next = rows.length - 1;
-    if (next !== undefined) {
-      event.preventDefault();
-      focusTreeEntry(rows[next].dataset.path, event);
-      return;
-    }
-    if (event.key === 'ArrowRight') {
-      event.preventDefault();
-      if (entry.type === 'directory') {
-        const details = treeRow(path).parentElement;
-        if (!details.open) details.open = true;
-        else if (rows[index + 1]?.dataset.path.startsWith(path + '/'))
-          focusTreeEntry(rows[index + 1].dataset.path);
+      if (modifier && ['c', 'x', 'v'].includes(event.key.toLowerCase())) {
+        const target = entry || treeEntries.get('workspace');
+        if (!target) return;
+        event.preventDefault();
+        const action = { c: 'copy', x: 'cut', v: 'paste' }[event.key.toLowerCase()];
+        executeFileAction(
+          action,
+          target,
+          action === 'paste' ? [target] : selectedTreeEntries(),
+        ).catch((error) => setStatus(error.message));
+        return;
       }
-      return;
-    }
-    if (event.key === 'ArrowLeft') {
-      event.preventDefault();
-      if (entry.type === 'directory' && treeRow(path).parentElement.open)
-        treeRow(path).parentElement.open = false;
-      else focusTreeEntry(entryParent(path));
-      return;
-    }
-    if (event.key === 'Enter') {
-      event.preventDefault();
-      if (entry.type === 'file') previewFile(path, treeRow(path));
-      else treeRow(path).parentElement.open = !treeRow(path).parentElement.open;
-    } else if (event.key === ' ') {
-      event.preventDefault();
-      selectTreeEntry(path, event);
-    }
-  });
+      if (event.key === 'Escape') {
+        event.preventDefault();
+        if (!ui.fileContextMenu.classList.contains('hidden')) closeFileMenu();
+        else clearTreeSelection();
+        return;
+      }
+      if (!entry) {
+        if (rows.length && ['ArrowDown', 'ArrowUp', 'Home', 'End'].includes(event.key)) {
+          event.preventDefault();
+          focusTreeEntry(rows[event.key === 'End' ? rows.length - 1 : 0].dataset.path, event);
+        }
+        return;
+      }
+      if (event.key === 'ContextMenu' || (event.shiftKey && event.key === 'F10')) {
+        event.preventDefault();
+        const box = treeRow(path).getBoundingClientRect();
+        contextTreeEntry(entry, box.left + 20, box.bottom);
+        ui.fileContextMenu.querySelector('button:not([hidden]):not(:disabled)')?.focus();
+        return;
+      }
+      if (event.key === 'Delete') {
+        event.preventDefault();
+        executeFileAction('delete', entry, selectedTreeEntries()).catch((error) =>
+          setStatus(error.message),
+        );
+        return;
+      }
+      if (event.key === 'F2') {
+        event.preventDefault();
+        executeFileAction('rename', entry, selectedTreeEntries()).catch((error) =>
+          setStatus(error.message),
+        );
+        return;
+      }
+      const index = rows.findIndex((row) => row.dataset.path === path);
+      let next;
+      if (event.key === 'ArrowDown') next = Math.min(rows.length - 1, index + 1);
+      if (event.key === 'ArrowUp') next = Math.max(0, index - 1);
+      if (event.key === 'Home') next = 0;
+      if (event.key === 'End') next = rows.length - 1;
+      if (next !== undefined) {
+        event.preventDefault();
+        focusTreeEntry(rows[next].dataset.path, event);
+        return;
+      }
+      if (event.key === 'ArrowRight') {
+        event.preventDefault();
+        if (entry.type === 'directory') {
+          const details = treeRow(path).parentElement;
+          if (!details.open) details.open = true;
+          else if (rows[index + 1]?.dataset.path.startsWith(path + '/'))
+            focusTreeEntry(rows[index + 1].dataset.path);
+        }
+        return;
+      }
+      if (event.key === 'ArrowLeft') {
+        event.preventDefault();
+        if (entry.type === 'directory' && treeRow(path).parentElement.open)
+          treeRow(path).parentElement.open = false;
+        else focusTreeEntry(entryParent(path));
+        return;
+      }
+      if (event.key === 'Enter') {
+        event.preventDefault();
+        if (entry.type === 'file')
+          openTreeFile(path, treeRow(path)).catch((error) => setStatus(error.message));
+        else treeRow(path).parentElement.open = !treeRow(path).parentElement.open;
+      } else if (event.key === ' ') {
+        event.preventDefault();
+        selectTreeEntry(path, event);
+      }
+    });
+  }
 
   listen(ui.fileContextMenu, 'keydown', (event) => {
     const buttons = [...ui.fileContextMenu.querySelectorAll('button:not([hidden]):not(:disabled)')];
@@ -2396,20 +2354,28 @@ export function mountWorkspaceRuntime({ onTemporaryState = () => {} } = {}) {
     element.dataset.path = node.path;
     element.dataset.type = node.type;
     element.setAttribute('role', 'treeitem');
-    element.setAttribute('aria-level', String(node.path.split('/').length));
+    element.setAttribute(
+      'aria-level',
+      String(node.path.replace(/^client\/skills\//, '').split('/').length),
+    );
     element.addEventListener('click', (event) => {
       closeFileMenu();
       const modified = event.ctrlKey || event.metaKey || event.shiftKey;
       if (modified) event.preventDefault();
       selectTreeEntry(node.path, event);
-      if (!modified && node.type === 'file') previewFile(node.path, element);
+      if (!modified && node.type === 'file')
+        openTreeFile(node.path, element).catch((error) => setStatus(error.message));
     });
     element.addEventListener('contextmenu', (event) => {
       event.preventDefault();
       event.stopPropagation();
       contextTreeEntry(node, event.clientX, event.clientY);
     });
-    if (!root) {
+    if (
+      !root &&
+      !isSkillEntry(node.path) &&
+      !(temporary && node.path.startsWith('client/skills/'))
+    ) {
       element.draggable = true;
       element.addEventListener('dragstart', (event) => {
         event.stopPropagation();
@@ -2432,6 +2398,7 @@ export function mountWorkspaceRuntime({ onTemporaryState = () => {} } = {}) {
   function bindDirectoryDrop(element, path, highlight) {
     for (const eventName of ['dragenter', 'dragover'])
       element.addEventListener(eventName, (event) => {
+        if (temporary && path.startsWith('client/skills/')) return;
         const hasFiles = event.dataTransfer?.types.includes('Files');
         const hasMove = event.dataTransfer?.types.includes('application/x-flowchart-path');
         if (!hasFiles && !hasMove) return;
@@ -2452,6 +2419,7 @@ export function mountWorkspaceRuntime({ onTemporaryState = () => {} } = {}) {
       event.preventDefault();
       event.stopPropagation();
       clearDropHighlights();
+      if (temporary && path.startsWith('client/skills/')) return setStatus(t('temporary.locked'));
       // 外部文件拖入具体目录 → 上传到该目录
       if (event.dataTransfer?.types.includes('Files')) {
         try {
@@ -2603,7 +2571,8 @@ export function mountWorkspaceRuntime({ onTemporaryState = () => {} } = {}) {
     renderedTreeSessionId = targetSessionId;
     renderedTreeSignature = signature;
     ui.tree.replaceChildren();
-    treeEntries.clear();
+    for (const path of treeEntries.keys())
+      if (!path.startsWith('client/skills/')) treeEntries.delete(path);
     if (!nodes.length) {
       const empty = document.createElement('p');
       empty.className = 'tree-empty';
@@ -2790,19 +2759,27 @@ export function mountWorkspaceRuntime({ onTemporaryState = () => {} } = {}) {
   }
 
   function setMarkdownMode(mode) {
-    if (!previewSource || !/\.(md|markdown)$/i.test(previewSource.path)) return;
+    if (!previewSource) return;
+    const isMarkdown = /\.(md|markdown)$/i.test(previewSource.path);
+    if (!isMarkdown && !previewSource.resource) return;
     const rendered = mode === 'rendered';
     ui.markdownRendered.setAttribute('aria-pressed', String(rendered));
     ui.markdownSource.setAttribute('aria-pressed', String(!rendered));
-    ui.markdownView.classList.toggle('hidden', !rendered);
-    ui.codePanel.classList.toggle('hidden', rendered || previewSource.resource);
+    ui.markdownView.classList.toggle('hidden', !rendered || !isMarkdown);
+    ui.codePanel.classList.toggle(
+      'hidden',
+      previewSource.resource ? !rendered || isMarkdown : rendered,
+    );
     ui.resourceEditor.classList.toggle('hidden', rendered || !previewSource.resource);
     if (previewSource.resource) {
       ui.markdownSource.dataset.i18n = temporary ? 'preview.source' : 'preview.edit';
       ui.markdownSource.textContent = t(temporary ? 'preview.source' : 'preview.edit');
       previewSource.text = ui.resourceEditor.value;
-      if (rendered)
-        ui.markdownView.innerHTML = renderSkillMarkdown(previewSource.text, { translate: t });
+      if (rendered) {
+        if (isMarkdown)
+          ui.markdownView.innerHTML = renderSkillMarkdown(previewSource.text, { translate: t });
+        else hljsHighlight(previewSource.text, previewSource.path.split('.').at(-1));
+      }
     } else if (!rendered) hljsHighlight(previewSource.text, 'markdown');
   }
   listen(ui.resourceEditor, 'input', () => {
@@ -2917,7 +2894,7 @@ export function mountWorkspaceRuntime({ onTemporaryState = () => {} } = {}) {
     ui.previewTitle.title = name;
     ui.saveResource.classList.add('hidden');
     ui.deleteResource.classList.add('hidden');
-    ui.attachWorkspaceFile.classList.remove('hidden');
+    ui.attachWorkspaceFile.classList.toggle('hidden', path.startsWith('client/skills/'));
     updateWorkspaceAttachButtons();
     ui.downloadFile.href = appUrl(
       `/v1/sessions/${sessionId}/workspace/files/download?path=${encodeURIComponent(path)}`,
@@ -3394,11 +3371,11 @@ export function mountWorkspaceRuntime({ onTemporaryState = () => {} } = {}) {
       state.processed += 1;
     }
     try {
-      await refreshTree(uploadSessionId);
+      await refreshFileTrees(uploadSessionId);
       if (saved && sessionId === uploadSessionId) {
         const parts = targetDir.split('/');
         const paths = new Set(parts.map((_, index) => parts.slice(0, index + 1).join('/')));
-        ui.tree.querySelectorAll('summary[data-path]').forEach((summary) => {
+        ui.filebar.querySelectorAll('summary[data-path]').forEach((summary) => {
           if (paths.has(summary.dataset.path)) summary.parentElement.open = true;
         });
       }
@@ -3483,7 +3460,10 @@ export function mountWorkspaceRuntime({ onTemporaryState = () => {} } = {}) {
     });
   }
 
-  bindDropZone(ui.filebar, uploadWorkspaceFiles);
+  bindDropZone(ui.filebar, (files) => {
+    if (activeSection === 'skills') throw new Error(t('skill.dropTarget'));
+    return uploadWorkspaceFiles(files);
+  });
   bindDropZone(ui.composer, uploadAttachmentFiles);
   // 全局兜底：拖拽结束/取消（含 OS 层取消、Esc）后清掉所有 dropzone 高亮
   for (const eventName of ['dragend', 'drop']) {

@@ -113,12 +113,12 @@ def copy_package(source: Path, target: Path, name: str, content: str, *, refresh
     return destination
 
 
-def file_metadata(root: Path, name: str) -> list[dict]:
+def file_metadata(root: Path, name: str, *, include_directories=False) -> list[dict]:
     package = checked(root, slug(name))
     result = []
     if package.is_dir():
         for path in sorted(package.rglob("*")):
-            if not path.is_file() or "__pycache__" in path.parts or path.suffix in {".pyc", ".pyo"}:
+            if (not path.is_file() and not (include_directories and path.is_dir())) or "__pycache__" in path.parts or path.suffix in {".pyc", ".pyo"}:
                 continue
             relative = path.relative_to(package).as_posix()
             try:
@@ -126,5 +126,8 @@ def file_metadata(root: Path, name: str) -> list[dict]:
             except ValueError:
                 continue
             stat = path.stat()
-            result.append({"name": relative, "path": relative, "size": stat.st_size, "mtime": int(stat.st_mtime)})
+            item = {"name": relative, "path": relative, "size": stat.st_size if path.is_file() else 0, "mtime": int(stat.st_mtime)}
+            if include_directories:
+                item["type"] = "directory" if path.is_dir() else "file"
+            result.append(item)
     return result

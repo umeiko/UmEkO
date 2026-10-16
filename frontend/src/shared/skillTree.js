@@ -7,7 +7,12 @@ export function skillTree(files) {
       const path = parts.slice(0, index + 1).join('/');
       let child = node.children.find((item) => item.path === path);
       if (!child) {
-        child = { name, path, children: [], directory: index < parts.length - 1 };
+        child = {
+          name,
+          path,
+          children: [],
+          directory: index < parts.length - 1 || file.type === 'directory',
+        };
         node.children.push(child);
       }
       node = child;

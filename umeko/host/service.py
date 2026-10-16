@@ -120,22 +120,32 @@ class AgentService:
         root.mkdir(parents=True, exist_ok=True)
         return root
 
+    def _workspace_roots(self, session_id: str, *, allow_skills: bool = False) -> tuple[Path, ...]:
+        session = self.get_session(session_id)
+        roots = tuple(session.root / name for name in self.WORKSPACE_ROOTS)
+        if allow_skills:
+            directory = session.root / "client/skills"
+            roots += tuple(directory / name for name in entries(directory)
+                           if session.session.allowed_skill_packs is None
+                           or name in session.session.allowed_skill_packs)
+        return roots
+
     def _workspace_path(
         self, session_id: str, relative_path: str, *, must_exist: bool = True,
-        allow_root: bool = True,
+        allow_root: bool = True, allow_skills: bool = False,
     ) -> Path:
         session = self.get_session(session_id)
         if not relative_path or "\x00" in relative_path:
             raise ValueError("文件路径不能为空")
-        candidate = (session.root / relative_path).resolve()
+        candidate = bounded_path(session.root, relative_path,
+                                 self._workspace_roots(session_id, allow_skills=allow_skills),
+                                 allow_root=allow_root)
         try:
             relative = candidate.relative_to(session.root)
         except ValueError as exc:
             raise ValueError("文件路径超出当前 Session 工作区") from exc
-        if not relative.parts or relative.parts[0] not in self.WORKSPACE_ROOTS:
-            raise ValueError("该 Session 内部目录不允许通过 Workspace 访问")
-        if not allow_root and len(relative.parts) == 1:
-            raise ValueError("不能修改 Workspace 顶级目录")
+        if not allow_root and relative.parts[:2] == ("client", "skills") and relative.parts[3:] == ("SKILL.md",):
+            raise ValueError("技能入口请通过技能编辑器保存，不能移动、替换或删除")
         if must_exist and not candidate.exists():
             raise FileNotFoundError(relative_path)
         return candidate
@@ -183,15 +193,15 @@ class AgentService:
             })
         return base
 
-    def workspace_file(self, session_id: str, relative_path: str) -> Path:
-        candidate = self._workspace_path(session_id, relative_path)
+    def workspace_file(self, session_id: str, relative_path: str, *, allow_skills: bool = False) -> Path:
+        candidate = self._workspace_path(session_id, relative_path, allow_skills=allow_skills)
         if not candidate.is_file():
             raise FileNotFoundError(relative_path)
         return candidate
 
-    def workspace_download(self, session_id: str, relative_path: str) -> tuple[Path, bool]:
+    def workspace_download(self, session_id: str, relative_path: str, *, allow_skills: bool = False) -> tuple[Path, bool]:
         """返回下载目标；目录会打包为临时 ZIP，并由响应层负责删除。"""
-        target = self._workspace_path(session_id, relative_path)
+        target = self._workspace_path(session_id, relative_path, allow_skills=allow_skills)
         if target.is_file():
             return target, False
         if not target.is_dir():
@@ -255,8 +265,8 @@ class AgentService:
             rendered = rendered.replace(source, "当前 Session")
         return rendered
 
-    def create_workspace_entry(self, session_id: str, relative_path: str, entry_type: str) -> Path:
-        target = self._workspace_path(session_id, relative_path, must_exist=False, allow_root=False)
+    def create_workspace_entry(self, session_id: str, relative_path: str, entry_type: str, *, allow_skills: bool = False) -> Path:
+        target = self._workspace_path(session_id, relative_path, must_exist=False, allow_root=False, allow_skills=allow_skills)
         if target.exists():
             raise ValueError(f"已存在：{relative_path}")
         if not target.parent.is_dir():
@@ -270,22 +280,26 @@ class AgentService:
         return target
 
     def transfer_workspace_entry(
-        self, session_id: str, source_path: str, target_path: str, operation: str
+        self, session_id: str, source_path: str, target_path: str, operation: str, *, allow_skills: bool = False
     ) -> Path:
         if operation not in {"copy", "move"}:
             raise ValueError("不支持的文件操作")
         return self.operate_session_files("cp" if operation == "copy" else "mv",
                                           session_id=session_id, path=source_path,
-                                          target=target_path, recursive=True)
+                                          target=target_path, recursive=True, allow_skills=allow_skills)
 
-    def delete_workspace_entry(self, session_id: str, relative_path: str) -> None:
-        self.operate_session_files("rm", relative_path, session_id=session_id, recursive=True)
+    def delete_workspace_entry(self, session_id: str, relative_path: str, *, allow_skills: bool = False) -> None:
+        self.operate_session_files("rm", relative_path, session_id=session_id, recursive=True, allow_skills=allow_skills)
 
     def operate_session_files(self, operation: str, path: str, target: str = "", *,
                               session_id: str, recursive: bool = False, overwrite: bool = False,
-                              should_cancel=None) -> Path:
+                              should_cancel=None, allow_skills: bool = False) -> Path:
         session = self.get_session(session_id)
-        allowed = tuple(session.root / name for name in self.WORKSPACE_ROOTS)
+        allowed = self._workspace_roots(session_id, allow_skills=allow_skills)
+        if allow_skills:
+            self._workspace_path(session_id, path, allow_root=operation == "cp", allow_skills=True)
+            if target:
+                self._workspace_path(session_id, target, must_exist=False, allow_root=False, allow_skills=True)
         source = bounded_path(session.root, path, allowed)
         result = operate_files(operation, path, target, root=session.root, allowed_roots=allowed,
                                recursive=recursive, overwrite=overwrite, should_cancel=should_cancel)
@@ -305,7 +319,7 @@ class AgentService:
 
     def save_workspace_file(
         self, session_id: str, filename: str, content: bytes,
-        relative_dir: str = "",
+        relative_dir: str = "", *, allow_skills: bool = False,
     ) -> Path:
         clean_name = Path(filename).name.strip()
         if not clean_name:
@@ -315,12 +329,15 @@ class AgentService:
         workspace = self.session_workspace(session_id)
         if relative_dir:
             target_dir = self._workspace_path(
-                session_id, relative_dir, must_exist=True, allow_root=True
+                session_id, relative_dir, must_exist=True, allow_root=True, allow_skills=allow_skills
             )
             if not target_dir.is_dir():
                 raise ValueError(f"目标目录不存在：{relative_dir}")
         else:
             target_dir = workspace
+        session = self.get_session(session_id)
+        if target_dir.relative_to(session.root).parts[:2] == ("client", "skills") and session.lock.locked():
+            raise ValueError("会话正在执行 Run，暂时不能修改技能文件")
         stem = Path(clean_name).stem
         suffix = Path(clean_name).suffix
         path = target_dir / clean_name
@@ -328,6 +345,8 @@ class AgentService:
         while path.exists():
             path = target_dir / f"{stem}_{counter}{suffix}"
             counter += 1
+        self._workspace_path(session_id, path.relative_to(self.get_session(session_id).root).as_posix(),
+                             must_exist=False, allow_root=False, allow_skills=allow_skills)
         path.write_bytes(content)
         return path
 
@@ -335,10 +354,10 @@ class AgentService:
 
     ARCHIVE_SUFFIXES = ARCHIVE_SUFFIXES
 
-    def extract_archive(self, session_id: str, relative_path: str) -> Path:
+    def extract_archive(self, session_id: str, relative_path: str, *, allow_skills: bool = False) -> Path:
         session = self.get_session(session_id)
         archive = bounded_path(session.root, relative_path,
-                               tuple(session.root / name for name in self.WORKSPACE_ROOTS))
+                               self._workspace_roots(session_id, allow_skills=allow_skills))
         if not archive.is_file():
             raise FileNotFoundError(relative_path)
         return extract_archive(archive)
@@ -977,7 +996,7 @@ class AgentService:
                 "name": pack_name + ".md",
                 "mounted": pack_name + ".md" in session.mounted_resources[kind],
                 "builtin": pack_name + ".md" in session.builtin_resources[kind],
-                "files": file_metadata(directory, pack_name),
+                "files": file_metadata(directory, pack_name, include_directories=True),
             })
         return resources
 
