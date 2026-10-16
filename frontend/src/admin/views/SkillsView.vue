@@ -11,6 +11,7 @@ import UiIcon from '../../shared/UiIcon.vue';
 import UiModal from '../../shared/UiModal.vue';
 import CodeEditor from '../../shared/CodeEditor.vue';
 import SkillTree from '../../shared/SkillTree.vue';
+import SkillSecurityModal from '../components/SkillSecurityModal.vue';
 const packs = ref([]),
   active = ref(''),
   selected = ref(null),
@@ -22,6 +23,12 @@ const packs = ref([]),
   testOpen = ref(false),
   testBusy = ref(false),
   testOutput = ref('');
+const securityOpen = ref(false);
+const protectedFile = computed(
+  () =>
+    selected.value &&
+    (/\.py$/i.test(selected.value.name) || /(^|\/)config\.json$/i.test(selected.value.name)),
+);
 let sequence = 0;
 const pack = computed(() => packs.value.find((p) => p.name === active.value));
 const dirty = computed(() => content.value !== original.value);
@@ -396,6 +403,15 @@ async function upload(files, into = false) {
             <UiIcon name="terminal" :size="18" />{{ tr('测试') }}
           </button>
           <button
+            v-if="protectedFile"
+            id="skill-security"
+            :disabled="busy || dirty"
+            :title="dirty ? tr('请先保存文件，再查看安全门禁') : tr('文件安全门禁')"
+            @click="securityOpen = true"
+          >
+            <UiIcon name="shield" :size="18" />{{ tr('安全门禁') }}
+          </button>
+          <button
             class="danger"
             :title="tr('删除文件')"
             :aria-label="tr('删除文件')"
@@ -438,6 +454,11 @@ async function upload(files, into = false) {
         ><button :disabled="testBusy" @click="testOpen = false">{{ tr('关闭') }}</button></template
       ></UiModal
     >
+    <SkillSecurityModal
+      v-model="securityOpen"
+      :pack="selected?.pack || ''"
+      :member="selected?.name || ''"
+    />
   </section>
 </template>
 <style scoped>

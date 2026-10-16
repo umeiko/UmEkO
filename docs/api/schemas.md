@@ -1757,6 +1757,31 @@
 }
 ```
 
+### _SkillApprovalIn
+
+```json
+{
+  "additionalProperties": false,
+  "properties": {
+    "redispatch": {
+      "default": false,
+      "title": "Redispatch",
+      "type": "boolean"
+    },
+    "sha256": {
+      "pattern": "^[0-9a-f]{64}$",
+      "title": "Sha256",
+      "type": "string"
+    }
+  },
+  "required": [
+    "sha256"
+  ],
+  "title": "_SkillApprovalIn",
+  "type": "object"
+}
+```
+
 ### _ToolDispatchIn
 
 ```json

@@ -144,10 +144,15 @@ CLI 的导入文件只包含内层文档。导入按 Provider / 模型名称合�
 | `/skill-members/{pack}/{member_name}` | PUT `{content}` / DELETE 包内非脚本资源 |
 | `/skill-scripts-template` | GET 脚本模板 |
 | `/skill-scripts/{pack}/{script_name}/test` | POST 测试脚本 |
+| `/skill-security/{pack}/{member}` | GET 查看可信源摘要、分页会话门禁状态及最近管理员操作；POST 重算并同步白名单 |
 
 默认技能启停主要影响新会话，不自动撤销已经分发到现有会话的副本。服务器技能库写入应用目录的 `skills/`，备份时需单独包含。
 
 技能内容 PUT 的 JSON 为 `{"content":"..."}`，创建 / 更新通常返回 `201`，删除为 `204`；完整模型以参考为准。Python 脚本保存检查语法。测试请求为 `{"args":"{}","timeout":10}`，`args` 是 JSON **字符串**；超时限制在 1–30 秒，使用临时工作目录并返回 `{output: ...}`。这是受信任脚本的执行测试，不是容器级隔离。
+
+安全门禁仅支持包内 `scripts/` 下的 `.py` 与 `config.json`，使用独立管理前缀。GET 支持 `offset` 和 `limit`（默认 30，最多 100），返回 `current` 双摘要、`sessions` 文件状态、全量 `counts`、`total` 及最近 `events`。POST JSON 为 `{"sha256":"GET 返回的 current.sha256","redispatch":false}`；摘要必须是 64 位十六进制，源文件变化返回 `409`，额外字段或非布尔 `redispatch` 返回 `422`。不接受客户端传入文件内容、批准摘要或操作人。
+
+默认只同步与可信源一致的旧副本；`redispatch: true` 用管理员源文件替换此文件后更新批准记录。范围是已有该包批准记录的全部会话，运行/排队会话跳过，坏记录及链接不自动修复。返回 `updated`、`unchanged`、`skipped_mismatch`、`skipped_busy`、`skipped_invalid`、`failed` 和审计 `event_id`，可再次 GET 核对。操作不执行脚本，也不放宽其他文件校验。维护流程见[重算与重新下发](../deployment.md#skill-admin-reapproval)。
 
 ## 工具回合上限
 

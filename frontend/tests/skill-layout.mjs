@@ -22,6 +22,10 @@ export async function checkSkillLayout(context, publicBase, adminBase, state, pr
   ).json();
   const errors = [];
   const admin = await context.newPage();
+  const securityRequests = [];
+  admin.on('request', (request) => {
+    if (request.url().includes('/skill-security/')) securityRequests.push(request.url());
+  });
   admin.on('pageerror', (error) => errors.push(error.message));
   await admin.goto(adminBase + '/');
   await admin.locator('#tab-dskills').click();
@@ -173,6 +177,79 @@ export async function checkSkillLayout(context, publicBase, adminBase, state, pr
     requests.every((url) => url.startsWith(publicBase + `/v1/sessions/${session.id}/skill-files/`)),
   );
   await screenshot(work, 'skill-layout-session', prefix);
+  const configFile = pack.locator('[data-skill-path="assets/config.json"]');
+  if (await configFile.isHidden()) await pack.locator('[data-skill-path="assets"]').click();
+  await configFile.click();
+  await admin.locator('#sk-content').waitFor();
+  const configuration = JSON.parse(await admin.locator('#sk-content').inputValue());
+  const changedConfiguration = JSON.stringify(
+    { ...configuration, fixture_approval: 'reviewed' },
+    null,
+    2,
+  );
+  await admin.locator('#sk-content').fill(changedConfiguration);
+  assert.ok(await admin.locator('#skill-security').isDisabled());
+  await admin.locator('.editor-toolbar').getByRole('button', { name: '保存', exact: true }).click();
+  await admin.locator('.editor-dirty').waitFor({ state: 'hidden' });
+  await admin.locator('#skill-security').click();
+  const security = admin
+    .locator('dialog[open]')
+    .filter({ has: admin.locator('[data-skill-security]') });
+  await security.locator('[data-current-md5]').waitFor();
+  const securityUrl = adminBase + '/admin/v1/skill-security/drawio-correction/assets/config.json';
+  assert.ok((await (await context.request.get(securityUrl)).json()).counts.old_version > 0);
+  const firstApproval = admin.waitForResponse(
+    (response) =>
+      response.url().includes('/skill-security/') && response.request().method() === 'POST',
+  );
+  await security.locator('[data-approve-skill]').click();
+  assert.ok((await (await firstApproval).json()).skipped_mismatch > 0);
+  await security.locator('.security-result').waitFor();
+  await security.locator('[data-redispatch]').check();
+  const secondApproval = admin.waitForResponse(
+    (response) =>
+      response.url().includes('/skill-security/') && response.request().method() === 'POST',
+  );
+  await security.locator('[data-approve-skill]').click();
+  assert.ok((await (await secondApproval).json()).updated > 0);
+  await admin.waitForFunction(() => !document.querySelector('[data-approve-skill]').disabled);
+  const safety = await (await context.request.get(securityUrl)).json();
+  assert.equal(safety.counts.old_version, 0);
+  assert.ok(safety.counts.approved > 0);
+  assert.equal(safety.events[0].actor, state.username);
+  const sessionConfig = await (
+    await context.request.get(
+      publicBase + `/v1/sessions/${session.id}/skill-files/drawio-correction/assets/config.json`,
+    )
+  ).json();
+  assert.equal(JSON.parse(sessionConfig.content).fixture_approval, 'reviewed');
+  await security.getByRole('button', { name: '关闭', exact: true }).click();
+  await admin.locator('[data-language-select]').selectOption('en');
+  await admin.locator('#skill-security').click();
+  await security.getByRole('heading', { name: 'File security gates' }).waitFor();
+  await security.locator('[data-current-md5]').waitFor();
+  await security.locator('.security-session summary').first().click();
+  assert.equal(await security.locator('.security-session[open] .security-hashes dt').count(), 4);
+  await security.locator('.security-session summary').first().click();
+  await screenshot(admin, 'skill-security-admin', prefix);
+  await admin.setViewportSize({ width: 390, height: 844 });
+  await admin.waitForTimeout(200);
+  assert.ok(await security.evaluate((element) => element.scrollWidth <= element.clientWidth + 1));
+  const approveBox = await security.locator('[data-approve-skill]').boundingBox();
+  assert.ok(approveBox.y >= 0 && approveBox.y + approveBox.height <= 844);
+  await screenshot(admin, 'skill-security-mobile', prefix);
+  await security.getByRole('button', { name: 'Close', exact: true }).click();
+  await admin.setViewportSize({ width: 1440, height: 1000 });
+  await context.request.post(adminBase + '/admin/logout');
+  assert.ok(
+    securityRequests.length >= 5 &&
+      securityRequests.every((url) => url.startsWith(adminBase + '/admin/v1/skill-security/')),
+  );
+  assert.equal((await context.request.get(securityUrl)).status(), 401);
+  assert.equal(
+    (await context.request.post(securityUrl, { data: { sha256: safety.current.sha256 } })).status(),
+    401,
+  );
   assert.deepEqual(errors, []);
   await work.close();
   await admin.close();

@@ -13,7 +13,7 @@ from __future__ import annotations
 from pathlib import Path
 from typing import Literal
 
-from fastapi import FastAPI, HTTPException, Request, Response
+from fastapi import FastAPI, HTTPException, Request, Response, Query
 from fastapi.responses import HTMLResponse, JSONResponse
 from fastapi.staticfiles import StaticFiles
 from pydantic import BaseModel, ConfigDict, Field, StrictBool
@@ -29,6 +29,12 @@ from ..skill_layout import entries as skill_entries, entry_path, member_path, fi
 ADMIN_COOKIE = "umeko_admin"
 STATIC_DIR = Path(__file__).parent / "static"
 SECRET_MASK = "********"
+
+
+class _SkillApprovalIn(BaseModel):
+    model_config = ConfigDict(extra="forbid")
+    sha256: str = Field(pattern=r"^[0-9a-f]{64}$")
+    redispatch: StrictBool = False
 
 
 TEMPLATE_SCRIPT = """#!/usr/bin/env python
@@ -745,8 +751,9 @@ def create_admin_app(settings: Settings, service: AgentService, store: Store, pu
             target = member_path(base, pack, clean, create=True)
         except ValueError as exc:
             raise HTTPException(400, str(exc)) from exc
-        target.parent.mkdir(parents=True, exist_ok=True)
-        target.write_text(payload.content, encoding="utf-8")
+        with service.skill_approvals.lock:
+            target.parent.mkdir(parents=True, exist_ok=True)
+            target.write_text(payload.content, encoding="utf-8")
         return {"name": clean, "saved": True}
 
     @app.delete("/admin/v1/skill-scripts/{pack}/{script_name:path}", status_code=204)
@@ -756,8 +763,9 @@ def create_admin_app(settings: Settings, service: AgentService, store: Store, pu
             target = member_path(base, pack, script_name)
         except ValueError:
             raise HTTPException(400, "非法路径")
-        if target.is_file():
-            target.unlink()
+        with service.skill_approvals.lock:
+            if target.is_file():
+                target.unlink()
 
     # ---------- 技能包成员文件（checks.md 等 read_pack_file 运行时输入） ----------
 
@@ -775,8 +783,9 @@ def create_admin_app(settings: Settings, service: AgentService, store: Store, pu
             target = member_path(service._skills_library_dir(), pack, clean, create=True)
         except ValueError as exc:
             raise HTTPException(400, str(exc)) from exc
-        target.parent.mkdir(parents=True, exist_ok=True)
-        target.write_text(payload.content, encoding="utf-8")
+        with service.skill_approvals.lock:
+            target.parent.mkdir(parents=True, exist_ok=True)
+            target.write_text(payload.content, encoding="utf-8")
         return {"name": clean, "size": len(payload.content)}
 
     @app.delete("/admin/v1/skill-members/{pack}/{member_name:path}", status_code=204)
@@ -788,8 +797,9 @@ def create_admin_app(settings: Settings, service: AgentService, store: Store, pu
             raise HTTPException(400, "非法路径")
         if target.suffix == ".py":
             raise HTTPException(400, "脚本请走 skill-scripts 删除")
-        if target.is_file():
-            target.unlink()
+        with service.skill_approvals.lock:
+            if target.is_file():
+                target.unlink()
 
     # ---------- 运行参数（app_config 覆盖层，当前：最大工具轮次） ----------
 
@@ -923,6 +933,25 @@ def create_admin_app(settings: Settings, service: AgentService, store: Store, pu
             "name": "my_script.py",
             "content": TEMPLATE_SCRIPT,
         }
+
+    @app.get("/admin/v1/skill-security/{pack}/{member:path}")
+    def skill_security_status(pack: str, member: str, offset: int = Query(0, ge=0), limit: int = Query(30, ge=1, le=100)) -> dict:
+        """查看可信源摘要、会话批准与最近的管理员操作。"""
+        try:
+            return service.skill_approvals.status(pack, member, offset=offset, limit=limit)
+        except (OSError, ValueError) as exc:
+            raise HTTPException(400, str(exc)) from exc
+
+    @app.post("/admin/v1/skill-security/{pack}/{member:path}")
+    def approve_skill_file(pack: str, member: str, payload: _SkillApprovalIn, request: Request) -> dict:
+        """从管理员库重算摘要并同步已有会话白名单，可显式重新下发此文件。"""
+        try:
+            return service.skill_approvals.approve(pack, member, payload.sha256,
+                actor=request.state.admin["username"], actor_id=request.state.admin["id"], redispatch=payload.redispatch)
+        except RuntimeError as exc:
+            raise HTTPException(409, str(exc)) from exc
+        except (OSError, ValueError) as exc:
+            raise HTTPException(400, str(exc)) from exc
 
     @app.post("/admin/v1/skill-scripts/{pack}/{script_name:path}/test")
     def test_skill_script(pack: str, script_name: str, payload: _ScriptTestIn) -> dict:

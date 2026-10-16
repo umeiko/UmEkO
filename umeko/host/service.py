@@ -35,6 +35,7 @@ from .profile import CLOUD_PROFILE, Profile
 from ..skillpacks import parse_skill_pack_text, skill_packs_dir
 from ..skill_layout import copy_package, entry_path, entries, file_metadata, migrate_library
 from ..skill_security import ScriptTrust, guard_skill_write, protected_name
+from .skill_approvals import SkillApprovals, skill_maintenance
 from .storage import Store
 from .results import MACHINE_RESULTS_PROMPT, SUBMISSION_REMINDER, ResultSubmission
 from .configuration import deployment_defaults, model_from_row, resolve_provider_settings
@@ -108,6 +109,7 @@ class AgentService:
         self.sessions: dict[str, SessionState] = {}
         self._lock = threading.Lock()
         self.run_manager = RunManager(max_workers=4)
+        self.skill_approvals = SkillApprovals(self)
 
     @property
     def runs(self) -> dict[str, Run]:
@@ -372,6 +374,7 @@ class AgentService:
         """服务器技能库目录（与 run_skill_script / 管理面同源）。"""
         return skill_packs_dir()
 
+    @skill_maintenance
     def create_session(
         self,
         *,
@@ -552,6 +555,7 @@ class AgentService:
                     self.store.set_resource_mount(session_id, "skills", name, True)
         return state
 
+    @skill_maintenance
     def get_session(self, session_id: str) -> SessionState:
         try:
             return self.sessions[session_id]
@@ -573,6 +577,7 @@ class AgentService:
 
     # ---------- Run 执行 ----------
 
+    @skill_maintenance
     def create_run(self, session_id: str, user_input: str, attachments: list[str]) -> Run:
         session = self.get_session(session_id)
         active = session.active_run_holder["run"]
@@ -730,6 +735,7 @@ class AgentService:
 
     # ---------- Session 复制 ----------
 
+    @skill_maintenance
     def clone_session(self, session_id: str, user_id: str) -> SessionState:
         """复制会话：目录树（workspace/attachments/generate/client）+ 对话记录 + 上下文摘要。
 
@@ -773,6 +779,7 @@ class AgentService:
 
     # ---------- 管理面（仅 admin 端口暴露；用户面路由不含这些入口） ----------
 
+    @skill_maintenance
     def evict_session(self, session_id: str) -> bool:
         """驱逐内存态 Session（取消在跑 Run、丢弃 Agent）；DB 历史保留。"""
         with self._lock:

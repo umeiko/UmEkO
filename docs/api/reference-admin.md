@@ -2,7 +2,7 @@
 
 > 自动生成：请修改源码或生成器，不直接编辑本文件。
 
-共 **66** 个 HTTP 操作。[下载 OpenAPI](openapi-admin.json) · [数据结构](schemas.md)
+共 **68** 个 HTTP 操作。[下载 OpenAPI](openapi-admin.json) · [数据结构](schemas.md)
 
 路径为应用内部路由；带前缀部署时在公共 URL 前加 `UMEKO_ADMIN_BASE_PATH`。登录、原始字节体与 SSE 契约由生成器显式补充。
 
@@ -77,6 +77,8 @@
 | DELETE | `/admin/v1/skill-source/{name}` | Delete Skill Source |
 | GET | `/admin/v1/skill-library` | Skill Library Tree |
 | GET | `/admin/v1/skill-scripts-template` | Skill Script Template |
+| GET | `/admin/v1/skill-security/{pack}/{member}` | Skill Security Status |
+| POST | `/admin/v1/skill-security/{pack}/{member}` | Approve Skill File |
 | POST | `/admin/v1/skill-scripts/{pack}/{script_name}/test` | Test Skill Script |
 
 ## GET /health
@@ -1067,6 +1069,48 @@ Skill Script Template
 | 响应码 | 内容 |
 | --- | --- |
 | 200 | application/json: object |
+
+## GET /admin/v1/skill-security/{pack}/{member}
+
+Skill Security Status
+
+认证：`umeko_admin` Cookie。
+
+查看可信源摘要、会话批准与最近的管理员操作。
+
+| 参数 | 位置 | 必填 | 类型与约束 |
+| --- | --- | --- | --- |
+| `pack` | path | 是 | `{"title": "Pack", "type": "string"}` |
+| `member` | path | 是 | `{"title": "Member", "type": "string"}` |
+| `offset` | query | 否 | `{"default": 0, "minimum": 0, "title": "Offset", "type": "integer"}` |
+| `limit` | query | 否 | `{"default": 30, "maximum": 100, "minimum": 1, "title": "Limit", "type": "integer"}` |
+
+| 响应码 | 内容 |
+| --- | --- |
+| 200 | application/json: object |
+| 422 | application/json: HTTPValidationError |
+
+## POST /admin/v1/skill-security/{pack}/{member}
+
+Approve Skill File
+
+认证：`umeko_admin` Cookie。
+
+从管理员库重算摘要并同步已有会话白名单，可显式重新下发此文件。
+
+| 参数 | 位置 | 必填 | 类型与约束 |
+| --- | --- | --- | --- |
+| `pack` | path | 是 | `{"title": "Pack", "type": "string"}` |
+| `member` | path | 是 | `{"title": "Member", "type": "string"}` |
+
+请求体：必填。
+
+`application/json` → `_SkillApprovalIn`
+
+| 响应码 | 内容 |
+| --- | --- |
+| 200 | application/json: object |
+| 422 | application/json: HTTPValidationError |
 
 ## POST /admin/v1/skill-scripts/{pack}/{script_name}/test
 
