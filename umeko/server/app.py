@@ -366,6 +366,42 @@ def create_app(
         except ValueError as exc:
             raise HTTPException(400, str(exc)) from exc
 
+    @app.get("/v1/sessions/{session_id}/skill-files/{pack}/{member:path}", tags=["client resources"])
+    def read_session_skill_file(session_id: str, pack: str, member: str) -> dict:
+        session = get_session(session_id)
+        from ..skill_layout import member_path
+        try:
+            session.session.authorize_skill_pack(pack)
+            path = member_path(session.root / "client/skills", pack, member)
+            if not path.is_file():
+                raise HTTPException(404, "技能文件不存在")
+            if path.stat().st_size > 1_000_000:
+                raise HTTPException(413, "技能文件过大")
+            return {"name": pack + "/" + member, "content": path.read_text(encoding="utf-8")}
+        except (ValueError, UnicodeError) as exc:
+            raise HTTPException(400, str(exc)) from exc
+
+    @app.put("/v1/sessions/{session_id}/skill-files/{pack}/{member:path}", tags=["client resources"])
+    def write_session_skill_file(session_id: str, pack: str, member: str, payload: ClientResourceUpdate) -> dict:
+        session = get_session(session_id)
+        if session.lock.locked():
+            raise HTTPException(409, "会话正在执行 Run，暂时不能修改技能文件")
+        from ..skill_layout import member_path
+        try:
+            session.session.authorize_skill_pack(pack)
+            path = member_path(session.root / "client/skills", pack, member, create=True)
+            if payload.content is None:
+                raise ValueError("content 必须提供")
+            if len(payload.content.encode("utf-8")) > 1_000_000:
+                raise HTTPException(413, "技能文件过大")
+            if path.name == "SKILL.md":
+                service._validate_resource(payload.content)
+            path.parent.mkdir(parents=True, exist_ok=True)
+            path.write_text(payload.content, encoding="utf-8")
+            return {"name": pack + "/" + member, "saved": True}
+        except ValueError as exc:
+            raise HTTPException(400, str(exc)) from exc
+
     @app.get(
         "/v1/sessions/{session_id}/client/{kind}/{name}",
         response_model=ClientResourceView,
@@ -380,8 +416,8 @@ def create_app(
         except FileNotFoundError as exc:
             raise HTTPException(404, f"资源不存在：{name}") from exc
         return ClientResourceView(
-            kind=kind, name=path.name, mounted=mounted,
-            builtin=path.name in session.builtin_resources[kind],
+            kind=kind, name=name, mounted=mounted,
+            builtin=name in session.builtin_resources[kind],
             content=path.read_text(encoding="utf-8"),
         )
 
@@ -916,19 +952,20 @@ def create_app(
                     break
             if content is None:
                 lib_dir = service._skills_library_dir()
-                lib_file = lib_dir / f"{skill_name}.md"
+                from ..skill_layout import entry_path
+                lib_file = entry_path(lib_dir, skill_name)
                 if lib_file.is_file():
                     content = lib_file.read_text(encoding="utf-8")
             if content is None:
                 raise HTTPException(404, f"Skill 不存在：{skill_name}")
             from ..skillpacks import parse_skill_pack_text
 
-            dest = session.root / "client" / "skills" / f"{skill_name}.md"
-            dest.parent.mkdir(parents=True, exist_ok=True)
-            dest.write_text(content, encoding="utf-8")
+            from ..skill_layout import copy_package, slug
+            skill_name = slug(skill_name)
+            dest = copy_package(service._skills_library_dir(), session.root / "client" / "skills", skill_name, content)
             if parse_skill_pack_text(content) is not None:
-                session.mounted_resources["skills"].add(dest.name)
-                store.set_resource_mount(session.id, "skills", dest.name, True)
+                session.mounted_resources["skills"].add(skill_name + ".md")
+                store.set_resource_mount(session.id, "skills", skill_name + ".md", True)
 
         # 保存上传文件到 workspace
         saved_paths: list[str] = []

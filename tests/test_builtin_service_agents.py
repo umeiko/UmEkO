@@ -9,10 +9,11 @@ from umeko.agent import UmekoAgent
 from umeko.config import ModelConfig, Settings
 from umeko.host.agents import AgentRegistry
 from umeko.host.builtin_agents import (
-    BUILTIN_SERVICE_AGENTS, FLOW_CHART_SLUG, IMAGE_REASONING_SLUG,
+    BUILTIN_SERVICE_AGENTS, FLOW_CHART_SLUG, FLOW_CORRECTION_SLUG, IMAGE_REASONING_SLUG,
     agent_installation_key, install_builtin_agents,
 )
 from umeko.host.storage import Store
+from umeko.skill_layout import entries, entry_path
 from umeko.llm import LLMClient
 from umeko.server.admin import create_admin_app
 from umeko.server.app import create_app
@@ -50,7 +51,7 @@ def test_new_defaults_discovery_admin_and_skill_isolation(tmp_path, user_prefix,
             assert expected["system_prompt"] not in response.text
             session = service.create_session(user_id=owner["id"], agent_snapshot=service.agent_registry.snapshot(definition))
             try:
-                assert {path.name for path in (session.root / "client/skills").glob("*.md")} == set(expected["skill_names"])
+                assert {name + ".md" for name in entries(session.root / "client/skills")} == set(expected["skill_names"])
             finally:
                 service.evict_session(session.id)
             store.set_default_skill_enabled(expected["skill_names"][0], False)
@@ -59,7 +60,8 @@ def test_new_defaults_discovery_admin_and_skill_isolation(tmp_path, user_prefix,
         assert admin.get(admin_prefix + "/admin/v1/agents").status_code == 401
 
 
-@pytest.mark.parametrize("slug,skill", [(FLOW_CHART_SLUG, "drawio-flowchart.md"), (IMAGE_REASONING_SLUG, "image-reasoning.md")])
+@pytest.mark.parametrize("slug,skill", [(FLOW_CHART_SLUG, "drawio-flowchart.md"), (IMAGE_REASONING_SLUG, "image-reasoning.md"),
+                                       (FLOW_CORRECTION_SLUG, "drawio-correction.md")])
 def test_upgrade_preserves_existing_disabled_dependency_and_custom_agent(tmp_path, slug, skill):
     store = Store(tmp_path / "data/umeko.db")
     store.upsert_default_skill(skill, f"---\nname: {skill[:-3]}\ndescription: custom\n---\nCustom instructions")
@@ -75,10 +77,10 @@ def test_upgrade_preserves_existing_disabled_dependency_and_custom_agent(tmp_pat
     assert registry.get(definition["id"]) == customized
     registry.delete(definition["id"])
     store.delete_default_skill(skill)
-    (library / skill).unlink()
+    entry_path(library, skill).unlink()
     assert not install_builtin_agents(registry, library)
     assert slug not in {item["slug"] for item in registry.list()}
-    assert store.default_skill(skill) is None and not (library / skill).exists()
+    assert store.default_skill(skill) is None and not entry_path(library, skill).exists()
     assert store.config()[agent_installation_key(slug)] == "1"
 
 

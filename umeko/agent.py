@@ -39,7 +39,7 @@ _SERVER_SESSION_PATH_POLICY = """
 
 [Server Session 文件策略]
 你运行在服务端，只能访问当前 Session 的 `workspace/`、`attachments/` 和
-`generate/` 节点。所有文件工具参数与回复都必须使用 Session 相对路径，例如
+`generate/` 和 `client/skills/` 节点。技能副本可读写和替换，修改只影响当前会话；技能脚本也从该副本执行。所有文件工具参数与回复都必须使用 Session 相对路径，例如
 `workspace/需求.md`；禁止猜测、请求、复述或向用户展示服务器绝对路径。`.` 仅代表当前
 Session 的上述可读节点，不代表服务进程工作目录或服务器磁盘根目录。
 """

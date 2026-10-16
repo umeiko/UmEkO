@@ -2,6 +2,8 @@
 from __future__ import annotations
 
 import json
+from pathlib import Path
+from ..skill_layout import file_metadata
 
 from ..skillpacks import get_skill_pack, skill_packs_dir
 from .script_runner import _resolve_script
@@ -17,8 +19,8 @@ OUTPUT_SCHEMA = {
 }
 
 
-def _describe(pack: str, name: str) -> dict:
-    item = inspect_script(_resolve_script(pack, name))
+def _describe(pack: str, name: str, directory=None) -> dict:
+    item = inspect_script(_resolve_script(pack, name, directory))
     if item["documentation"] == "declared":
         item.update(output_schema=OUTPUT_SCHEMA, invocation={
             "tool": "run_skill_script", "arguments": {
@@ -29,32 +31,35 @@ def _describe(pack: str, name: str) -> dict:
     return item
 
 
-def list_skill_script(pack: str, script: str = "", offset: int = 0, limit: int = 20) -> str:
+def list_skill_script(pack: str, script: str = "", offset: int = 0, limit: int = 20, directory: Path | None = None) -> str:
     """List a permitted package's scripts, or inspect one script's declared contract."""
     try:
         # Validate names before loading files, and use the same library as the runner.
         if not pack or pack == "." or any(c in pack for c in ("/", "\\", "..", ":")):
             raise ValueError("非法技能包名")
         try:
-            get_skill_pack(pack)
+            get_skill_pack(pack, directory)
         except ValueError:
             raise ValueError("未知技能包：" + pack) from None
-        base = skill_packs_dir().resolve()
+        base = (directory or skill_packs_dir()).resolve()
         folder = (base / pack).resolve()
         if folder != base / pack:
             raise ValueError("技能包目录不能是链接")
         if script:
-            _resolve_script(pack, script)
+            _resolve_script(pack, script, directory)
             names = [script]
         else:
-            names = sorted(p.name for p in folder.glob("*.py") if p.is_file())
+            names = [item["name"] for item in file_metadata(base, pack) if item["name"].endswith(".py")]
+            # Preserve short invocations when each script basename is unique.
+            if len({Path(name).name for name in names}) == len(names):
+                names = [Path(name).name for name in names]
         if type(offset) is not int or offset < 0 or type(limit) is not int or not 1 <= limit <= 20:
             raise ValueError("offset 须为非负整数，limit 须为 1–20")
         entries = []
         used_chars = 0
         for name in names[offset:offset + limit]:
             try:
-                item = _describe(pack, name)
+                item = _describe(pack, name, directory)
             except (ValueError, OSError):
                 item = {"script": name, "documentation": "invalid", "warning": "脚本路径不可访问或越界"}
             size = len(json.dumps(item, ensure_ascii=False, indent=2))

@@ -12,6 +12,8 @@ SCRIPTS = {
     "prepare_drawio.py": "drawio-flowchart",
     "generate_drawio.py": "drawio-flowchart",
     "render_report.py": "doc-image-qc",
+    "prepare_correction.py": "drawio-correction",
+    "finish_correction.py": "drawio-correction",
 }
 
 
@@ -59,7 +61,10 @@ def main() -> int:
                                if options.args_file else options.args)
         if not isinstance(arguments, dict):
             raise ValueError("脚本参数必须是 JSON 对象")
-        script = Path(__file__).resolve().parents[1] / SCRIPTS[options.script] / options.script
+        package = Path(__file__).resolve().parents[1]
+        script = package / "scripts" / options.script
+        if not script.is_file():
+            script = package / SCRIPTS[options.script] / options.script
         if not script.is_file():
             raise ValueError("本技能包未包含所选脚本")
         workdir = root / "generate"

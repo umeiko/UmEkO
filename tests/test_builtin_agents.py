@@ -54,7 +54,7 @@ def test_builtin_bootstrap_card_and_task_skill_selection(tmp_path, prefix):
             settings=Settings(service.settings.text_model, vision_model=vision),
         )
         try:
-            assert (session.root / "client/skills/doc-image-qc.md").is_file()
+            assert (session.root / "client/skills/doc-image-qc/SKILL.md").is_file()
             assert "doc-image-qc" in session.session.skill_catalog_prompt()
             assert "阶段 0" not in session.session.skill_catalog_prompt()
             assert "image_reasoning" in session.agent._skills
@@ -71,7 +71,7 @@ def test_restart_preserves_edits_and_does_not_restore_deleted_defaults(tmp_path)
     edited = service.agent_registry.save({**original, "name": "My QC", "enabled": False}, original["id"])
     store.set_default_skill_enabled("doc-image-qc.md", False)
     library = service._skills_library_dir()
-    checks = library / "doc-image-qc/checks.md"
+    checks = library / "doc-image-qc/references/checks.md"
     checks.write_text("Custom checks", encoding="utf-8")
     restarted = app_for(tmp_path).state.agent_service
     assert restarted.agent_registry.get(original["id"]) == edited
@@ -97,7 +97,8 @@ def test_upgrade_reuses_custom_skill_and_preserves_existing_agent(tmp_path, exis
     store.set_default_skill_enabled("doc-image-qc.md", False)
     (library / "doc-image-qc.md").write_text(content, encoding="utf-8")
     (library / "doc-image-qc").mkdir()
-    script = library / "doc-image-qc/render_report.py"
+    script = library / "doc-image-qc/scripts/render_report.py"
+    script.parent.mkdir(parents=True, exist_ok=True)
     script.write_text("# Custom report script", encoding="utf-8")
     if existing_agent:
         before = registry.save({"slug": "image-qc", "name": "Custom Agent", "description": "Custom service", "skill_names": []})
@@ -109,7 +110,7 @@ def test_upgrade_reuses_custom_skill_and_preserves_existing_agent(tmp_path, exis
         assert not definition["enabled"]  # Do not reactivate a skill deliberately disabled before upgrade.
     assert store.default_skill("doc-image-qc.md") == content
     assert script.read_text(encoding="utf-8") == "# Custom report script"
-    assert (library / "doc-image-qc/checks.md").is_file()
+    assert (library / "doc-image-qc/references/checks.md").is_file()
     assert not install_builtin_agents(registry, library)
 
 
@@ -121,7 +122,7 @@ def test_upgrade_replaces_only_recognized_stock_report(tmp_path, monkeypatch, in
     store = Store(tmp_path / "db.sqlite")
     registry = AgentRegistry(store)
     library = Path(os.environ["UMEKO_SKILL_DIR"])
-    script = library / "doc-image-qc/render_report.py"
+    script = library / "doc-image-qc/scripts/render_report.py"
     script.parent.mkdir(parents=True)
     # Register a controlled old stock version; real stock digests are fixed in the installer.
     stock = "# Stock report v1\nprint('old report')\n"
@@ -132,7 +133,7 @@ def test_upgrade_replaces_only_recognized_stock_report(tmp_path, monkeypatch, in
     if initialized:
         store.set_config({INSTALL_KEY: "1"})
     assert install_builtin_agents(registry, library)
-    assert script.read_bytes() == (ASSETS / "doc-image-qc/render_report.py").read_bytes()
+    assert script.read_bytes() == (ASSETS / "doc-image-qc/scripts/render_report.py").read_bytes()
     assert checks.read_text(encoding="utf-8") == "Custom checklist"
     assert not install_builtin_agents(registry, library)
     script.write_text("# Customized report", encoding="utf-8")
@@ -158,7 +159,8 @@ def test_stock_skill_upgrade_preserves_customizations_and_disabling(tmp_path, mo
     store.set_default_skill_enabled("doc-image-qc.md", False)
     store.set_config({INSTALL_KEY: "1"})
     assert install_builtin_agents(registry, library)
-    latest = (ASSETS / "doc-image-qc.md").read_text(encoding="utf-8")
+    latest = (ASSETS / "doc-image-qc/SKILL.md").read_text(encoding="utf-8")
+    source = library / "doc-image-qc/SKILL.md"
     assert source.read_text(encoding="utf-8") == store.default_skill("doc-image-qc.md") == latest
     assert not store.default_skills()[0]["enabled"]
     assert not install_builtin_agents(registry, library)
@@ -221,7 +223,7 @@ def test_bundled_report_renders_and_packages_images(tmp_path, doc_dir, frozen, m
         assert "No reference document" in archive.read("qc-report.html").decode()
         assert "检查项说明" in archive.read("qc-report.html").decode()
     assert not (image.parent / "qc-report.html").exists()
-    assert service._skills_library_dir().joinpath("doc-image-qc/render_report.py").is_file()
+    assert service._skills_library_dir().joinpath("doc-image-qc/scripts/render_report.py").is_file()
 
 
 @pytest.mark.parametrize("field,path", [("data_path", "../outside.json"), ("doc_dir", "../outside"), ("doc_dir", "client")])
@@ -231,7 +233,7 @@ def test_bundled_report_rejects_paths_outside_session_files(tmp_path, field, pat
     (root / "generate/qc-report.json").write_text('{"items":[]}', encoding="utf-8")
     payload = {"workdir": str(root / "generate"), "session_root": str(root),
                "args": {"data_path": "generate/qc-report.json", "doc_dir": "", field: path}}
-    completed = subprocess.run([sys.executable, str(ASSETS / "doc-image-qc/render_report.py")],
+    completed = subprocess.run([sys.executable, str(ASSETS / "doc-image-qc/scripts/render_report.py")],
                                input=json.dumps(payload), text=True, encoding="utf-8", capture_output=True, check=True)
     result = json.loads(completed.stdout)
     assert not result["ok"] and result["files"] == []

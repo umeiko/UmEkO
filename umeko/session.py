@@ -14,6 +14,7 @@ from pathlib import Path
 from .config import Settings
 from .skillpacks import SkillPack, get_skill_pack, load_skill_packs
 from .tool_catalog import RETIRED_TOOLS
+from .skill_layout import file_metadata
 
 logger = logging.getLogger(__name__)
 
@@ -51,7 +52,7 @@ class Session:
             self.authorize_skill_pack(pack)
         except ValueError as exc:
             return f"错误：{exc}"
-        return handler(pack=pack, **kwargs)
+        return handler(pack=pack, directory=self._skill_dir, **kwargs)
 
     @property
     def output_dir(self) -> Path:
@@ -132,8 +133,7 @@ class Session:
         pack_dir = self._skill_dir / pack_name
         if not pack_dir.is_dir():
             return ""
-        members = [p.name for p in sorted(pack_dir.iterdir())
-                   if p.suffix in (".md", ".py") and p.is_file()]
+        members = [item["name"] for item in file_metadata(self._skill_dir, pack_name)]
         return "、".join(members)
 
     def unuse_skill(self, name: str) -> None:

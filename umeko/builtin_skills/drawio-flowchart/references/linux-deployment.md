@@ -13,11 +13,11 @@ draw.io 桌面程序；服务器没有桌面时使用 Xvfb。包内布局与 XML
 ```sh
 sudo apt-get update
 sudo apt-get install -y ./drawio-amd64-32.4.1.deb python3 xvfb xauth fontconfig fonts-noto-cjk libasound2t64
-sed -i 's/\r$//' drawio_headless.sh
-sudo install -m 0755 drawio_headless.sh /usr/local/bin/drawio-headless
+sed -i 's/\r$//' scripts/drawio_headless.sh
+sudo install -m 0755 scripts/drawio_headless.sh /usr/local/bin/drawio-headless
 ```
 
-上面的 `drawio_headless.sh` 是本包同目录文件；先进入该目录，或将参数替换为它的实际路径。
+上面的 `drawio_headless.sh` 是本包 `scripts/` 中的文件；先进入该目录，或将参数替换为它的实际路径。
 以上依赖名称对应 Ubuntu 24.04；其他发行版安装提供 `libasound.so.2` 的对应 ALSA 包。
 从 Windows 复制 `.sh` 时，先转为 LF 换行再安装，避免 `sh\r` 错误。
 RPM 发行版可选官方 `.rpm` 并安装对应的 Xvfb/xauth/字体包；AppImage 需赋予执行权限，
@@ -99,7 +99,7 @@ fc-match '方正兰亭黑简体'
 将 SkillHub 的 `drawio-flowchart.zip` 解压到单独目录，进入包含 `SKILL.md` 的根目录：
 
 ```sh
-docker build --platform linux/amd64 -f drawio-flowchart/Dockerfile.linux.txt -t umeko-drawio:1.0.2 .
+docker build --platform linux/amd64 -f assets/Dockerfile.linux.txt -t umeko-drawio:1.0.2 .
 ```
 
 Dockerfile 是纯文本 `.txt`，以便随 SkillHub ZIP 上传。镜像安装并校验固定版本官方 `.deb`，
@@ -110,7 +110,7 @@ Dockerfile 是纯文本 `.txt`，以便随 SkillHub ZIP 上传。镜像安装并
 一条命令做无模型验收并自动删除测试容器：
 
 ```sh
-docker run --init --rm --shm-size=512m --network none --entrypoint python3 umeko-drawio:1.0.2 /skill/drawio-flowchart/linux_smoke.py
+docker run --init --rm --shm-size=512m --network none --entrypoint python3 umeko-drawio:1.0.2 /skill/scripts/linux_smoke.py
 ```
 
 验收会准备委派任务、用内置 XML 示例生成有判断分支的流程图与分层架构图，

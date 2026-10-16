@@ -8,6 +8,7 @@ import { TreeSelection, topLevelEntries, copyEntryName } from './treeSelection.j
 import { renderMarkdown as markdown, renderSkillMarkdown, codeHtml } from '../shared/markdown.js';
 import { copyText } from '../shared/clipboard.js';
 import { prettyToolData } from './toolData.js';
+import { skillTree } from '../shared/skillTree.js';
 export function mountWorkspaceRuntime({ onTemporaryState = () => {} } = {}) {
   const lifecycle = new AbortController();
   function listen(target, type, callback, options = {}) {
@@ -1467,6 +1468,12 @@ export function mountWorkspaceRuntime({ onTemporaryState = () => {} } = {}) {
     const resources = await api(`/v1/sessions/${targetSessionId}/client/${kind}`);
     if (targetSessionId !== sessionId || requestToken !== resourceLoadTokens[kind]) return;
     const panel = ui.panels[kind];
+    const expandedDirectories = new Map(
+      [...panel.querySelectorAll('details[data-skill]')].map((node) => [
+        node.dataset.skill,
+        node.open,
+      ]),
+    );
     panel.replaceChildren();
     const toolbar = document.createElement('div');
     toolbar.className = 'resource-toolbar';
@@ -1556,12 +1563,49 @@ export function mountWorkspaceRuntime({ onTemporaryState = () => {} } = {}) {
       open.className = 'resource-open';
       const label = document.createElement('span');
       label.className = 'resource-name';
-      label.textContent = resource.name;
-      open.append(treeIcon(resource.name), label);
-      open.title = resource.name;
-      open.addEventListener('click', () => openResource(kind, resource.name, row));
+      label.textContent = resource.name.replace(/\.md$/, '');
+      open.append(treeIcon(resource.name, true), label);
+      open.title = label.textContent + '/';
+      open.addEventListener('click', () => {
+        group.open = true;
+        openResource(kind, resource.name, row);
+      });
       row.append(open, mounted);
-      panel.append(row);
+      const group = document.createElement('details');
+      group.className = 'session-skill-tree';
+      group.dataset.skill = resource.name;
+      group.open = expandedDirectories.get(resource.name) || false;
+      const summary = document.createElement('summary');
+      summary.append(row);
+      group.append(summary);
+      function appendFiles(nodes, container) {
+        for (const node of nodes) {
+          if (node.directory) {
+            const folder = document.createElement('details');
+            folder.dataset.skill = `${resource.name}/${node.path}`;
+            folder.open = expandedDirectories.get(folder.dataset.skill) ?? true;
+            const heading = document.createElement('summary');
+            heading.append(treeIcon(node.name, true), document.createTextNode(node.name));
+            heading.className = 'skill-tree-folder';
+            folder.append(heading);
+            appendFiles(node.children, folder);
+            container.append(folder);
+          } else {
+            const file = document.createElement('button');
+            file.type = 'button';
+            file.className = 'session-skill-file';
+            file.title = `${resource.name.replace(/\.md$/, '')}/${node.path}`;
+            file.dataset.skillPath = node.path;
+            const text = document.createElement('span');
+            text.textContent = node.name;
+            file.append(treeIcon(node.name), text);
+            file.addEventListener('click', () => openResource(kind, resource.name, row, node.path));
+            container.append(file);
+          }
+        }
+      }
+      appendFiles(skillTree(resource.files || []), group);
+      panel.append(group);
     }
     const hint = document.createElement('div');
     hint.className = 'resource-drop-hint';
@@ -1644,7 +1688,8 @@ export function mountWorkspaceRuntime({ onTemporaryState = () => {} } = {}) {
       }
       await refreshResources(kind);
       const row = [...ui.panels[kind].querySelectorAll('.resource-item')].find(
-        (node) => node.querySelector('.resource-name')?.textContent === resource.name,
+        (node) =>
+          node.querySelector('.resource-name')?.textContent === resource.name.replace(/\.md$/, ''),
       );
       if (row) await openResource(kind, resource.name, row);
       ui.resourceDialog.close();
@@ -1679,25 +1724,29 @@ export function mountWorkspaceRuntime({ onTemporaryState = () => {} } = {}) {
     });
   }
 
-  async function openResource(kind, name, row) {
+  async function openResource(kind, name, row, member = '') {
     if (previewCollapsed) setPreviewCollapsed(false);
     selectedFile = null;
     selectedResource = null;
     const targetSessionId = sessionId;
     const request = resetPreviewViews();
+    const pack = name.replace(/\.md$/, '');
+    const filePath = member.split('/').map(encodeURIComponent).join('/');
     const resource = await api(
-      `/v1/sessions/${targetSessionId}/client/${kind}/${encodeURIComponent(name)}`,
+      member
+        ? `/v1/sessions/${targetSessionId}/skill-files/${encodeURIComponent(pack)}/${filePath}`
+        : `/v1/sessions/${targetSessionId}/client/${kind}/${encodeURIComponent(name)}`,
     );
     if (request !== previewRequest || targetSessionId !== sessionId) return;
-    selectedResource = resource;
+    selectedResource = { ...resource, kind, name, member, pack };
     document
       .querySelectorAll('.resource-item.active')
       .forEach((node) => node.classList.remove('active'));
     row.classList.add('active');
-    ui.previewTitle.textContent = name;
-    ui.previewTitle.title = name;
+    ui.previewTitle.textContent = member ? `${pack}/${member}` : `${pack}/SKILL.md`;
+    ui.previewTitle.title = ui.previewTitle.textContent;
     ui.saveResource.classList.remove('hidden');
-    ui.deleteResource.classList.toggle('hidden', resource.builtin);
+    ui.deleteResource.classList.toggle('hidden', resource.builtin || Boolean(member));
     if (temporary) {
       ui.saveResource.classList.add('hidden');
       ui.deleteResource.classList.add('hidden');
@@ -1706,9 +1755,9 @@ export function mountWorkspaceRuntime({ onTemporaryState = () => {} } = {}) {
     ui.attachWorkspaceFile.classList.add('hidden');
     ui.downloadFile.classList.add('hidden');
     ui.resourceEditor.value = resource.content || '';
-    previewSource = { text: ui.resourceEditor.value, path: name, resource: true };
+    previewSource = { text: ui.resourceEditor.value, path: member || name, resource: true };
     ui.markdownToolbar.classList.remove('hidden');
-    setMarkdownMode('rendered');
+    setMarkdownMode(/\.md$/i.test(member || name) ? 'rendered' : 'source');
   }
 
   function entryName(path) {
@@ -2524,7 +2573,10 @@ export function mountWorkspaceRuntime({ onTemporaryState = () => {} } = {}) {
       workspaceRefreshTimer = null;
       if (targetSessionId !== sessionId) return;
       try {
-        await refreshTree(targetSessionId);
+        await Promise.all([
+          refreshTree(targetSessionId),
+          ...(activeSection === 'skills' ? [refreshResources('skills', targetSessionId)] : []),
+        ]);
       } catch (error) {
         console.warn('自动刷新 Workspace 失败', error);
       }
@@ -2989,14 +3041,18 @@ export function mountWorkspaceRuntime({ onTemporaryState = () => {} } = {}) {
     if (!selectedResource) return;
     ui.saveResource.disabled = true;
     try {
-      selectedResource = await api(
-        `/v1/sessions/${sessionId}/client/${selectedResource.kind}/${encodeURIComponent(selectedResource.name)}`,
+      const current = selectedResource;
+      const saved = await api(
+        current.member
+          ? `/v1/sessions/${sessionId}/skill-files/${encodeURIComponent(current.pack)}/${current.member.split('/').map(encodeURIComponent).join('/')}`
+          : `/v1/sessions/${sessionId}/client/${current.kind}/${encodeURIComponent(current.name)}`,
         {
-          method: 'PATCH',
+          method: current.member ? 'PUT' : 'PATCH',
           headers: { 'Content-Type': 'application/json' },
           body: JSON.stringify({ content: ui.resourceEditor.value }),
         },
       );
+      selectedResource = { ...current, ...saved, name: current.name };
       setStatus(t('resource.saved', { name: selectedResource.name }), true);
     } catch (error) {
       setStatus(error.message);

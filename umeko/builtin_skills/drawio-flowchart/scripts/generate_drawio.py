@@ -19,7 +19,7 @@ sys.path.insert(0, str(Path(__file__).resolve().parent))
 from drawio_arch import apply_layout
 from drawio_flow import apply_flow_layout, make_flow_grid
 from drawio_xml import apply_font, extract_xml, sanitize_xml
-from drawio_style import load_style, edge_visuals, apply_visuals, verify_restyle
+from drawio_style import load_style, edge_visuals, apply_visuals, verify_restyle, packaged_file
 
 SKILL_SCRIPT = {
     "description": "校验 draw.io XML 结构、确定性布局并按需导出 PNG/SVG/PDF；不调用模型或执行图像复检。",
@@ -151,7 +151,7 @@ def _source(args, session_root):
 
 
 def _config():
-    config = json.loads(Path(__file__).with_name("config.json").read_text(encoding="utf-8"))
+    config = json.loads(packaged_file(Path(__file__).resolve().parent, "config.json").read_text(encoding="utf-8"))
     if not isinstance(config, dict):
         raise ValueError("config.json 必须为对象")
     return config

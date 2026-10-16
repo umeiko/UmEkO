@@ -8,7 +8,7 @@
 | --- | --- |
 | `read_document` / `grep_files` | 宿主的文件读取、分页读取或检索工具；读取 DOCX/PDF 时使用宿主的相应文档读取能力 |
 | `write_file` | 宿主的文件写入工具；完整 XML/JSON 直接落盘，主 Agent 汇报只保留短结论与路径 |
-| `read_pack_file(pack, member)` | 读取技能根目录下 `<pack>/<member>`，如 `doc-image-qc/checks.md`、`drawio-flowchart/style.md` |
+| `read_pack_file(pack, member)` | 读取技能根目录下 `references/`、`scripts/`、`assets/` 下的成员，如 `references/checks.md`、`references/style.md` |
 | `run_skill_script(pack, script, args)` | 用下方 `scripts/run.py` 运行相应脚本；`args` 内容保持原样 |
 | `delegate_task(task)` | 宿主的文件子 Agent／任务委派工具，交付文件路径和短摘要。宿主没有委派能力时，明确说明上下文隔离不可用，由当前 Agent 分段处理相同任务，保留落盘与短汇报纪律 |
 | `image_reasoning(prompt, image_paths)` | 宿主的多图视觉工具或当前模型的原生视觉输入；原生看图也视为视觉能力可用。不可用时按技能的缺失能力规则处理，不猜测图片 |
@@ -38,17 +38,17 @@ python "<技能目录>/scripts/run.py" render_report.py --root "<任务目录>" 
 
 ## 图表导出环境
 
-draw.io 技能的完整原始默认样式在 `drawio-flowchart/style.md`，默认字体为方正兰亭黑简体，
+draw.io 技能的完整原始默认样式在 `references/style.md`，默认字体为方正兰亭黑简体，
 字号 10.5，流程图网格 172×28、纵向间距 28，架构图组件 180×60。
 字体由运行环境自行安装，安装包不分发字体或 draw.io 可执行文件。
 
-`drawio-flowchart/config.json` 保留当前视觉配置，导出的 `drawio_path` 留空。
+`assets/config.json` 保留当前视觉配置，导出的 `drawio_path` 留空。
 使用者可自行配置 draw.io 桌面程序路径，或设置 `DRAWIO_PATH`／`UMEKO_DRAWIO_PATH`，
 也可使用 PATH 中的 `draw.io`／`drawio`。Linux 无显示器时需要可用的导出显示环境。
 缺少桌面程序仍可生成可编辑 `.drawio`；PNG/SVG/PDF 必须以实际导出结果为准。
 只生成 `.drawio` 可在生成参数中设置 `"formats": []`。
 
-Linux 部署与配置填写见绘图包的 `drawio-flowchart/linux-deployment.md`。
+Linux 部署与配置填写见绘图包的 `references/linux-deployment.md`。
 `config.json` 的 `_help` 是说明字段，不参与布局；无桌面服务器的 `drawio_path`
 填写已安装的 `drawio_headless.sh` 包装入口的绝对路径，不能填整条命令。
 绘图包附带 `Dockerfile.linux.txt` 和 `linux_smoke.py`，可直接构建并验收两类图和三种导出。

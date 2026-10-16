@@ -24,6 +24,7 @@ from ..config import Settings, normalize_base_path
 from ..host.service import AgentService
 from ..host.storage import Store
 from ..skillpacks import parse_skill_pack_text
+from ..skill_layout import entries as skill_entries, entry_path, member_path, file_metadata
 
 ADMIN_COOKIE = "umeko_admin"
 STATIC_DIR = Path(__file__).parent / "static"
@@ -616,16 +617,17 @@ def create_admin_app(settings: Settings, service: AgentService, store: Store, pu
         library = []
         lib_dir = service._skills_library_dir()
         if lib_dir.is_dir():
-            for f in sorted(lib_dir.glob("*.md")):
+            for pack_name, f in skill_entries(lib_dir).items():
                 try:
                     text = f.read_text(encoding="utf-8")
                 except (OSError, UnicodeDecodeError):
                     continue
                 if parse_skill_pack_text(text) is None:
                     continue
-                entry = db_skills.get(f.name)
+                identity = pack_name + ".md"
+                entry = db_skills.get(identity)
                 library.append({
-                    "name": f.name,
+                    "name": identity,
                     "size": len(text),
                     "imported": entry is not None,
                     "enabled": bool(entry["enabled"]) if entry else None,
@@ -659,7 +661,7 @@ def create_admin_app(settings: Settings, service: AgentService, store: Store, pu
         clean = Path(name).name
         if clean != name or not clean.endswith(".md"):
             raise HTTPException(400, "名称必须是 xxx.md 形式（不带路径）")
-        source = service._skills_library_dir() / clean
+        source = entry_path(service._skills_library_dir(), clean)
         if not source.is_file():
             raise HTTPException(404, f"技能库中不存在：{clean}")
         content = source.read_text(encoding="utf-8")
@@ -706,51 +708,52 @@ def create_admin_app(settings: Settings, service: AgentService, store: Store, pu
             raise HTTPException(400, "非法包名")
         scripts = []
         if pack_dir.is_dir():
-            for f in sorted(pack_dir.glob("*.py")):
+            for f in sorted(pack_dir.rglob("*.py")):
                 try:
                     text = f.read_text(encoding="utf-8")
                 except (OSError, UnicodeDecodeError):
                     continue
-                scripts.append({"name": f.name, "size": len(text)})
+                scripts.append({"name": f.relative_to(pack_dir).as_posix(), "size": len(text)})
         return {"pack": pack, "scripts": scripts}
 
-    @app.get("/admin/v1/skill-scripts/{pack}/{script_name}")
+    @app.get("/admin/v1/skill-scripts/{pack}/{script_name:path}")
     def get_skill_script(pack: str, script_name: str) -> dict:
         base = service._skills_library_dir()
-        target = (base / pack / script_name).resolve()
         try:
-            target.relative_to(base.resolve())
+            target = member_path(base, pack, script_name)
         except ValueError:
             raise HTTPException(400, "非法路径")
         if not target.is_file():
             raise HTTPException(404, "脚本不存在")
         return {"name": script_name, "content": target.read_text(encoding="utf-8")}
 
-    @app.put("/admin/v1/skill-scripts/{pack}/{script_name}", status_code=201)
+    @app.put("/admin/v1/skill-scripts/{pack}/{script_name:path}", status_code=201)
     def put_skill_script(pack: str, script_name: str, payload: _DefaultSkillIn) -> dict:
         """新建/覆盖技能包脚本。内容须可编译（语法检查），防低级错误上线。"""
         base = service._skills_library_dir()
         if "/" in pack or "\\" in pack or ".." in pack:
             raise HTTPException(400, "非法包名")
-        clean = Path(script_name).name
-        if clean != script_name or not clean.endswith(".py"):
-            raise HTTPException(400, "脚本名须为 xxx.py（不带路径）")
+        clean = script_name
+        if not clean.endswith(".py"):
+            raise HTTPException(400, "脚本名须为 .py")
         import ast
         try:
             ast.parse(payload.content)
         except SyntaxError as e:
             raise HTTPException(400, f"Python 语法错误：{e}") from e
-        pack_dir = base / pack
-        pack_dir.mkdir(parents=True, exist_ok=True)
-        (pack_dir / clean).write_text(payload.content, encoding="utf-8")
+        try:
+            target = member_path(base, pack, clean, create=True)
+        except ValueError as exc:
+            raise HTTPException(400, str(exc)) from exc
+        target.parent.mkdir(parents=True, exist_ok=True)
+        target.write_text(payload.content, encoding="utf-8")
         return {"name": clean, "saved": True}
 
-    @app.delete("/admin/v1/skill-scripts/{pack}/{script_name}", status_code=204)
+    @app.delete("/admin/v1/skill-scripts/{pack}/{script_name:path}", status_code=204)
     def delete_skill_script(pack: str, script_name: str) -> None:
         base = service._skills_library_dir()
-        target = (base / pack / script_name).resolve()
         try:
-            target.relative_to(base.resolve())
+            target = member_path(base, pack, script_name)
         except ValueError:
             raise HTTPException(400, "非法路径")
         if target.is_file():
@@ -760,25 +763,27 @@ def create_admin_app(settings: Settings, service: AgentService, store: Store, pu
 
     _MEMBER_EXTS = {".md", ".markdown", ".json", ".yaml", ".yml", ".txt", ".csv"}
 
-    @app.put("/admin/v1/skill-members/{pack}/{member_name}", status_code=201)
+    @app.put("/admin/v1/skill-members/{pack}/{member_name:path}", status_code=201)
     def put_skill_member(pack: str, member_name: str, payload: _DefaultSkillIn) -> dict:
         """新建/覆盖技能包成员文件（文本类；.py 脚本走 skill-scripts 端点）。"""
         if "/" in pack or "\\" in pack or ".." in pack:
             raise HTTPException(400, "非法包名")
-        clean = Path(member_name).name
-        if clean != member_name or Path(clean).suffix.lower() not in _MEMBER_EXTS:
+        clean = member_name
+        if Path(clean).suffix.lower() not in _MEMBER_EXTS:
             raise HTTPException(400, "成员文件须为 .md/.json/.yaml/.txt/.csv（不带路径）")
-        pack_dir = service._skills_library_dir() / pack
-        pack_dir.mkdir(parents=True, exist_ok=True)
-        (pack_dir / clean).write_text(payload.content, encoding="utf-8")
+        try:
+            target = member_path(service._skills_library_dir(), pack, clean, create=True)
+        except ValueError as exc:
+            raise HTTPException(400, str(exc)) from exc
+        target.parent.mkdir(parents=True, exist_ok=True)
+        target.write_text(payload.content, encoding="utf-8")
         return {"name": clean, "size": len(payload.content)}
 
-    @app.delete("/admin/v1/skill-members/{pack}/{member_name}", status_code=204)
+    @app.delete("/admin/v1/skill-members/{pack}/{member_name:path}", status_code=204)
     def delete_skill_member(pack: str, member_name: str) -> None:
         base = service._skills_library_dir()
-        target = (base / pack / member_name).resolve()
         try:
-            target.relative_to(base.resolve())
+            target = member_path(base, pack, member_name)
         except ValueError:
             raise HTTPException(400, "非法路径")
         if target.suffix == ".py":
@@ -820,9 +825,8 @@ def create_admin_app(settings: Settings, service: AgentService, store: Store, pu
 
     @app.get("/admin/v1/skill-source/{name}")
     def get_skill_source(name: str) -> dict:
-        target = (service._skills_library_dir() / name).resolve()
         try:
-            target.relative_to(service._skills_library_dir().resolve())
+            target = entry_path(service._skills_library_dir(), name)
         except ValueError:
             raise HTTPException(400, "非法路径")
         if not target.is_file():
@@ -841,14 +845,15 @@ def create_admin_app(settings: Settings, service: AgentService, store: Store, pu
             raise HTTPException(400, str(exc)) from exc
         base = service._skills_library_dir()
         base.mkdir(parents=True, exist_ok=True)
-        (base / clean).write_text(payload.content, encoding="utf-8")
+        target = entry_path(base, clean, create=True)
+        target.parent.mkdir(parents=True, exist_ok=True)
+        target.write_text(payload.content, encoding="utf-8")
         return {"name": clean, "saved": True}
 
     @app.delete("/admin/v1/skill-source/{name}", status_code=204)
     def delete_skill_source(name: str) -> None:
-        target = (service._skills_library_dir() / name).resolve()
         try:
-            target.relative_to(service._skills_library_dir().resolve())
+            target = entry_path(service._skills_library_dir(), name)
         except ValueError:
             raise HTTPException(400, "非法路径")
         if target.is_file():
@@ -865,28 +870,34 @@ def create_admin_app(settings: Settings, service: AgentService, store: Store, pu
         def dir_entries(pack_dir):
             scripts, members = [], []
             if pack_dir.is_dir():
-                for sf in sorted(pack_dir.iterdir()):
+                for sf in sorted(pack_dir.rglob("*")):
                     if not sf.is_file():
                         continue
+                    if sf.name == "SKILL.md" or "__pycache__" in sf.parts or sf.suffix in {".pyc", ".pyo"}:
+                        continue
+                    try:
+                        member_path(base, pack_dir.name, sf.relative_to(pack_dir).as_posix())
+                    except ValueError:
+                        continue
                     stat = sf.stat()
-                    item = {"name": sf.name, "size": stat.st_size, "mtime": int(stat.st_mtime)}
+                    item = {"name": sf.relative_to(pack_dir).as_posix(), "size": stat.st_size, "mtime": int(stat.st_mtime)}
                     (scripts if sf.suffix == ".py" else members).append(item)
             return scripts, members
 
         packs = []
         if base.is_dir():
             names = set()
-            for f in sorted(base.glob("*.md")):
-                pack = f.stem
+            for pack, f in skill_entries(base).items():
                 names.add(pack)
                 scripts, members = dir_entries(base / pack)
                 entry = None
                 for item in store.default_skills():
-                    if item["name"] == f.name:
+                    if item["name"] == pack + ".md":
                         entry = item
                         break
                 packs.append({
-                    "name": pack, "md": f.name, "md_size": f.stat().st_size,
+                    "name": pack, "md": pack + ".md", "md_size": f.stat().st_size,
+                    "files": file_metadata(base, pack),
                     "md_mtime": int(f.stat().st_mtime),
                     "scripts": scripts, "members": members,
                     "imported": entry is not None,
@@ -913,13 +924,17 @@ def create_admin_app(settings: Settings, service: AgentService, store: Store, pu
             "content": TEMPLATE_SCRIPT,
         }
 
-    @app.post("/admin/v1/skill-scripts/{pack}/{script_name}/test")
+    @app.post("/admin/v1/skill-scripts/{pack}/{script_name:path}/test")
     def test_skill_script(pack: str, script_name: str, payload: _ScriptTestIn) -> dict:
         """在隔离环境测试脚本：临时 workdir，超时强杀，返回结果与进度。"""
         import tempfile
         from ..skills.script_runner import run_skill_script
         base = service._skills_library_dir()
-        if not (base / pack / script_name).is_file():
+        try:
+            target = member_path(base, pack, script_name)
+        except ValueError as exc:
+            raise HTTPException(400, str(exc)) from exc
+        if not target.is_file():
             raise HTTPException(404, "脚本不存在")
         with tempfile.TemporaryDirectory() as tmp:
             result = run_skill_script(

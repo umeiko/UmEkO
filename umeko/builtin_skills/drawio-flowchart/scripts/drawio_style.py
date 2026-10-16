@@ -9,6 +9,14 @@ EDGE_KEYS = {"strokeColor", "strokeWidth", "dashed", "dashPattern", "fontColor",
              "endArrow", "endFill", "startArrow", "startFill", "opacity"}
 
 
+def packaged_file(package, name):
+    legacy = package / name
+    if legacy.is_file():
+        return legacy
+    root = package.parent if package.name == "scripts" else package
+    return root / ("references" if name.endswith(".md") else "assets") / name
+
+
 def session_file(value, root):
     if not isinstance(value, str):
         raise ValueError("style_path 必须为会话相对路径字符串")
@@ -31,7 +39,7 @@ def _color(value):
 
 
 def load_style(style_path, root, diagram_type, package):
-    source = session_file(style_path, root) if style_path else package / "style.md"
+    source = session_file(style_path, root) if style_path else packaged_file(package, "style.md")
     text = source.read_text(encoding="utf-8")
     meta, body = {}, text
     match = re.match(r"\A---\s*\n(.*?)\n---\s*\n(.*)\Z", text, re.S)

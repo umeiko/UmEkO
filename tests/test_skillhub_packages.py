@@ -24,11 +24,11 @@ spec.loader.exec_module(packager)
 def packages(tmp_path):
     source = tmp_path / "source"
     shutil.copytree(BUILTINS, source, ignore=shutil.ignore_patterns("__pycache__", "*.pyc"))
-    config = source / "drawio-flowchart/config.json"
+    config = source / "drawio-flowchart/assets/config.json"
     data = json.loads(config.read_text(encoding="utf-8"))
     data["drawio_path"] = "C:/fixture-only/private/drawio.exe"
     config.write_text(json.dumps(data, ensure_ascii=False), encoding="utf-8")
-    entry = source / "drawio-flowchart.md"
+    entry = source / "drawio-flowchart/SKILL.md"
     entry.write_text(entry.read_text(encoding="utf-8") + "\n管理员自定义正文必须完整保留。\n", encoding="utf-8")
     snapshot = tmp_path / "snapshot"
     packager.export_skills(source, snapshot, "1.0.0")
@@ -50,27 +50,29 @@ def run(pack, root, script, arguments):
 
 def test_complete_portable_reproducible_packages(packages, tmp_path):
     source, snapshot, output, archives = packages
-    assert {p.stem for p in archives} == {"doc-image-qc", "drawio-flowchart", "image-reasoning"}
+    assert {p.stem for p in archives} == {"doc-image-qc", "drawio-flowchart", "image-reasoning", "drawio-correction"}
     for archive_path in archives:
         with zipfile.ZipFile(archive_path) as archive:
             assert archive.testzip() is None
             entry = archive.read("SKILL.md").decode("utf-8")
             fields = packager.validate_entry(entry)
             assert fields["slug"] == f"umeiko-{archive_path.stem}"
-            original = source / f"{archive_path.stem}.md"
+            original = source / archive_path.stem / "SKILL.md"
             assert packager.entry_parts(original.read_bytes().decode("utf-8"))[1].strip() in entry
             manifest = json.loads(archive.read("package-manifest.json"))
-            assert manifest["source_files_sha256"][original.name] == packager.digest(original.read_bytes())
+            assert manifest["source_files_sha256"][original.relative_to(source).as_posix()] == packager.digest(original.read_bytes())
             for relative, data in packager.safe_files(source / archive_path.stem).items():
-                if relative == "config.json" and archive_path.stem == "drawio-flowchart":
-                    assert json.loads(archive.read(f"drawio-flowchart/{relative}"))["drawio_path"] == ""
+                if relative == "SKILL.md":
+                    continue
+                if relative == "assets/config.json" and archive_path.stem == "drawio-flowchart":
+                    assert json.loads(archive.read(relative))["drawio_path"] == ""
                 else:
-                    assert archive.read(f"{archive_path.stem}/{relative}") == data
+                    assert archive.read(relative) == data
             if archive_path.stem == "drawio-flowchart":
-                assert {"drawio-flowchart/linux-deployment.md", "drawio-flowchart/Dockerfile.linux.txt",
-                        "drawio-flowchart/drawio_headless.sh", "drawio-flowchart/linux_smoke.py"} <= set(archive.namelist())
+                assert {"references/linux-deployment.md", "assets/Dockerfile.linux.txt",
+                        "scripts/drawio_headless.sh", "scripts/linux_smoke.py"} <= set(archive.namelist())
                 assert not any(b"mermaid" in archive.read(member).lower() for member in archive.namelist())
-    assert json.loads((source / "drawio-flowchart/config.json").read_text(encoding="utf-8"))["drawio_path"]
+    assert json.loads((source / "drawio-flowchart/assets/config.json").read_text(encoding="utf-8"))["drawio_path"]
     second = packager.package_skills(snapshot, tmp_path / "repeat")
     assert [p.read_bytes() for p in archives] == [p.read_bytes() for p in second]
     checksums = (output / "SHA256SUMS.txt").read_text(encoding="utf-8")
@@ -90,7 +92,7 @@ def test_packaged_runner_prepares_and_generates_both_diagram_types(packages, tmp
     assert all((root / p).is_file() for p in prepared["files"])
     assert "architecture" in (root / prepared["files"][0]).read_text(encoding="utf-8")
     for kind in ("flowchart", "architecture"):
-        rule = (pack / "drawio-flowchart" / f"{kind}.md").read_text(encoding="utf-8")
+        rule = (pack / "references" / f"{kind}.md").read_text(encoding="utf-8")
         xml = re.search(r"```xml\n(.*?)```", rule, re.S).group(1)
         (root / "generate/source.xml").write_text(xml, encoding="utf-8")
         code, result = run(pack, root, "generate_drawio.py", {"source_path": "generate/source.xml", "diagram_type": kind,
@@ -101,7 +103,7 @@ def test_packaged_runner_prepares_and_generates_both_diagram_types(packages, tmp
         assert any(c.get("vertex") == "1" for c in xml.iter("mxCell"))
     code, failed = run(pack, root, "generate_drawio.py", {"source_path": "generate/不存在.xml", "formats": []})
     assert code != 0 and not failed["ok"] and failed["files"] == []
-    config = pack / "drawio-flowchart/config.json"
+    config = pack / "assets/config.json"
     data = json.loads(config.read_text(encoding="utf-8"))
     data["drawio_path"] = str(tmp_path / "missing-renderer")
     config.write_text(json.dumps(data), encoding="utf-8")
@@ -111,12 +113,33 @@ def test_packaged_runner_prepares_and_generates_both_diagram_types(packages, tmp
     assert failed["errors"][0]["code"] == "renderer_unavailable" and "图片导出未完成" in failed["result"]
 
 
+def test_correction_package_runs_without_the_original_package(packages, tmp_path):
+    source, _, _, archives = packages
+    pack = tmp_path / "correction-pack"
+    with zipfile.ZipFile(next(p for p in archives if p.stem == "drawio-correction")) as archive:
+        archive.extractall(pack)
+    assert not (pack / "drawio-flowchart").exists()
+    assert (pack / "references/style.md").read_bytes() == (source / "drawio-flowchart/references/style.md").read_bytes()
+    manifest = json.loads((pack / "package-manifest.json").read_text(encoding="utf-8"))
+    assert "drawio-flowchart/references/style.md" in manifest["source_files_sha256"]
+    assert json.loads((pack / "assets/config.json").read_text(encoding="utf-8"))["drawio_path"] == ""
+    root = tmp_path / "correction-task"
+    code, prepared = run(pack, root, "prepare_correction.py", {"source_text": "flowchart TD\nA --> B"})
+    assert code == 0 and prepared["ok"]
+    xml = re.search(r"```xml\n(.*?)```", (source / "drawio-flowchart/references/flowchart.md").read_text(encoding="utf-8"), re.S).group(1)
+    (root / prepared["source_path"]).write_text(xml, encoding="utf-8")
+    code, result = run(pack, root, "finish_correction.py", {"manifest_path": prepared["manifest_path"]})
+    assert code == 0 and result["ok"] and (root / result["files"][0]).is_file()
+    code, result = run(pack, root, "prepare_correction.py", {"source_text": "做图片质检"})
+    assert code != 0 and result["status"] == "rejected" and result["files"] == []
+
+
 def test_portable_runner_retains_stderr_in_failure_json(tmp_path):
     pack = tmp_path / "package"
     (pack / "scripts").mkdir(parents=True)
     (pack / "drawio-flowchart").mkdir()
     shutil.copy2(REPO / "scripts/skillhub/run.py", pack / "scripts/run.py")
-    (pack / "drawio-flowchart/generate_drawio.py").write_text(
+    (pack / "scripts/generate_drawio.py").write_text(
         'import sys\nprint("ImportError: fixture dependency missing",file=sys.stderr)\nsys.exit(7)', encoding="utf-8")
     code, failed = run(pack, tmp_path / "task", "generate_drawio.py", {})
     assert code == 1 and not failed["ok"] and failed["exit_code"] == 7
@@ -159,6 +182,6 @@ def test_rejects_binary_members_and_keeps_existing_snapshot(packages, tmp_path):
     source, snapshot, _, _ = packages
     with pytest.raises(ValueError, match="目标已经存在"):
         packager.export_skills(source, snapshot, "1.0.1")
-    (source / "drawio-flowchart/tool.exe").write_bytes(b"MZ\0")
+    (source / "drawio-flowchart/assets/tool.exe").write_bytes(b"MZ\0")
     with pytest.raises(ValueError, match="不支持的文件类型"):
         packager.export_skills(source, tmp_path / "invalid-export", "1.0.0")

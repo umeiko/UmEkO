@@ -30,7 +30,7 @@ def test_prompt_upgrade_preserves_admin_choices_and_deleted_skill(tmp_path, cust
     # Prompt migration must work without revalidating or restoring a deliberately removed skill.
     store.delete_default_skill("doc-image-qc.md")
     library = service._skills_library_dir()
-    (library / "doc-image-qc.md").unlink()
+    (library / "doc-image-qc/SKILL.md").unlink()
     assert install_builtin_agents(registry, library) is (not customized)
     upgraded = registry.get(original["id"])
     assert upgraded["system_prompt"] == (prompt if customized else IMAGE_QC_PROMPT)

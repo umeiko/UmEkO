@@ -176,6 +176,7 @@ class ClientResourceView(BaseModel):
     mounted: bool
     builtin: bool
     content: str | None = None
+    files: list[dict] = Field(default_factory=list)
 
 
 class ClientResourceUpdate(BaseModel):

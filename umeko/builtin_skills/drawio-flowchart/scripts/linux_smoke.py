@@ -37,7 +37,7 @@ def main() -> None:
     (root / "attachments/request.md").write_text("中文流程：开始、审核、通过或退回、结束。", encoding="utf-8")
     # The distribution does not ship the original proprietary font. Use an installed
     # open font explicitly for this fixture; leave the original default style intact.
-    style = (package / "style.md").read_text(encoding="utf-8")
+    style = (package.parent / "references/style.md").read_text(encoding="utf-8")
     style = re.sub(r"\A---\n", "---\nfont_family: " + json.dumps(options.font_family, ensure_ascii=False)
                    + "\nfont_size: 10.5\n", style, count=1)
     style_path = root / "attachments/linux-style.md"

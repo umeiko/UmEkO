@@ -2,6 +2,28 @@
 
 CLI、网页和机器任务复用同一个主 Agent 工具集。`list_skill_script` 是执行引擎的工具，由主 Agent 在任务中调用；它不增加独立的 HTTP 或顶级 MCP/A2A 入口。
 
+## Skill 的目录与分发
+
+[Agent Skills 格式规范](https://agentskills.io/specification)采用一个技能一个目录：`SKILL.md` 必需，含 YAML 头部 `name` / `description` 和执行说明，其余目录按需组织。常见形式如下：
+
+```text
+flowchart-correction/
+├── SKILL.md                 # 名称、适用场景、门禁和工作流
+├── scripts/                 # 转换、校验等可执行脚本
+├── references/              # 详细用法、输入输出说明、style.md 等
+└── assets/                  # XML 模板、示例、静态配置
+```
+
+通常先披露名称和简介，命中任务再加载 `SKILL.md`，细节和脚本按需读取或执行。多个 Markdown 是附属参考资料，不必拆成多个技能，也不该每轮全量放入提示词。ZIP 只是分发容器，解开后仍是上述目录；也可以通过 Git 仓库分发。脚本语言、依赖和调用协议需另外说明；本项目的 JSON stdin/stdout 与 `SKILL_SCRIPT` 契约属于 UmEkO 运行约定，不是所有 Skill 宿主通用的接口。
+
+UmEkO 内置模板与运行库均采用标准目录：`技能名/SKILL.md`、`scripts/`、`references/`、`assets/`。启动时将旧的 `技能名.md` 及同名目录中的文件迁入对应位置；只移动没有目标冲突的文件，冲突保留双方，不覆盖自定义内容，也不恢复已删除的资源。现有启用状态与智能体绑定不变；API 中的 `技能名.md` 仍是兼容的技能标识，已不代表实际文件路径。旧的 `member="checks.md"`、`script="render_report.py"` 调用仍能解析，也支持新的包内相对路径。
+
+新会话获得完整技能包副本，位于 `client/skills/<技能名>/`。`use_skill`、`read_pack_file`、`list_skill_script` 和 `run_skill_script` 都使用本会话副本；模型通过普通 `read_document`、`write_file`、`replace_in_file` 读写副本，主 Agent 和文件子 Agent 均可使用。编辑不会回写共享技能库或影响其他会话，重启恢复也保留这些编辑和删除；管理员修改共享库后，新会话才取得新版本。临时工作台仅可查看当前智能体已披露技能的文件；模型修改能力也限于自己的会话副本。整包复制不代表把所有内容塞入模型上下文，仍按需加载。
+
+自定义脚本迁入 `scripts/` 后，如通过 `__file__` 定位配套文件，应改用相对技能根目录的 `references/` 或 `assets/` 路径；原文件内容不做自动改写，迁移前备份持久化技能库与数据目录。内置脚本已适配。对外用 `scripts/package_skillhub_skills.py` 导出相同标准布局的自包含 ZIP，含宿主运行说明与独立适配器。
+
+内置资源共享由 `umeko/builtin_skills/shared-assets.json` 明确列举：流程图修正从流程图制作的同一份源码组装风格、布局和 XML 校验模块。安装与导出均组装为自包含的包，不依赖跨包工具授权或符号链接，不额外披露绘图制作技能。安装后的资源可独立编辑；可识别的原版升级沿用已有保留管理员修改/删除的策略。
+
 ## 发现与执行
 
 1. `list_skill_packs` 查看有权访问的技能名称与简介。

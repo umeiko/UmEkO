@@ -1,3 +1,4 @@
+from umeko.skill_layout import entries, entry_path
 import json
 
 import pytest
@@ -117,14 +118,14 @@ def test_agent_card_skills_match_dispatch_and_keep_instructions_private(machine_
     assert "PRIVATE" not in json.dumps(card)
     owner = store.create_user("catalogue-admin", "fixture-pass", "admin")["id"]
     session = service.create_session(user_id=owner, agent_snapshot=service.agent_registry.snapshot(definition))
-    assert {p.name for p in (session.root / "client" / "skills").glob("*.md")} == {s["id"] for s in card["skills"]}
+    assert {name + ".md" for name in entries(session.root / "client/skills")} == {s["id"] for s in card["skills"]}
     updated = SKILL.replace("name: image-qc", "name: renamed-qc").replace("检查图片内容并生成报告", "最新能力说明")
     store.upsert_default_skill("image-qc.md", updated)
     changed = client.get(public).json()["skills"][0]
     assert changed["id"] == "image-qc.md" and changed["name"] == "renamed-qc"
     store.set_default_skill_enabled("report.md", False)
     assert [s["id"] for s in client.get(public).json()["skills"]] == ["image-qc.md"]
-    assert (session.root / "client" / "skills" / "report.md").exists()
+    assert entry_path(session.root / "client/skills", "report").exists()
     newer = service.create_session(user_id=owner, agent_snapshot=service.agent_registry.snapshot(definition))
-    assert [p.name for p in (newer.root / "client" / "skills").glob("*.md")] == ["image-qc.md"]
-    assert (newer.root / "client" / "skills" / "image-qc.md").read_text(encoding="utf-8") == updated
+    assert [name + ".md" for name in entries(newer.root / "client/skills")] == ["image-qc.md"]
+    assert entry_path(newer.root / "client/skills", "image-qc").read_text(encoding="utf-8") == updated

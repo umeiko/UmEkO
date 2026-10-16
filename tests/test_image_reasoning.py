@@ -38,7 +38,6 @@ def agent_factory(tmp_path):
         library = root / "client/skills"
         library.mkdir(parents=True)
         if qc:
-            shutil.copy2(ASSETS / "doc-image-qc.md", library)
             shutil.copytree(ASSETS / "doc-image-qc", library / "doc-image-qc")
         model = lambda name: ModelConfig(name, "fixture-key", "http://unused.invalid")
         settings = Settings(model("main"), text_model_vision=main_vision,
@@ -139,7 +138,7 @@ def test_subagent_accepts_general_visual_task_without_skill_and_respects_tool_fi
 
 def test_qc_keeps_skill_workflow_and_passes_checks_to_delegated_visual_tool(agent_factory, monkeypatch):
     agent, image, _ = agent_factory(separate_vision=True, qc=True)
-    checks = (ASSETS / "doc-image-qc/checks.md").read_text(encoding="utf-8").strip()
+    checks = (ASSETS / "doc-image-qc/references/checks.md").read_text(encoding="utf-8").strip()
     visual_prompt = "按以下技能检查标准质检此图片，逐项给出结论与证据；缺少参照记 NA：\n" + checks
     task = "质检 attachments/sample.png。使用 image_reasoning，完整检查标准与要求：\n" + visual_prompt
     main_requests, sub_requests, visual_calls = [], [], []

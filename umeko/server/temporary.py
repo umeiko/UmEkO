@@ -104,6 +104,9 @@ class TemporaryWorkspaceMiddleware:
                 return await JSONResponse(resources, headers=PRIVATE)(scope, receive, send)
             if method == "GET" and suffix.startswith("/client/skills/"):
                 allowed = suffix[len("/client/skills/"):] in skills
+            if method == "GET" and suffix.startswith("/skill-files/"):
+                parts = suffix[len("/skill-files/"):].split("/", 1)
+                allowed = len(parts) == 2 and parts[0] + ".md" in skills
         run_match = re.fullmatch(r"/v1/runs/([^/]+)(/events|/cancel)?", rest)
         if run_match:
             run = service.runs.get(run_match.group(1))

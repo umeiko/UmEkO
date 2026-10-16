@@ -22,12 +22,13 @@ from umeko.host.builtin_skills import ASSETS, installation_key, install_builtin_
 from umeko.host.storage import Store
 from umeko.server.admin import create_admin_app
 from umeko.server.app import create_app
+from umeko.skill_layout import entry_path, member_path
 
 PACK = ASSETS / "drawio-flowchart"
 FLOWCHART_SKILL = "drawio-flowchart.md"
-EXAMPLES = re.findall(r"```xml\n(.*?)```", (PACK / "flowchart.md").read_text(encoding="utf-8"), re.S)
+EXAMPLES = re.findall(r"```xml\n(.*?)```", (PACK / "references/flowchart.md").read_text(encoding="utf-8"), re.S)
 FLOW = next(xml for xml in EXAMPLES if any("rhombus" in c.get("style", "") for c in ET.fromstring(xml).iter("mxCell")))
-ARCH = re.search(r"```xml\n(.*?)```", (PACK / "architecture.md").read_text(encoding="utf-8"), re.S).group(1)
+ARCH = re.search(r"```xml\n(.*?)```", (PACK / "references/architecture.md").read_text(encoding="utf-8"), re.S).group(1)
 
 
 def app_for(tmp_path, user_prefix="", admin_prefix=""):
@@ -40,7 +41,7 @@ def run_script(tmp_path, args, pack=PACK, script="generate_drawio.py"):
     root = tmp_path / "session"
     workdir = root / "generate"
     workdir.mkdir(parents=True, exist_ok=True)
-    result = subprocess.run([sys.executable, str(pack / script)],
+    result = subprocess.run([sys.executable, str(pack / "scripts" / script)],
                             input=json.dumps({"args": args, "workdir": str(workdir), "session_root": str(root)}),
                             text=True, encoding="utf-8", capture_output=True, timeout=20,
                             env={**os.environ, "PYTHONIOENCODING": "utf-8",
@@ -60,7 +61,7 @@ def test_admin_dispatch_session_generation_and_download(tmp_path, user_prefix, a
     try:
         assert store.config()[installation_key(FLOWCHART_SKILL)] == "1"
         assert {a["slug"] for a in service.agent_registry.list()} == {
-            "image-qc", "flow-chart-agent", "image-resioning-agent"}
+            "image-qc", "flow-chart-agent", "image-resioning-agent", "flowchart-correction"}
         with TestClient(admin_app) as admin, TestClient(app) as user:
             api = admin_prefix + "/admin/v1/"
             assert admin.get(api + "skill-library").status_code == 401
@@ -69,15 +70,15 @@ def test_admin_dispatch_session_generation_and_download(tmp_path, user_prefix, a
             pack = next(p for p in listing if p["name"] == "drawio-flowchart")
             assert pack["imported"] and pack["enabled"]
             assert admin.post(api + f"default-skills/{FLOWCHART_SKILL}/toggle").json()["enabled"] is False
-            assert "generate_drawio.py" in {s["name"] for s in pack["scripts"]}
-            assert {"flowchart.md", "architecture.md", "config.json"} <= {s["name"] for s in pack["members"]}
+            assert "scripts/generate_drawio.py" in {s["name"] for s in pack["scripts"]}
+            assert {"references/flowchart.md", "references/architecture.md", "assets/config.json"} <= {s["name"] for s in pack["members"]}
             old = service.create_session(user_id=account["id"])
             sessions.append(old)
-            assert not (old.root / "client/skills" / FLOWCHART_SKILL).exists()
+            assert not entry_path(old.root / "client/skills", FLOWCHART_SKILL).exists()
             assert admin.post(api + f"default-skills/{FLOWCHART_SKILL}/toggle").json()["enabled"]
             session = service.create_session(user_id=account["id"])
             sessions.append(session)
-            assert (session.root / "client/skills" / FLOWCHART_SKILL).is_file()
+            assert entry_path(session.root / "client/skills", FLOWCHART_SKILL).is_file()
             service.update_client_resource(session.id, "skills", FLOWCHART_SKILL, mounted=True)
             assert "drawio-flowchart" in session.session.skill_catalog_prompt()
             assert "image_reasoning" not in session.agent._skills
@@ -101,8 +102,8 @@ def test_admin_dispatch_session_generation_and_download(tmp_path, user_prefix, a
             assert admin.post(api + f"default-skills/{FLOWCHART_SKILL}/toggle").json()["enabled"] is False
             newer = service.create_session(user_id=account["id"])
             sessions.append(newer)
-            assert not (newer.root / "client/skills" / FLOWCHART_SKILL).exists()
-            assert (session.root / "client/skills" / FLOWCHART_SKILL).exists()
+            assert not entry_path(newer.root / "client/skills", FLOWCHART_SKILL).exists()
+            assert entry_path(session.root / "client/skills", FLOWCHART_SKILL).exists()
             assert service.agent_registry.snapshot(definition)["dispatched_skills"] == []
             assert admin.post(admin_prefix + "/admin/logout").status_code == 204
             assert admin.get(api + "skill-library").status_code == 401
@@ -120,8 +121,8 @@ def test_upgrade_and_restart_preserve_admin_choices(tmp_path):
     assert store.default_skill(FLOWCHART_SKILL)
     library = service._skills_library_dir()
     custom = "---\nname: drawio-flowchart\ndescription: Custom diagram skill\n---\nCustom instructions"
-    (library / FLOWCHART_SKILL).write_text(custom, encoding="utf-8")
-    config = library / "drawio-flowchart/config.json"
+    entry_path(library, FLOWCHART_SKILL).write_text(custom, encoding="utf-8")
+    config = library / "drawio-flowchart/assets/config.json"
     config.write_text('{"drawio_path":"/custom/tool"}', encoding="utf-8")
     store.upsert_default_skill(FLOWCHART_SKILL, custom)
     store.set_default_skill_enabled(FLOWCHART_SKILL, True)
@@ -134,7 +135,7 @@ def test_upgrade_and_restart_preserve_admin_choices(tmp_path):
     assert not next(s for s in restarted.default_skills() if s["name"] == FLOWCHART_SKILL)["enabled"]
     restarted.delete_default_skill(FLOWCHART_SKILL)
     config.unlink()
-    (library / FLOWCHART_SKILL).unlink()
+    entry_path(library, FLOWCHART_SKILL).unlink()
     final = app_for(tmp_path).state.store
     assert final.default_skill(FLOWCHART_SKILL) is None and not config.exists()
 
@@ -153,7 +154,7 @@ def test_default_installer_discovers_other_packages_without_domain_rules(tmp_pat
     assert install_builtin_skills(store, library)
     assert {s["name"] for s in store.default_skills()} == {"table-summary.md"}
     assert not store.default_skills()[0]["enabled"]
-    assert (library / "table-summary/settings.json").is_file()
+    assert (library / "table-summary/assets/settings.json").is_file()
     assert not install_builtin_skills(store, library)
 
 
@@ -177,7 +178,7 @@ def test_stock_upgrade_preserves_configuration_custom_edits_and_deletions(tmp_pa
     }), encoding="utf-8")
     monkeypatch.setattr(builtin_skills, "ASSETS", assets)
     script, config = library / "fixture/run.py", library / "fixture/config.json"
-    (library / entry).write_bytes(old_entry.replace("\n", newline).encode())
+    entry_path(library, entry).write_bytes(old_entry.replace("\n", newline).encode())
     script.write_bytes(old_script.replace("\n", newline).encode())
     config.write_text('{"custom":"retain"}', encoding="utf-8")
     store = Store(tmp_path / "fixture.sqlite")
@@ -185,28 +186,29 @@ def test_stock_upgrade_preserves_configuration_custom_edits_and_deletions(tmp_pa
     store.set_default_skill_enabled(entry, False)
     store.set_config({installation_key(entry): "1"})
     assert install_builtin_skills(store, library)
+    script, config = member_path(library, "fixture", "run.py"), member_path(library, "fixture", "config.json")
     assert script.read_bytes() == (assets / "fixture/run.py").read_bytes()
-    assert (library / entry).read_text(encoding="utf-8") == store.default_skill(entry) == new_entry
+    assert entry_path(library, entry).read_text(encoding="utf-8") == store.default_skill(entry) == new_entry
     assert not store.default_skills()[0]["enabled"]
     assert config.read_text() == '{"custom":"retain"}'
     assert not install_builtin_skills(store, library)
     store.upsert_default_skill(entry, "Custom admin instructions")
-    (library / entry).write_text(old_entry, encoding="utf-8")
+    entry_path(library, entry).write_text(old_entry, encoding="utf-8")
     assert install_builtin_skills(store, library)
     assert store.default_skill(entry) == "Custom admin instructions"
     assert not store.default_skills()[0]["enabled"]
     script.write_text("# Custom implementation", encoding="utf-8")
-    (library / entry).write_text("Custom library instructions", encoding="utf-8")
+    entry_path(library, entry).write_text("Custom library instructions", encoding="utf-8")
     store.upsert_default_skill(entry, "Custom admin instructions")
     assert not install_builtin_skills(store, library)
     assert script.read_text() == "# Custom implementation"
     assert store.default_skill(entry) == "Custom admin instructions"
-    assert (library / entry).read_text() == "Custom library instructions"
+    assert entry_path(library, entry).read_text() == "Custom library instructions"
     script.unlink()
-    (library / entry).unlink()
+    entry_path(library, entry).unlink()
     store.delete_default_skill(entry)
     assert not install_builtin_skills(store, library)
-    assert not script.exists() and not (library / entry).exists() and store.default_skill(entry) is None
+    assert not script.exists() and not entry_path(library, entry).exists() and store.default_skill(entry) is None
 
 
 def test_standalone_flow_layout_and_optional_renderer(tmp_path):
@@ -488,7 +490,7 @@ def test_architecture_auto_nested_groups_grid_and_explicit_dependencies(tmp_path
 
 
 def test_export_returns_fresh_files_and_drops_failed_stale_preview(tmp_path, monkeypatch):
-    spec = importlib.util.spec_from_file_location("drawio_skill_test", PACK / "generate_drawio.py")
+    spec = importlib.util.spec_from_file_location("drawio_skill_test", PACK / "scripts/generate_drawio.py")
     module = importlib.util.module_from_spec(spec)
     spec.loader.exec_module(module)
     monkeypatch.setattr(module, "_renderer", lambda config: ("fixture-drawio", None))
@@ -518,7 +520,7 @@ def test_export_returns_fresh_files_and_drops_failed_stale_preview(tmp_path, mon
 
 
 def test_export_timeout_retains_renderer_diagnosis_and_draft(tmp_path, monkeypatch):
-    spec = importlib.util.spec_from_file_location("drawio_timeout_test", PACK / "generate_drawio.py")
+    spec = importlib.util.spec_from_file_location("drawio_timeout_test", PACK / "scripts/generate_drawio.py")
     module = importlib.util.module_from_spec(spec)
     spec.loader.exec_module(module)
     monkeypatch.setattr(module, "_renderer", lambda config: ("fixture-drawio", None))
@@ -542,9 +544,9 @@ def test_packaged_skill_is_self_contained(tmp_path):
     assert first.read_bytes() == second.read_bytes()
     with zipfile.ZipFile(first) as archive:
         assert archive.testzip() is None
-        assert FLOWCHART_SKILL in archive.namelist()
-        assert {"drawio-flowchart/linux-deployment.md", "drawio-flowchart/drawio_headless.sh",
-                "drawio-flowchart/Dockerfile.linux.txt", "drawio-flowchart/linux_smoke.py"} <= set(archive.namelist())
+        assert "drawio-flowchart/SKILL.md" in archive.namelist()
+        assert {"drawio-flowchart/references/linux-deployment.md", "drawio-flowchart/scripts/drawio_headless.sh",
+                "drawio-flowchart/assets/Dockerfile.linux.txt", "drawio-flowchart/scripts/linux_smoke.py"} <= set(archive.namelist())
         assert not any("mermaid" in name.lower() or "__pycache__" in name for name in archive.namelist())
         # Docker Compose legitimately uses `init: true`; prohibit diagram directives.
         forbidden = ("mermaid", "mmdc", "```mmd", "%%{init")

@@ -8,7 +8,14 @@ from pathlib import Path
 import tempfile
 
 from ..skillpacks import parse_skill_pack_text
+from ..skillassets import skill_members
+from ..skill_layout import entry_path, member_path, migrate_library, entries
 from .builtin_agents import ASSETS, IMAGE_QC_SKILL
+
+
+def asset_path(root, relative):
+    parts = relative.split("/", 1)
+    return entry_path(root, parts[0]) if len(parts) == 1 else member_path(root, parts[0], parts[1])
 
 
 def installation_key(filename: str) -> str:
@@ -21,8 +28,16 @@ def _upgrade_stock_assets(store, library_dir: Path) -> bool:
     if not manifest.is_file():
         return False
     changed = False
-    for relative, known in json.loads(manifest.read_text(encoding="utf-8")).items():
-        source, target = ASSETS / relative, library_dir / relative
+    upgrades = json.loads(manifest.read_text(encoding="utf-8"))
+    sources = {relative: asset_path(ASSETS, relative) for relative in upgrades}
+    known_sources = {source: upgrades[relative] for relative, source in sources.items()}
+    for name in entries(ASSETS):
+        for member, source in skill_members(ASSETS, name).items():
+            alias = name + "/" + member
+            if source in known_sources and alias not in upgrades:
+                sources[alias], upgrades[alias] = source, known_sources[source]
+    for relative, known in upgrades.items():
+        source, target = sources[relative], asset_path(library_dir, relative)
         entry = Path(relative).name if len(Path(relative).parts) == 1 else Path(relative).parts[0] + ".md"
         if store.config().get(installation_key(entry)) != "1" or store.default_skill(entry) is None:
             continue
@@ -61,29 +76,29 @@ def _upgrade_stock_assets(store, library_dir: Path) -> bool:
 
 def install_builtin_skills(store, library_dir: Path) -> bool:
     """Discover packages from bundled files; no domain tools or agent registrations."""
+    migrate_library(library_dir)
     installed = False
-    for entry in sorted(ASSETS.glob("*.md")):
+    for name, entry in entries(ASSETS).items():
         # This existing default has its own agent bootstrap and stock-upgrade policy.
-        if entry.name == IMAGE_QC_SKILL or store.config().get(installation_key(entry.name)) == "1":
+        identity = name + ".md"
+        if identity == IMAGE_QC_SKILL or store.config().get(installation_key(identity)) == "1":
             continue
-        sources = [entry, *sorted((ASSETS / entry.stem).rglob("*"))]
-        for source in sources:
-            if not source.is_file() or "__pycache__" in source.parts:
-                continue
-            target = library_dir / source.relative_to(ASSETS)
+        sources = {"SKILL.md": entry, **skill_members(ASSETS, name)}
+        for relative, source in sources.items():
+            target = member_path(library_dir, name, relative, create=True)
             target.parent.mkdir(parents=True, exist_ok=True)
             try:
                 with target.open("xb") as output:
                     output.write(source.read_bytes())
             except FileExistsError:
                 pass
-        content = (library_dir / entry.name).read_text(encoding="utf-8")
+        content = entry_path(library_dir, name).read_text(encoding="utf-8")
         if parse_skill_pack_text(content) is None:
             raise ValueError(f"默认技能格式无效，请检查 {entry.name}")
-        if store.default_skill(entry.name) is None:
-            store.upsert_default_skill(entry.name, content)
+        if store.default_skill(identity) is None:
+            store.upsert_default_skill(identity, content)
             # Visible in administration. Agent bootstrap may enable new dependencies.
-            store.set_default_skill_enabled(entry.name, False)
-        store.set_config({installation_key(entry.name): "1"})
+            store.set_default_skill_enabled(identity, False)
+        store.set_config({installation_key(identity): "1"})
         installed = True
     return _upgrade_stock_assets(store, library_dir) or installed

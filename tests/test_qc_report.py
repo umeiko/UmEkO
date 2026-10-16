@@ -18,7 +18,7 @@ from umeko.host.builtin_agents import ASSETS
 def renderer(tmp_path):
     pack = tmp_path / "doc-image-qc"
     shutil.copytree(ASSETS / "doc-image-qc", pack)
-    spec = importlib.util.spec_from_file_location("qc_report_fixture", pack / "render_report.py")
+    spec = importlib.util.spec_from_file_location("qc_report_fixture", pack / "scripts/render_report.py")
     module = importlib.util.module_from_spec(spec)
     spec.loader.exec_module(module)
     return module
@@ -71,7 +71,7 @@ def test_custom_checklist_is_the_source_and_is_html_escaped(renderer):
 
 
 def test_report_can_supply_custom_names_and_scopes_without_a_checklist(renderer):
-    Path(renderer.__file__).with_name("checks.md").unlink()
+    (Path(renderer.__file__).parent.parent / "references/checks.md").unlink()
     rendered = renderer.render_report_html({"items": [{
         "image": "one.png", "status": "PASS", "checks": [
             {"id": "X1", "name": 'Custom "check"', "description": "Inspect <labels>", "status": "PASS"},

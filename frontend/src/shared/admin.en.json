@@ -551,5 +551,6 @@
   "需要服务已配置命令执行器": "Requires a configured command runner",
   "控制平台主 Agent 和子 Agent 的工具下发。用户默认跟随全局设置，也可在用户管理中单独授权。模型能力和服务配置仍须满足工具要求。": "Control tools for the main Agent and subagent. Users inherit global dispatch or receive individual grants in Users. Model capabilities and server configuration must still meet the tool requirements.",
   "保存后下一轮调用重新加载；已撤销的工具会在执行时拒绝。机器任务答案提交是协议必需能力，仅在机器任务中提供。": "Changes reload on the next turn. Revoked tools are rejected at execution. Result submission is required by the machine task protocol and is only exposed in machine tasks.",
-  "默认跟随全局下发。可单独授权未全局下发的工具；取消全部可配置工具不会禁用机器任务答案提交。": "Inherit global dispatch by default. You can grant tools that are not globally dispatched. Removing all optional tools keeps machine task result submission available."
+  "默认跟随全局下发。可单独授权未全局下发的工具；取消全部可配置工具不会禁用机器任务答案提交。": "Inherit global dispatch by default. You can grant tools that are not globally dispatched. Removing all optional tools keeps machine task result submission available.",
+  "SKILL.md 为技能入口；scripts、references、assets 分别存放脚本、参考和资源。保存后下发给新会话，已有会话保留独立副本。": "SKILL.md is the entry point; scripts, references and assets hold code, guidance and resources. New sessions receive updates; existing sessions keep independent copies."
 }

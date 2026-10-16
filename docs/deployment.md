@@ -145,7 +145,7 @@ fc-match -f '%{family}\n' '方正兰亭黑简体'
 字体目录权限需允许容器服务账户读取；容器启动后执行 `fc-match` 核对实际 family。
 方正字体作为独立 Release 资产下载，Skill ZIP 不包含字体二进制。
 Linux 版 draw.io、Xvfb、`drawio_path`、完整 Docker 命令和无模型验收见
-[绘图 Skill 的 Linux 部署说明](https://github.com/umeiko/UmEkO/blob/main/umeko/builtin_skills/drawio-flowchart/linux-deployment.md)。
+[绘图 Skill 的 Linux 部署说明](https://github.com/umeiko/UmEkO/blob/main/umeko/builtin_skills/drawio-flowchart/references/linux-deployment.md)。
 
 ## 配置放在哪里
 

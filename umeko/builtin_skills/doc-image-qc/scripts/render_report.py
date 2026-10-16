@@ -297,7 +297,10 @@ def _plain(value):
 def _check_catalog():
     """与执行检查共用技能包清单，不在渲染器中另写一套编号定义。"""
     try:
-        text = Path(__file__).with_name("checks.md").read_text(encoding="utf-8-sig")
+        source = Path(__file__).with_name("checks.md")
+        if not source.is_file():
+            source = Path(__file__).resolve().parent.parent / "references/checks.md"
+        text = source.read_text(encoding="utf-8-sig")
     except (OSError, UnicodeError):
         return {}
     catalog = {}

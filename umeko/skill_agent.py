@@ -7,6 +7,7 @@ from pathlib import Path
 from .config import Settings
 from .llm import LLMClient
 from .skillpacks import parse_skill_pack_text, skill_packs_dir
+from .skill_layout import entry_path
 
 _NAME_RE = re.compile(r"^[a-z0-9][a-z0-9_-]*$")
 
@@ -32,7 +33,7 @@ class SkillAgent:
         name = name.strip().lower()
         if not _NAME_RE.match(name):
             return SkillResult(False, error="Skill 名称只能含小写字母、数字、下划线或连字符")
-        target = self._directory / f"{name}.md"
+        target = entry_path(self._directory, name, create=True)
         if target.exists():
             return SkillResult(False, error=f"Skill {name!r} 已存在")
         previous = ""

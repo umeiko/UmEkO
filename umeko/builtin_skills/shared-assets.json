@@ -1,0 +1,13 @@
+{
+  "drawio-correction": {
+    "drawio-flowchart": [
+      "style.md",
+      "config.json",
+      "drawio_style.py",
+      "drawio_xml.py",
+      "drawio_flow.py",
+      "drawio_arch.py",
+      "generate_drawio.py"
+    ]
+  }
+}

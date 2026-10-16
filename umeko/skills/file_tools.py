@@ -98,7 +98,7 @@ def resolve_readable_path(
     if candidate == boundary and allow_root:
         return candidate
     if not any(candidate == item or item in candidate.parents for item in allowed):
-        raise ValueError("只允许读取当前 Session 的工作区、附件和产物目录")
+        raise ValueError("只允许读取当前 Session 获授权的文件目录")
     return candidate
 
 
@@ -124,7 +124,7 @@ def _valid_file_glob(file_glob: str) -> bool:
     )
 
 
-def _writable_path(path: str, root: Path, display_root: Path | None = None) -> Path:
+def _writable_path(path: str, root: Path, display_root: Path | None = None, extra_roots=()) -> Path:
     """写操作安全边界：只允许写产物目录内的文件；相对路径按产物目录解析。
 
     Server 模式下模型被引导使用 Session 相对路径（如 generate/a.md），
@@ -132,6 +132,10 @@ def _writable_path(path: str, root: Path, display_root: Path | None = None) -> P
     生成 generate/generate/a.md 的嵌套。
     """
     p = Path(path)
+    if display_root is not None and extra_roots:
+        candidate = (p if p.is_absolute() else display_root / p).resolve()
+        if any(candidate.is_relative_to(extra.resolve()) for extra in extra_roots):
+            return candidate
     if not p.is_absolute():
         if (
             display_root is not None
@@ -150,10 +154,11 @@ def _writable_path(path: str, root: Path, display_root: Path | None = None) -> P
 def write_file(
     path: str, content: str, root: Path, display_root: Path | None = None,
     should_cancel: CancelCheck = None,
+    extra_roots=(),
 ) -> str:
     raise_if_cancelled(should_cancel)
     try:
-        p = _writable_path(path, root, display_root)
+        p = _writable_path(path, root, display_root, extra_roots)
     except ValueError as e:
         return f"错误：{e}"
     p.parent.mkdir(parents=True, exist_ok=True)
@@ -167,10 +172,10 @@ def write_file(
 def replace_in_file(path: str, old_text: str, new_text: str, root: Path,
                     replace_all: bool = False,
                     display_root: Path | None = None,
-                    should_cancel: CancelCheck = None) -> str:
+                    should_cancel: CancelCheck = None, extra_roots=()) -> str:
     raise_if_cancelled(should_cancel)
     try:
-        p = _writable_path(path, root, display_root)
+        p = _writable_path(path, root, display_root, extra_roots)
     except ValueError as e:
         return f"错误：{e}"
     if not p.is_file():
@@ -590,10 +595,15 @@ def build_file_tools(
     allow_force_read 为 True 时（子 Agent）允许 read_document/grep_files
     使用 force_read=true 强制返回完整内容。"""
     writable_root = session.output_dir  # write_file/replace_in_file 的写入边界
+    skill_directory = getattr(session, "skill_dir", None)
     session_path_hint = (
         "服务端仅允许当前 Session，路径必须使用 workspace/、attachments/、generate/"
         "开头的 Session 相对路径；返回结果也只显示相对路径。"
         if readable_root is not None else ""
+    )
+    readable_path_hint = session_path_hint + (
+        "读取、目录查看与搜索还支持 client/skills/ 下的本会话完整技能副本。"
+        if readable_root is not None and skill_directory else ""
     )
     force_read_hint = (
         "需要完整内容时可用 force_read=true 强制全读，读完后只提炼要点返回。"
@@ -608,7 +618,7 @@ def build_file_tools(
                 "读取本地文本文件（.txt/.md 等 UTF-8 文本文件）。"
                 "超过 20KB 的大文件默认只返回开头约 100 token 的预览和警告，"
                 "以保护上下文；需要其中具体内容时优先 grep_files 定位。"
-                + force_read_hint + session_path_hint
+                + force_read_hint + readable_path_hint
             ),
             parameters={
                 "type": "object",
@@ -636,7 +646,7 @@ def build_file_tools(
                 "深层目录折叠为下钻提示（传入该目录路径可继续展开）。"
                 "filter 可按文件名过滤，支持 glob（如 image-*）或正则"
                 "（如 ^img-\\d+$），只作用于文件，目录始终保留。"
-                + session_path_hint
+                + readable_path_hint
             ),
             parameters={
                 "type": "object",
@@ -667,7 +677,7 @@ def build_file_tools(
             name="find_files",
             description=(
                 "按文件名关键词在目录中模糊查找文件，用于用户给出的路径有误时"
-                "自行猜测正确文件。返回匹配的文件路径与文件大小。" + session_path_hint
+                "自行猜测正确文件。返回匹配的文件路径与文件大小。" + readable_path_hint
             ),
             parameters={
                 "type": "object",
@@ -691,7 +701,7 @@ def build_file_tools(
             description=(
                 "新建或整体覆盖一个文本文件（自动创建父目录）。"
                 "用于生成中间文档、或按用户要求输出其它格式的文件"
-                "（markdown、csv、纯文本等）。仅限产物目录内，相对路径按产物目录解析。"
+                "（markdown、csv、纯文本等）。可写产物目录与当前会话 client/skills/ 技能副本；副本不会修改服务器技能库。"
             ),
             parameters={
                 "type": "object",
@@ -703,6 +713,7 @@ def build_file_tools(
             },
             handler=partial(
                 write_file, root=writable_root, display_root=readable_root,
+                extra_roots=(skill_directory,) if skill_directory and readable_root else (),
                 should_cancel=should_cancel,
             ),
         ),
@@ -711,7 +722,7 @@ def build_file_tools(
             description=(
                 "在文本文件中做精确字符串替换（先 read_document 拿到原文再改）。"
                 "old_text 必须与文件内容完全一致；多处匹配时需提供更长上下文或 "
-                "replace_all=true。仅限产物目录内。"
+                "replace_all=true。可修改产物目录与当前会话 client/skills/ 技能副本。"
             ),
             parameters={
                 "type": "object",
@@ -729,6 +740,7 @@ def build_file_tools(
             },
             handler=partial(
                 replace_in_file, root=writable_root, display_root=readable_root,
+                extra_roots=(skill_directory,) if skill_directory and readable_root else (),
                 should_cancel=should_cancel,
             ),
         ),
@@ -740,7 +752,7 @@ def build_file_tools(
                 "（配合 replace_in_file 修改）。只搜某一个文件时直接传 path，"
                 "不要用 directory+file_glob 凑。结果过大时会被截断为约 100 token"
                 " 的预览并提示，此时请收窄 pattern，或用 path 限定单个文件。"
-                + force_read_hint + session_path_hint
+                + force_read_hint + readable_path_hint
             ),
             parameters={
                 "type": "object",
@@ -965,7 +977,7 @@ def build_file_tools(
                 "读取技能包附属文件的内容（如检查项清单等数据文档），内容直接"
                 "进入当前上下文，无需预先下载。包名与文件名来自 list_skill_packs "
                 "或技能指引中标注的附属文件清单。附属文档和源码优先用本工具读取；"
-                "技能主指引用 use_skill。读取的是服务器最新版。"
+                "技能主指引用 use_skill。读取当前会话的技能副本，CLI 使用本地技能库。"
             ),
             parameters={
                 "type": "object",

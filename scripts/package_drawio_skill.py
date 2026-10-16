@@ -8,7 +8,7 @@ import zipfile
 
 def package_skill(output: Path) -> Path:
     assets = Path(__file__).resolve().parents[1] / "umeko" / "builtin_skills"
-    sources = [assets / "drawio-flowchart.md", *sorted((assets / "drawio-flowchart").iterdir())]
+    sources = sorted((assets / "drawio-flowchart").rglob("*"))
     output.parent.mkdir(parents=True, exist_ok=True)
     with zipfile.ZipFile(output, "w", compression=zipfile.ZIP_DEFLATED) as archive:
         for source in sources:

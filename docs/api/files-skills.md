@@ -106,6 +106,8 @@ TLS 握手、DNS 和连接/读取超时分别带 `TLS_ERROR`、`DNS_ERROR`、`DO
 | 方法 | 路径 | 说明 |
 | --- | --- | --- |
 | GET | `/v1/sessions/{sid}/client/{kind}` | 列表，含按需启用和内置标记 |
+| GET | `/v1/sessions/{sid}/skill-files/{pack}/{member}` | 读取当前会话技能包中的文件，如 `references/style.md` |
+| PUT | `/v1/sessions/{sid}/skill-files/{pack}/{member}` | JSON `{content}`，仅修改当前会话副本；运行中返回 `409` |
 | GET | `/v1/sessions/{sid}/client/{kind}/{name}` | 读取内容 |
 | POST | `/v1/sessions/{sid}/client/{kind}?filename=sample.md` | UTF-8 原始文本，`201` |
 | POST | `/v1/sessions/{sid}/client/{kind}/generate` | JSON `{name, description}`，调用模型生成，`201` |
@@ -114,7 +116,7 @@ TLS 握手、DNS 和连接/读取超时分别带 `TLS_ERROR`、`DNS_ERROR`、`DO
 
 技能内容须符合项目技能包格式，不能把普通任意 Markdown 当作有效技能。运行中的会话修改技能返回 `409`。
 
-`ClientResourceView` 为 `kind`、`name`、`mounted`、`builtin`、可空 `content`。详细字段见[数据结构](schemas.md)，完整参数见[用户参考](reference-user.md)。
+`ClientResourceView` 为 `kind`、`name`、`mounted`、`builtin`、可空 `content` 及 `files`。列表中的 `files` 记录包内相对路径、字节大小与修改时间，供技能文件树使用。存储采用 `<技能名>/SKILL.md` 和 `scripts/`、`references/`、`assets/`；旧的 `.md` 名称作为 API 标识保持兼容。会话取得完整独立副本，模型可通过普通文件工具读写 `client/skills/`，技能脚本也从副本执行，修改不影响技能库和其他会话。详细字段见[数据结构](schemas.md)，完整参数见[用户参考](reference-user.md)。
 
 `mounted: true` 表示**启用按需使用**：名称与简介进入当前会话的技能目录，相关任务才读取完整指引。它不强制每轮执行、不自动把全文追加到用户消息。设为 `false` 会从自动目录中移除，文件仍保留，可通过工具发现和明确指定使用；这不是权限开关。
 

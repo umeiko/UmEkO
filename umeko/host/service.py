@@ -33,6 +33,7 @@ from ..session import Session
 from ..tree import TreeNode, TreeBudget, build_tree, compile_filter
 from .profile import CLOUD_PROFILE, Profile
 from ..skillpacks import parse_skill_pack_text, skill_packs_dir
+from ..skill_layout import copy_package, entry_path, entries, file_metadata, migrate_library
 from .storage import Store
 from .results import MACHINE_RESULTS_PROMPT, SUBMISSION_REMINDER, ResultSubmission
 from .configuration import deployment_defaults, model_from_row, resolve_provider_settings
@@ -369,18 +370,16 @@ class AgentService:
         builtin_resources = {"skills": set()}
         target = root / "client" / "skills"
         target.mkdir(parents=True, exist_ok=True)
+        migrate_library(target)
         # Skill 分发唯一通道：管理员在管理面「默认 Skill」维护（default_skills 表）。
         # 文件系统 skills/ 目录不再自动播种——是否下发由管理员决定；停用项不下发。
         dispatched = agent_snapshot["dispatched_skills"] if agent_snapshot else self.store.default_skills(enabled_only=True)
         for item in dispatched:
-            dest = target / item["name"]
-            if not dest.exists():
-                dest.write_text(item["content"], encoding="utf-8")
+            dest = copy_package(self._skills_library_dir(), target, item["name"], item["content"])
             if parse_skill_pack_text(item["content"]) is not None:
                 builtin_resources["skills"].add(item["name"])
-            # 渐进式播种：只播种主 md；附属文档/脚本不落盘会话——
-            # Agent 用 read_pack_file 按需读服务器库最新版，run_skill_script
-            # 也从服务器库执行。省会话磁盘，且附属文件更新即刻可见。
+            # Dispatch complete, independent packages; subsequent reads/execution
+            # use this session copy and never mutate the shared library.
 
         session = Session(
             effective,
@@ -489,7 +488,7 @@ class AgentService:
             extra_skills=(submission.tool(),) if submission else (),
             output_root=root,
             readable_root=root,
-            readable_roots=tuple(root / name for name in self.WORKSPACE_ROOTS),
+            readable_roots=(*tuple(root / name for name in self.WORKSPACE_ROOTS), target),
             command_runner=self._command_runner,
             file_operator=lambda operation, path, target="", **kwargs: self.operate_session_files(
                 operation, path, target, session_id=session_id, **kwargs
@@ -970,14 +969,15 @@ class AgentService:
         session.mounted_resources = self.store.resource_mounts(session_id)
         directory = session.root / "client" / kind
         resources = []
-        for path in sorted(directory.glob("*.md"), key=lambda p: p.name.casefold()):
+        for pack_name, path in entries(directory).items():
             if parse_skill_pack_text(path.read_text(encoding="utf-8")) is None:
                 continue
             resources.append({
                 "kind": kind,
-                "name": path.name,
-                "mounted": path.name in session.mounted_resources[kind],
-                "builtin": path.name in session.builtin_resources[kind],
+                "name": pack_name + ".md",
+                "mounted": pack_name + ".md" in session.mounted_resources[kind],
+                "builtin": pack_name + ".md" in session.builtin_resources[kind],
+                "files": file_metadata(directory, pack_name),
             })
         return resources
 
@@ -995,7 +995,7 @@ class AgentService:
         clean_name = Path(name).name
         if clean_name != name or not clean_name.lower().endswith(".md"):
             raise ValueError("资源名必须是单个 .md 文件名")
-        path = session.root / "client" / kind / clean_name
+        path = entry_path(session.root / "client" / kind, clean_name)
         if not path.is_file():
             raise FileNotFoundError(name)
         self._validate_resource(path.read_text(encoding="utf-8"))
@@ -1011,12 +1011,13 @@ class AgentService:
             raise ValueError("资源名必须是单个 .md 文件名")
         self._validate_resource(content)
         directory = session.root / "client" / kind
-        path = directory / clean_name
+        path = entry_path(directory, clean_name, create=True)
         if path.exists():
             raise ValueError(f"资源已存在：{clean_name}")
+        path.parent.mkdir(parents=True, exist_ok=True)
         path.write_text(content, encoding="utf-8")
         return {
-            "kind": kind, "name": path.name, "mounted": False,
+            "kind": kind, "name": clean_name, "mounted": False,
             "builtin": False, "content": content,
         }
 
@@ -1030,18 +1031,21 @@ class AgentService:
             raise ValueError(result)
         path, mounted = self.client_resource(session_id, kind, f"{name.strip().lower()}.md")
         return {
-            "kind": kind, "name": path.name, "mounted": mounted,
+            "kind": kind, "name": f"{name.strip().lower()}.md", "mounted": mounted,
             "builtin": False, "content": path.read_text(encoding="utf-8"),
         }
 
     def delete_client_resource(self, session_id: str, kind: str, name: str) -> None:
         session = self.get_session(session_id)
         path, _ = self.client_resource(session_id, kind, name)
-        if path.name in session.builtin_resources[kind]:
+        if name in session.builtin_resources[kind]:
             raise ValueError("系统默认资源不能删除")
-        session.mounted_resources[kind].discard(path.name)
-        self.store.set_resource_mount(session_id, kind, path.name, False)
-        path.unlink()
+        session.mounted_resources[kind].discard(name)
+        self.store.set_resource_mount(session_id, kind, name, False)
+        if path.name == "SKILL.md":
+            shutil.rmtree(path.parent)
+        else:
+            path.unlink()
         self._sync_mounted_resources(session)
 
     def update_client_resource(
@@ -1060,17 +1064,17 @@ class AgentService:
             path.write_text(content, encoding="utf-8")
         if mounted is not None:
             if mounted:
-                session.mounted_resources[kind].add(path.name)
+                session.mounted_resources[kind].add(name)
             else:
-                session.mounted_resources[kind].discard(path.name)
-            self.store.set_resource_mount(session_id, kind, path.name, mounted)
+                session.mounted_resources[kind].discard(name)
+            self.store.set_resource_mount(session_id, kind, name, mounted)
             current_mounted = mounted
         self._sync_mounted_resources(session)
         return {
             "kind": kind,
-            "name": path.name,
+            "name": name,
             "mounted": current_mounted,
-            "builtin": path.name in session.builtin_resources[kind],
+            "builtin": name in session.builtin_resources[kind],
             "content": path.read_text(encoding="utf-8"),
         }
 
@@ -1079,7 +1083,7 @@ class AgentService:
         names = set()
         missing = []
         for name in sorted(session.mounted_resources["skills"]):
-            path = session.root / "client" / "skills" / name
+            path = entry_path(session.root / "client" / "skills", name)
             if not path.is_file():
                 missing.append(name)
                 continue

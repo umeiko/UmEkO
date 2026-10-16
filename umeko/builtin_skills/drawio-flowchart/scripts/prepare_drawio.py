@@ -8,7 +8,7 @@ import re
 import sys
 
 sys.path.insert(0, str(Path(__file__).resolve().parent))
-from drawio_style import load_style
+from drawio_style import load_style, packaged_file
 
 SKILL_SCRIPT = {
     "description": "根据需求准备绘图规范和文件子 Agent 的单个任务，不生成图表或调用模型。",
@@ -55,7 +55,7 @@ def prepare(payload):
         if not resolved.is_file():
             raise ValueError(f"输入文档不存在：{item}")
     package = Path(__file__).resolve().parent
-    config = json.loads((package / "config.json").read_text(encoding="utf-8"))
+    config = json.loads(packaged_file(package, "config.json").read_text(encoding="utf-8"))
     style_path = args.get("style_path", "")
     workdir.mkdir(parents=True, exist_ok=True)
     rule_path = workdir / f"{name}-rules.md"
@@ -76,7 +76,7 @@ def prepare(payload):
         rules_paths[kind] = relative(current_rule)
         style = load_style(style_path, session_root, kind, package)
         style_name = style["name"]
-        rule = (package / ("flowchart.md" if kind == "flowchart" else "architecture.md")).read_text(encoding="utf-8")
+        rule = packaged_file(package, "flowchart.md" if kind == "flowchart" else "architecture.md").read_text(encoding="utf-8")
         rule += "\n\n## 本次选用风格（视觉要求优先于默认配色，业务含义与结构规范仍须保留）\n\n"
         rule += style["instructions"]
         rule += "\n\n## 当前生效视觉配置\n\n"
@@ -90,7 +90,7 @@ def prepare(payload):
                                                "columns": 4, "gap": 20, "title_height": 30}
         rule += json.dumps(effective, ensure_ascii=False, indent=2)
         current_rule.write_text(rule, encoding="utf-8")
-    task = (package / "delegation.md").read_text(encoding="utf-8")
+    task = packaged_file(package, "delegation.md").read_text(encoding="utf-8")
     task += "\n\n## 本次任务\n\n" + json.dumps({
         "request": request, "document_paths": documents, "diagram_type": diagram_type,
         "rules_path": relative(rule_path), "outline_path": relative(outline_path),

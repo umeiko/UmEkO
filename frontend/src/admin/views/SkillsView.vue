@@ -10,6 +10,7 @@ import HelpTip from '../../shared/HelpTip.vue';
 import UiIcon from '../../shared/UiIcon.vue';
 import UiModal from '../../shared/UiModal.vue';
 import CodeEditor from '../../shared/CodeEditor.vue';
+import SkillTree from '../../shared/SkillTree.vue';
 const packs = ref([]),
   active = ref(''),
   selected = ref(null),
@@ -35,7 +36,7 @@ const language = computed(() => {
 const highlighted = computed(() => codeHtml(content.value, language.value));
 const isMarkdown = computed(() => /\.(md|markdown)$/i.test(selected.value?.name || ''));
 const files = (p) => [
-  ...(p.md ? [{ name: p.md, kind: 'md' }] : []),
+  ...(p.md ? [{ name: p.md, path: 'SKILL.md', kind: 'md' }] : []),
   ...p.scripts.map((f) => ({ ...f, kind: 'script' })),
   ...p.members.map((f) => ({ ...f, kind: 'member' })),
 ];
@@ -279,7 +280,7 @@ async function upload(files, into = false) {
         <HelpTip
           :text="
             tr(
-              '主文件定义技能，同名目录保存脚本和成员文件。保存主文件会同步下发副本；开关控制是否下发。可拖入文件或使用导入按钮上传。',
+              'SKILL.md 为技能入口；scripts、references、assets 分别存放脚本、参考和资源。保存后下发给新会话，已有会话保留独立副本。',
             )
           "
         />
@@ -344,24 +345,11 @@ async function upload(files, into = false) {
             @dragover.prevent.stop
             @drop.prevent.stop="upload([...$event.dataTransfer.files], true)"
           >
-            <div class="tree-files">
-              <button
-                v-for="f in files(p)"
-                :key="f.name"
-                class="skill-file-button"
-                :class="{ active: selected?.pack === p.name && selected?.name === f.name }"
-                :aria-current="
-                  selected?.pack === p.name && selected?.name === f.name ? 'true' : undefined
-                "
-                :title="f.name"
-                @click="open(p, f.kind, f.name)"
-              >
-                <UiIcon :name="f.kind === 'script' ? 'code' : 'file'" :size="20" /><span
-                  class="skill-file-name"
-                  >{{ f.name }}</span
-                >
-              </button>
-            </div>
+            <SkillTree
+              :files="files(p)"
+              :selected="selected?.pack === p.name ? selected?.name : ''"
+              @select="(f) => open(p, f.kind, f.name)"
+            />
             <div class="skill-pack-actions">
               <button v-if="p.md" class="dispatch-button" @click="dispatch(p)">
                 {{ p.enabled ? tr('停用下发') : tr('启用下发') }}
@@ -393,7 +381,7 @@ async function upload(files, into = false) {
         <header class="editor-toolbar">
           <div class="editor-path grow" :title="selected.pack + '/' + selected.name">
             <span>{{ selected.pack }}</span
-            ><strong>{{ selected.name }}</strong>
+            ><strong>{{ selected.kind === 'md' ? 'SKILL.md' : selected.name }}</strong>
           </div>
           <span v-if="dirty" class="editor-dirty">{{ tr('● 未保存') }}</span>
           <div class="editor-modes" role="group" :aria-label="tr('文件显示方式')">

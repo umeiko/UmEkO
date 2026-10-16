@@ -13,6 +13,7 @@ import { checkTemporaryWorkspace } from './temporary-workspace.mjs';
 import { checkModelDisclosure, checkModelDisclosureControls } from './model-disclosure.mjs';
 import { checkUserModelAccess } from './user-model-access.mjs';
 import { checkToolAccess } from './tool-access.mjs';
+import { checkSkillLayout } from './skill-layout.mjs';
 const require = createRequire(import.meta.url);
 const { chromium } = require(process.env.UMEKO_PLAYWRIGHT || 'playwright');
 const root = fileURLToPath(new URL('../../', import.meta.url));
@@ -182,7 +183,7 @@ async function checkAdminLanguages(page, context, adminBase) {
     .locator('.skill-pack')
     .filter({ has: page.locator('.pack-name').getByText('ui-skill', { exact: true }) });
   await pack.locator('.pack-button').click();
-  await pack.locator('.skill-file-button').filter({ hasText: 'ui-skill.md' }).click();
+  await pack.locator('.skill-file-button').filter({ hasText: 'SKILL.md' }).click();
   await page
     .locator('.skill-metadata summary')
     .getByText('Skill metadata', { exact: true })
@@ -1019,6 +1020,17 @@ try {
       const locale = prefix ? 'en-US' : 'zh-CN';
       const appearance = prefix ? 'dark' : 'light';
       context = await browser.newContext({ viewport: { width: 1440, height: 1000 }, locale });
+      if (process.env.UMEKO_UI_FOCUS === 'skills') {
+        await context.addInitScript((theme) => {
+          localStorage.setItem('umeko:locale', 'zh-CN');
+          localStorage.setItem('umeko:theme', theme);
+        }, appearance);
+        await checkSkillLayout(context, publicBase, adminBase, state, prefix, screenshot);
+        console.log(
+          `Passed skill layout: ${prefix || '/'} (tree folders, preview, session editing, isolation, reload)`,
+        );
+        continue;
+      }
       if (process.env.UMEKO_UI_FOCUS === 'tools') {
         await context.addInitScript((theme) => {
           localStorage.setItem('umeko:locale', 'zh-CN');
@@ -1294,7 +1306,7 @@ try {
       await page.locator('.editor-dirty').waitFor({ state: 'hidden' });
       await page.locator('#skill-preview').click();
       await page.locator('.skill-document strong').filter({ hasText: '执行步骤' }).waitFor();
-      await page.locator('.skill-file-button').filter({ hasText: 'ui-skill.md' }).click();
+      await page.locator('.skill-file-button').filter({ hasText: 'SKILL.md' }).click();
       await page.locator('.skill-document h1').waitFor();
       assert.equal(await page.locator('#skill-preview').getAttribute('aria-pressed'), 'true');
       const skillNames = await page.locator('.skill-file-name').evaluateAll((els) =>
@@ -1305,8 +1317,11 @@ try {
       );
       assert.equal(skillNames.length, 3);
       assert.ok(
-        skillNames.every((n) => n.font === '14px' && Math.abs(n.x - skillNames[0].x) < 1),
-        'Skill files align at readable size',
+        skillNames.every((n) => n.font === '14px') &&
+          Math.abs(skillNames[0].x - skillNames[1].x) < 1 &&
+          skillNames[2].x < skillNames[0].x,
+        'Skill files have readable text and align by directory depth: ' +
+          JSON.stringify(skillNames),
       );
       await screenshot(page, 'skills-admin', prefix);
       await page.locator('#skill-edit').click();
@@ -1727,7 +1742,9 @@ try {
         mimeType: 'text/markdown',
         buffer: Buffer.from(skillSample),
       });
-      const clientSkill = work.locator('.resource-open').filter({ hasText: clientSkillName });
+      const clientSkill = work
+        .locator('.resource-open')
+        .filter({ hasText: clientSkillName.replace(/\.md$/, '') });
       await clientSkill.click();
       const skillSwitch = work
         .locator('.resource-item')

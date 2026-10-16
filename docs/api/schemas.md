@@ -149,6 +149,14 @@
       ],
       "title": "Content"
     },
+    "files": {
+      "items": {
+        "additionalProperties": true,
+        "type": "object"
+      },
+      "title": "Files",
+      "type": "array"
+    },
     "kind": {
       "const": "skills",
       "title": "Kind",

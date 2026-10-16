@@ -963,3 +963,69 @@ button:focus-visible {
   display: inline-grid;
   place-items: center;
 }
+.session-skill-tree {
+  margin: 5px 0;
+}
+.session-skill-tree > summary {
+  cursor: pointer;
+  list-style-position: inside;
+}
+.session-skill-tree > summary .resource-item {
+  display: inline-flex;
+  width: calc(100% - 20px);
+  vertical-align: middle;
+}
+.session-skill-tree details {
+  margin-left: 17px;
+  border-left: 1px solid var(--border);
+}
+.skill-tree-folder {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  padding: 7px 10px;
+  font-size: 14px;
+  cursor: pointer;
+}
+.skill-tree-folder::before {
+  content: '›';
+  width: 12px;
+  flex: none;
+  text-align: center;
+}
+.session-skill-tree details[open] > .skill-tree-folder::before {
+  transform: rotate(90deg);
+}
+.skill-tree-folder .tree-icon {
+  width: 18px;
+  height: 18px;
+  flex: none;
+}
+.session-skill-file {
+  display: flex;
+  justify-content: flex-start;
+  align-items: center;
+  gap: 8px;
+  width: calc(100% - 18px);
+  min-height: 34px;
+  margin-left: 17px;
+  padding: 5px 8px;
+  border: 0;
+  background: transparent;
+  text-align: left;
+  font-size: 14px;
+  color: inherit;
+}
+.session-skill-file:hover {
+  background: var(--hover);
+}
+.session-skill-file svg {
+  flex: none;
+  width: 19px;
+  height: 19px;
+}
+.session-skill-file span {
+  overflow: hidden;
+  white-space: nowrap;
+  text-overflow: ellipsis;
+}

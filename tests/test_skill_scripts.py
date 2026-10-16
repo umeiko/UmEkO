@@ -129,7 +129,7 @@ def test_builtin_examples_execute_with_declared_inputs(library, tmp_path):
         "iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAQAAAC1HAwCAAAAC0lEQVR42mP8/x8AAwMCAO+jRZkAAAAASUVORK5CYII="))
     (workdir / "qc-report.json").write_text(json.dumps({"document": "sample", "items": [{
         "image": "attachments/sample.png", "status": "PASS", "checks": []}]}), encoding="utf-8")
-    xml = re.search(r"```xml\n(.*?)```", (library / "drawio-flowchart/flowchart.md").read_text(encoding="utf-8"), re.S).group(1)
+    xml = re.search(r"```xml\n(.*?)```", (library / "drawio-flowchart/references/flowchart.md").read_text(encoding="utf-8"), re.S).group(1)
     (workdir / "approval-source.xml").write_text(xml, encoding="utf-8")
     for pack, script in [("drawio-flowchart", "prepare_drawio.py"), ("drawio-flowchart", "generate_drawio.py"),
                          ("doc-image-qc", "render_report.py")]:

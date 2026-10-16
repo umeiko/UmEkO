@@ -2,7 +2,7 @@
 
 > 自动生成：请修改源码或生成器，不直接编辑本文件。
 
-共 **62** 个 HTTP 操作。[下载 OpenAPI](openapi-user.json) · [数据结构](schemas.md)
+共 **64** 个 HTTP 操作。[下载 OpenAPI](openapi-user.json) · [数据结构](schemas.md)
 
 路径为应用内部路由；带前缀部署时在公共 URL 前加 `UMEKO_BASE_PATH`。登录、原始字节体与 SSE 契约由生成器显式补充。
 
@@ -27,6 +27,8 @@
 | GET | `/v1/sessions/{session_id}/workspace/tree` | Workspace Tree |
 | GET | `/v1/sessions/{session_id}/client/{kind}` | List Client Resources |
 | POST | `/v1/sessions/{session_id}/client/{kind}` | Create Client Resource |
+| GET | `/v1/sessions/{session_id}/skill-files/{pack}/{member}` | Read Session Skill File |
+| PUT | `/v1/sessions/{session_id}/skill-files/{pack}/{member}` | Write Session Skill File |
 | GET | `/v1/sessions/{session_id}/client/{kind}/{name}` | Read Client Resource |
 | PATCH | `/v1/sessions/{session_id}/client/{kind}/{name}` | Update Client Resource |
 | DELETE | `/v1/sessions/{session_id}/client/{kind}/{name}` | Delete Client Resource |
@@ -294,6 +296,44 @@ UTF-8 技能文本；kind 只能为 skills。
 | 响应码 | 内容 |
 | --- | --- |
 | 201 | application/json: ClientResourceView |
+| 422 | application/json: HTTPValidationError |
+
+## GET /v1/sessions/{session_id}/skill-files/{pack}/{member}
+
+Read Session Skill File
+
+认证：`umeko_auth` Cookie。
+
+| 参数 | 位置 | 必填 | 类型与约束 |
+| --- | --- | --- | --- |
+| `session_id` | path | 是 | `{"title": "Session Id", "type": "string"}` |
+| `pack` | path | 是 | `{"title": "Pack", "type": "string"}` |
+| `member` | path | 是 | `{"title": "Member", "type": "string"}` |
+
+| 响应码 | 内容 |
+| --- | --- |
+| 200 | application/json: object |
+| 422 | application/json: HTTPValidationError |
+
+## PUT /v1/sessions/{session_id}/skill-files/{pack}/{member}
+
+Write Session Skill File
+
+认证：`umeko_auth` Cookie。
+
+| 参数 | 位置 | 必填 | 类型与约束 |
+| --- | --- | --- | --- |
+| `session_id` | path | 是 | `{"title": "Session Id", "type": "string"}` |
+| `pack` | path | 是 | `{"title": "Pack", "type": "string"}` |
+| `member` | path | 是 | `{"title": "Member", "type": "string"}` |
+
+请求体：必填。
+
+`application/json` → `ClientResourceUpdate`
+
+| 响应码 | 内容 |
+| --- | --- |
+| 200 | application/json: object |
 | 422 | application/json: HTTPValidationError |
 
 ## GET /v1/sessions/{session_id}/client/{kind}/{name}

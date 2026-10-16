@@ -9,6 +9,8 @@ from pathlib import Path
 import tempfile
 
 from ..skillpacks import parse_skill_pack_text
+from ..skill_layout import entry_path, member_path, migrate_library
+from ..skillassets import skill_members
 
 IMAGE_QC_SLUG = "image-qc"
 IMAGE_QC_SKILL = "doc-image-qc.md"
@@ -17,6 +19,7 @@ ASSETS = Path(__file__).resolve().parents[1] / "builtin_skills"
 REPORT_SCRIPT = Path("doc-image-qc/render_report.py")
 # SHA-256 of UTF-8 text with normalized newlines: bundled v1 and the earlier stock library script.
 _STOCK_REPORT_DIGESTS = {
+    "f6cd3e46c253121f5a7dd6159d3ced1fc894b1159b258fe21894df159a93a6cf",
     "014912f4d5f06edf383581d1613c133a306fd829cd8c6068c27e262aa8866a06",
     "e3b61d1203ae91d4e3c7bbef9191f69cc844b0d48351744d3b25d1fb62e0ebfb",
     "19b4b417e2e74fd23787013e50a4a9c7aed39f47310540be13d95747799d3ef7",
@@ -46,9 +49,22 @@ IMAGE_QC_PROMPT = """你是图像质检智能体，帮助用户检查图片质�
 问候和能力咨询直接简洁回答；不相关的请求不加载质检正文、不反复提醒用户挂载技能。"""
 
 FLOW_CHART_SLUG = "flow-chart-agent"
+FLOW_CORRECTION_SLUG = "flowchart-correction"
 IMAGE_REASONING_SLUG = "image-resioning-agent"
 
 BUILTIN_SERVICE_AGENTS = (
+    {
+        "slug": FLOW_CORRECTION_SLUG,
+        "name": "流程图修正",
+        "description": "快速将 Mermaid 流程源码、单页 draw.io XML 或简短 Markdown 流程转为符合默认/自定义 style.md 的 draw.io 文件；先门禁，默认不导出、不复检。",
+        "skill_names": ["drawio-correction.md"],
+        "system_prompt": """你是流程图修正智能体，只做流程源码的格式转换与风格整理，强调速度。
+只接收 Mermaid flowchart/graph、单页单层 draw.io XML、用编号或箭头写成的简短 Markdown 流程。
+明显不属于这三类的任务立即用一两句话拒绝并说明输入要求，不识图、不读长文档、不扩展业务。
+有效或待检查的流程输入先 use_skill(name="drawio-correction")，紧接着执行该技能的门禁脚本，门禁通过才转换。
+按技能完成一次转换及校验，默认只交付可编辑 .drawio 文件；用户要源码才返回 XML。
+不导出图片、不调用视觉模型、不做反复复检，不追加无关说明。缺少技能时说明请管理员启用，不伪造结果。""",
+    },
     {
         "slug": FLOW_CHART_SLUG,
         "name": "流程图生成Agent",
@@ -79,8 +95,8 @@ def agent_installation_key(slug: str) -> str:
 
 def _upgrade_stock_file(library_dir: Path, relative: Path, digests: set[str]) -> bool:
     """Never recreate a deleted file or replace an unknown/customized version."""
-    target = library_dir / relative
-    if not target.is_file() or target.resolve() != library_dir.resolve() / relative:
+    target = entry_path(library_dir, relative.stem) if len(relative.parts) == 1 else member_path(library_dir, relative.parts[0], relative.name)
+    if not target.is_file() or not target.resolve().is_relative_to(library_dir.resolve()):
         return False
     temporary = None
     try:
@@ -89,7 +105,8 @@ def _upgrade_stock_file(library_dir: Path, relative: Path, digests: set[str]) ->
             return False
         with tempfile.NamedTemporaryFile(dir=target.parent, prefix=".report-upgrade-", delete=False) as output:
             temporary = Path(output.name)
-            output.write((ASSETS / relative).read_bytes())
+            source = entry_path(ASSETS, relative.stem) if len(relative.parts) == 1 else member_path(ASSETS, relative.parts[0], relative.name)
+            output.write(source.read_bytes())
         temporary.replace(target)
         return True
     except (OSError, UnicodeError):
@@ -108,10 +125,10 @@ def _upgrade_builtin_assets(store, library_dir: Path) -> bool:
     report_updated = _upgrade_stock_report(library_dir)
     skill_updated = _upgrade_stock_file(library_dir, Path(IMAGE_QC_SKILL), _STOCK_SKILL_DIGESTS)
     # Library text and the dispatched DB copy are separate; synchronize only recognized defaults.
-    source = library_dir / IMAGE_QC_SKILL
-    if source.is_file() and source.resolve() == library_dir.resolve() / IMAGE_QC_SKILL:
+    source = entry_path(library_dir, IMAGE_QC_SKILL)
+    if source.is_file() and source.resolve().is_relative_to(library_dir.resolve()):
         try:
-            latest = (ASSETS / IMAGE_QC_SKILL).read_text(encoding="utf-8")
+            latest = entry_path(ASSETS, IMAGE_QC_SKILL).read_text(encoding="utf-8")
             current = store.default_skill(IMAGE_QC_SKILL)
             if (current is not None and source.read_text(encoding="utf-8") == latest
                     and hashlib.sha256(current.replace("\r\n", "\n").encode()).hexdigest() in _STOCK_SKILL_DIGESTS):
@@ -147,11 +164,10 @@ def _install_image_qc_agent(registry, library_dir: Path) -> bool:
         prompt_updated = _upgrade_stock_prompt(registry)
         return assets_updated or prompt_updated
     # Materialize editable library sources. An existing source or script wins.
-    sources = [ASSETS / IMAGE_QC_SKILL, *sorted((ASSETS / Path(IMAGE_QC_SKILL).stem).rglob("*"))]
-    for source in sources:
-        if not source.is_file() or "__pycache__" in source.parts:
-            continue
-        target = library_dir / source.relative_to(ASSETS)
+    name = Path(IMAGE_QC_SKILL).stem
+    sources = {"SKILL.md": entry_path(ASSETS, name), **skill_members(ASSETS, name)}
+    for relative, source in sources.items():
+        target = member_path(library_dir, name, relative, create=True)
         target.parent.mkdir(parents=True, exist_ok=True)
         try:
             with target.open("xb") as output:
@@ -160,7 +176,7 @@ def _install_image_qc_agent(registry, library_dir: Path) -> bool:
             pass
     _upgrade_builtin_assets(store, library_dir)
     if store.default_skill(IMAGE_QC_SKILL) is None:
-        content = (library_dir / IMAGE_QC_SKILL).read_text(encoding="utf-8")
+        content = entry_path(library_dir, IMAGE_QC_SKILL).read_text(encoding="utf-8")
         if parse_skill_pack_text(content) is None:
             raise ValueError("图像质检技能格式无效，请检查技能库中的 doc-image-qc.md")
         store.upsert_default_skill(IMAGE_QC_SKILL, content)
@@ -184,6 +200,7 @@ def install_builtin_agents(registry, library_dir: Path) -> bool:
     # Import locally: the generic skill installer shares the QC asset constants.
     from .builtin_skills import install_builtin_skills
 
+    migrate_library(library_dir)
     store = registry.store
     existing_skills = {item["name"] for item in store.default_skills()}
     changed = _install_image_qc_agent(registry, library_dir)

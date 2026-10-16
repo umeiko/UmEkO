@@ -8,22 +8,26 @@ import json
 from pathlib import Path, PurePosixPath
 import re
 import stat
+import sys
 import zipfile
 
 
 REPO = Path(__file__).resolve().parents[1]
+sys.path.insert(0, str(REPO))
+from umeko.skillassets import skill_members
+from umeko.skill_layout import entries as skill_entries, category
 TEMPLATES = REPO / "scripts" / "skillhub"
 TEXT_TYPES = {".md", ".py", ".json", ".txt", ".yaml", ".yml", ".js", ".ts", ".sh"}
 IGNORED = {"__pycache__", ".git", ".DS_Store", "Thumbs.db", "desktop.ini"}
 TITLES = {"doc-image-qc": "图文文档图片质检", "drawio-flowchart": "draw.io 流程图与架构图",
-          "image-reasoning": "图像推理"}
+          "image-reasoning": "图像推理", "drawio-correction": "流程图修正"}
 REQUIRED = {"name", "description", "slug", "displayName", "version"}
 PREAMBLE = """## 独立 Skill 的调用方式
 
 此包保留当前 UmEkO 技能的完整指引和附属资源，供支持 Agent Skills 的宿主加载。
 执行下方正文前，先读取 [运行约定](references/host-compatibility.md)：正文中的工具名
 映射为宿主的同等文件、视觉与委派能力，不能调用宿主未提供的工具。
-`read_pack_file` 对应 `<技能目录>/<pack>/<member>`；
+`read_pack_file` 对应技能目录中的 `references/`、`scripts/`、`assets/` 成员；
 `run_skill_script` 对应本包 `scripts/run.py`（Python 3.10+，参数内容不变）。
 没有子 Agent 时分段处理并说明无法隔离上下文；没有视觉能力时不猜测图片内容。
 图像推理技能没有脚本依赖，可用模型原生视觉输入。
@@ -107,17 +111,18 @@ def safe_files(root: Path) -> dict[str, bytes]:
 
 
 def export_skills(source_root: Path, snapshot_dir: Path, version: str) -> list[Path]:
-    entries = sorted(source_root.glob("*.md"))
+    source_root = source_root.resolve()
+    entries = skill_entries(source_root)
     if not entries:
         raise ValueError("源技能目录没有 .md 主文件")
     exported = []
-    for entry in entries:
+    for source_name, entry in entries.items():
         if is_link(entry):
             raise ValueError(f"不打包链接技能主文件：{entry.name}")
         original = entry.read_bytes()
         header, body, fields = entry_parts(original.decode("utf-8"))
         name = fields.get("name", "")
-        if name != entry.stem:
+        if name != source_name:
             raise ValueError(f"技能名称必须与主文件名一致：{entry.name}")
         extra = {"slug": f"umeiko-{name}", "displayName": TITLES.get(name, name),
                  "version": version, "summary": fields.get("description", ""),
@@ -134,18 +139,25 @@ def export_skills(source_root: Path, snapshot_dir: Path, version: str) -> list[P
         if is_link(pack):
             raise ValueError(f"不打包链接技能目录：{name}")
         members = safe_files(pack) if pack.is_dir() else {}
+        resources = skill_members(source_root, name)
+        for relative, resource in resources.items():
+            if relative not in members:
+                # Shared resources are bundled, so a portable package has no sibling dependency.
+                members[relative] = safe_files(resource.parent)[resource.name]
+        members.pop("SKILL.md", None)
         files = {"SKILL.md": adapted.encode("utf-8"),
                  "references/host-compatibility.md": (TEMPLATES / "host-compatibility.md").read_bytes(),
-                 **{f"{name}/{path}": data for path, data in members.items()}}
-        sources = {entry.name: digest(original), **{f"{name}/{p}": digest(d) for p, d in members.items()}}
+                 **{path if "/" in path else category(path) + "/" + path: data for path, data in members.items()}}
+        sources = {entry.relative_to(source_root).as_posix(): digest(original), **{resource.relative_to(source_root).as_posix(): digest(members[relative])
+                                                  for relative, resource in resources.items()}}
         changes = ["Added portable host instructions and SkillHub metadata to SKILL.md"]
-        if name == "drawio-flowchart":
-            config_name = f"{name}/config.json"
+        if name in {"drawio-flowchart", "drawio-correction"}:
+            config_name = "assets/config.json"
             config = json.loads(files[config_name])
             config["drawio_path"] = ""
             files[config_name] = (json.dumps(config, ensure_ascii=False, indent=2) + "\n").encode("utf-8")
             changes.append("Cleared machine-specific drawio_path; preserved all other config fields")
-        if any(script in members for script in ("prepare_drawio.py", "generate_drawio.py", "render_report.py")):
+        if any(Path(script).suffix == ".py" for script in members):
             files["scripts/run.py"] = (TEMPLATES / "run.py").read_bytes()
         manifest = {"name": name, "version": validate_entry(adapted)["version"],
                     "source_files_sha256": sources, "adaptations": changes,

@@ -119,22 +119,25 @@ def _script_result(out: str, err: str, code: int, *, timed_out: int | None = Non
     return text
 
 
-def _resolve_script(pack: str, script: str) -> Path:
+def _resolve_script(pack: str, script: str, directory: Path | None = None) -> Path:
     """解析并校验脚本路径：必须在 skills/<pack>/<script>.py 且防穿越。"""
     if not pack or not script:
         raise ValueError("pack 与 script 不能为空")
     if pack == "." or any(c in pack for c in ("/", "\\", "..", ":")):
         raise ValueError(f"非法技能包名：{pack}")
     script_name = Path(script).name  # 去掉任何路径成分
-    if script_name != script or any(c in script for c in ("/", "\\", ":")) or not script_name.endswith(".py"):
+    if "/" in script and not script.startswith("scripts/"):
+        raise ValueError("脚本路径须位于 scripts/ 内")
+    if not script_name.endswith(".py"):
         raise ValueError(f"非法脚本名（须为 xxx.py，不带路径）：{script}")
-    base = skill_packs_dir().resolve()
+    from ..skill_layout import member_path
+    base = (directory or skill_packs_dir()).resolve()
     folder = base / pack
-    candidate = (folder / script_name).resolve()
-    if folder.resolve() != folder or candidate != folder / script_name:
+    candidate = member_path(base, pack, script)
+    if folder.resolve() != folder:
         raise ValueError("脚本路径越界或包含链接")
     if not candidate.is_file():
-        available = sorted(p.name for p in (base / pack).glob("*.py")) if (base / pack).is_dir() else []
+        available = sorted(p.relative_to(base / pack).as_posix() for p in (base / pack).rglob("*.py")) if (base / pack).is_dir() else []
         raise ScriptNotFoundError(
             f"脚本不存在：{pack}/{script_name}"
             + (f"（可用：{'、'.join(available)}）" if available else f"（技能包 {pack} 无脚本目录）")
@@ -151,13 +154,14 @@ def run_skill_script(
     timeout: int = DEFAULT_TIMEOUT,
     should_cancel: CancelCheck = None,
     on_progress: Callable[[str], None] | None = None,
+    directory: Path | None = None,
 ) -> str:
     """执行脚本，将结果、退出码与失败诊断一起返回给模型。"""
     for name, value in (("pack", pack), ("script", script)):
         if not isinstance(value, str) or not value.strip():
             return _preflight_error(pack, script, "SCRIPT_ARGUMENT_TYPE", f"{name} 须为非空 string，实际为 {value_type(value)}")
     try:
-        target = _resolve_script(pack, script)
+        target = _resolve_script(pack, script, directory)
     except ScriptNotFoundError as exc:
         return _preflight_error(pack, script, "SCRIPT_NOT_FOUND", str(exc))
     except ValueError as e:
@@ -204,7 +208,7 @@ def run_skill_script(
             stdin=subprocess.PIPE, stdout=subprocess.PIPE, stderr=subprocess.PIPE,
             text=True, encoding="utf-8", errors="replace",
             # Match the UTF-8 JSON contract on Windows as well as Unix.
-            env={**os.environ, "PYTHONIOENCODING": "utf-8"},
+            env={**os.environ, "PYTHONIOENCODING": "utf-8", **({"UMEKO_SKILL_DIR": str(directory)} if directory else {})},
             creationflags=getattr(subprocess, "CREATE_NO_WINDOW", 0),
         )
     except OSError as e:

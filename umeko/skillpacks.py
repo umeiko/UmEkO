@@ -13,6 +13,7 @@ from dataclasses import dataclass
 from pathlib import Path
 
 from . import runtime
+from .skill_layout import entries
 
 
 @dataclass(frozen=True)
@@ -36,7 +37,7 @@ def load_skill_packs(directory: Path | None = None) -> dict[str, SkillPack]:
     packs: dict[str, SkillPack] = {}
     if not d.is_dir():
         return packs
-    for path in sorted(d.glob("*.md")):
+    for path in entries(d).values():
         pack = _parse_pack_file(path)
         if pack is not None:
             packs[pack.name] = pack
