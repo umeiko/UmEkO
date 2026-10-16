@@ -70,6 +70,7 @@ nav:
   - 架构设计:
       - 概览: architecture/index.md
       - 技能与脚本工具: architecture/skills.md
+      - 受控技能与执行信任: architecture/skill-security.md
       - 多智能体管理: architecture/agents.md
       - CLI: architecture/cli.md
       - Web Server: architecture/webserver.md

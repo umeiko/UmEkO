@@ -45,6 +45,7 @@
 | 机器身份、持久化任务队列、自动过期清理 | 已实现，单进程 | [机器任务](api/machine-tasks.md) |
 | MCP/A2A 临时工作台、同会话续聊与网页实时同步 | 已实现 | [临时工作台](api/temporary-workspace.md) |
 | 管理员资源监控与服务凭据管理 | 已实现 | [资源监控](api/monitoring.md) |
+| 受控技能、代码与配置只读、下发摘要校验 | 已实现，应用层门禁 | [技能安全](architecture/skill-security.md) |
 
 !!! note "文档站与 Agent 服务"
     GitHub Pages 托管的是这份静态文档。Agent 服务仍需运行在你的电脑或服务器上，文档站不会替你运行模型、存储会话或接收业务 API 请求。

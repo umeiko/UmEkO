@@ -64,6 +64,8 @@ uv run python -m umeko.server --env .env --host 127.0.0.1 --port 8000
 
 启动后，“服务接入 → 智能体管理”自带 `image-qc` 图像质检智能体；配置主模型和视觉模型后可直接接入。首次初始化会将配套检查清单和报告脚本补入技能库，已有自定义文件不覆盖。后续启动只更新内容完全匹配已知原版的质检指引和报告脚本，保留自定义版本、检查清单及启用状态，不恢复已删除的文件。技能库默认是启动目录的 `skills/`（exe 则在其旁边），可用 `UMEKO_SKILL_DIR` 指向固定的可写、持久化目录；管理面与执行工具共用此路径。详见[图像质检智能体](api/agents.md#builtin-image-qc)。
 
+首次上线及后续更新，还需完成[受控技能的部署与升级验收](#skill-security-upgrade)：网页和模型能用，不等于会话脚本已通过白名单与摘要检查。
+
 ### 启动方式与监听地址
 
 | 入口 | 默认地址 | 适用场景 |
@@ -505,6 +507,7 @@ UMEKO_DOWNLOAD_TLS_INSECURE_HOSTS=files.example.internal
 
 部署目录应固定，尤其要固定 `UMEKO_DATA_ROOT`：里面保存 Provider 密钥、用户、历史和会话文件。
 默认会话文件在 `UMEKO_DATA_ROOT/users/` 下，完整备份数据目录，不要只复制 `umeko.db`。
+`UMEKO_DATA_ROOT/skill_trust/` 保存与会话代码配套的批准记录，须与数据库、会话文件在同一次停写备份中保存和恢复。
 管理面技能库在应用目录的 `skills/` 中（源码运行是项目根目录，exe 是 exe 所在目录），也应保留；
 使用的外部产物目录、自定义 `--workspace-root`、部署 `.env` 和 CA 文件一并纳入备份。
 数据库和模型导入文件包含凭据，按私有配置管理，不提交到 Git。
@@ -514,14 +517,108 @@ UMEKO_DOWNLOAD_TLS_INSECURE_HOSTS=files.example.internal
 1. 等待或停止进行中的任务，停止应用进程，在停写状态下备份数据、技能库和配置。
 2. 更新源码或替换 exe；源码安装按新版本重新安装服务端依赖。
 3. 使用同一个 `.env` 和数据目录启动。需要整理旧模型配置时，按“旧配置迁移”步骤操作。
-4. 验证页面、登录、文件和一次模型流式回答，再恢复正常使用。
+4. 按下节验证技能库、新会话和保留的旧会话，不覆盖旧副本或重签记录。
+5. 验证页面、登录、文件、一次模型流式回答和实际技能执行，再恢复正常使用。
 
 把容器数据写在临时容器层、改变启动目录后使用默认相对路径，都会让新进程看起来像“全新安装”。
 容器中的数据目录和技能库使用持久化存储，证书与 `.env` 放在应用能读取的固定位置。
 
+### 受控技能的部署与升级验收 {#skill-security-upgrade}
+
+**技能库、会话副本、批准记录是三个对象。** 管理员库提供可信源；每个会话有独立副本；私有记录保存该次下发允许执行的路径及文件 MD5 / SHA-256。完整机制见[受控技能与执行信任](architecture/skill-security.md)。这不是操作系统文件“只读属性”，也不是 Python 沙箱。
+
+#### 首次部署
+
+1. 固定数据与技能库位置。容器示例配置如下，均指**容器内**的绝对路径；分别挂载持久化存储。不要把 `UMEKO_SKILL_DIR` 指向某个用户的会话副本，也不要只保留数据目录中的数据库。
+
+    ```ini
+    UMEKO_DATA_ROOT=/srv/umeko/data
+    UMEKO_SKILL_DIR=/srv/umeko/skills
+    ```
+
+2. 以实际服务账号检查这两个目录可读写；私有记录留在数据根的 `skill_trust/`，不作为静态目录发布。固定启动目录，核对容器环境和 `.env` 的最终取值。
+3. 在管理面的技能库确认 `SKILL.md`、`scripts/` 下的入口及辅助模块、`assets/config.json` 完整，并配置下发范围和 Agent 技能披露。二进制位置等配置由管理员在可信库中维护，先适配当前系统，再创建使用它的会话。
+4. 真正新建一个用户会话，或提交一个新的 MCP/A2A 任务，用合成输入执行一次所需技能。查看工具结果中的脚本路径和实际产物，确认没有 `SCRIPT_TRUST_REJECTED`。
+5. 如需机器服务，从实际带前缀的外部入口重复验证，并查看任务对应的 `session_id`。管理页面的脚本“测试”运行管理员库，只能辅助检查程序和依赖，**不能证明某个旧会话的副本与摘要匹配**；健康检查、普通聊天和 `list_skill_script` 成功也不能替代执行验收。
+
+#### 升级前后必须保留什么
+
+停止新任务并等待或停止正在执行的任务，停应用后成套备份：数据库、`users/` 下的会话文件、`skill_trust/`、管理员技能库、私有配置及 CA。记录应用版本、实际目录/容器卷、计划更改的技能文件；不把这些私有备份提交 Git。
+
+更新源码、镜像或 exe 后，先核对持久化卷是否挂到了原位置。空目录挂载会遮住镜像内文件；数据库已有安装标记时，删除技能库并重启也不保证重新安装所有资源。启动会保留管理员自定义与删除，仅按内置资源的已知原版策略更新，不能把“拉了最新代码”视为所有运行库文件都已更新。
+
+需要更改 `.py`、辅助模块或 `config.json` 时，在**管理员库**审查并维护完整版本，暂停创建新会话直到修改完成。不要让发布脚本递归覆盖 `users/*/sessions/*/client/skills/`，也不要在下发后格式化、改换行或重新编码会话代码。共享模块需与对应入口成套验证；信任校验会检查整个包的受保护文件。
+
+升级启动后至少检查两种会话：
+
+- **新会话**：取得当前可信库与对应摘要，应能执行实际技能；配置和依赖也要可用。
+- **保留的旧会话**：已有的旧副本和原摘要匹配时应能继续执行旧版。它不会自动变成新版；清空聊天、重启、复制会话都不是刷新技能版本的方法。若旧版存在安全问题，应停止相关任务并处理受影响的旧会话，不能仅更新技能库。
+
+首次升级到包含安全门禁的版本时，旧会话可能还没有批准记录。服务会为仍在下发范围内的包从**当前管理员库**建立记录，但不覆盖已下发的旧文件；两者不同就会拒绝。这时应核对可信库后新建会话，不要期待重启自动给旧文件重新批准。MCP/A2A 新任务创建服务会话，临时工作台续聊沿用原会话；复用幂等键可能返回旧任务，核对真实任务与会话 ID。
+
+迁移 Windows / Linux 或更换构建方式时，按原始字节传输已有会话与批准记录。LF/CRLF、BOM、JSON 缩进变化均会改变摘要。可以在**发布前**统一可信库的编码和换行，再为新会话下发；不能在校验时忽略差异，也不能事后统一旧会话文件的换行来“修复”。回滚时同样成套恢复备份，核对旧应用能否识别该版本的数据格式。
+
+#### MD5 失败如何定位 {#skill-md5-troubleshooting}
+
+`技能文件 MD5 校验失败，拒绝执行：<包内相对路径>` 表示此文件与该会话的批准摘要不同，脚本尚未启动。它本身不能证明被恶意篡改，也不能单凭这一行判定是模型、代理或操作系统的问题。一个辅助模块或 `config.json` 不匹配，就会让同包的所有脚本被拒绝。
+
+先在资源监控或会话的工具详情记录任务/会话 ID、包名、报错的相对路径、应用版本，并区分：
+
+| 观察结果 | 下一步 |
+| --- | --- |
+| 只有升级前旧会话失败，新建会话成功 | 对比旧副本、该会话摘要与当前库；重点核对首次启用门禁、旧配置修改、跨平台换行和备份版本 |
+| 新建会话也失败 | 核对是否真的得到新 `session_id`、实际进程/容器卷和可信库路径；检查下发期间是否仍有写入。若库与新副本按同一版本生成仍失败，保留证据排查下发/校验实现，不要跳过检查 |
+| 当前入口没变，但报辅助模块或配置不匹配 | 对比报错文件，而不是只比较入口 `.py`；核对整包升级和配置修改 |
+| 所有包同时失败 | 优先查批量覆盖/格式转换、混用备份、首次门禁升级和目录/卷切换；这些是排查方向，不是已确认原因 |
+| 报“白名单外”“缺失”或“链接” | 检查完整包、披露/下发范围、包内路径及文件类型；这些与 MD5 不匹配是不同的拒绝原因 |
+
+下面是**只读核对示例**：替换占位路径与标识，使用部署环境的 Python 运行；它不加载项目、不调用模型、不执行技能、不改文件、不生成批准记录，也不输出配置内容。
+
+```python
+import hashlib
+import json
+from pathlib import Path
+
+data = Path("/srv/umeko/data")
+library = Path("/srv/umeko/skills")
+user_id, session_id, pack = "usr_example", "sess_example", "sample-skill"
+record = data / "skill_trust" / session_id / (pack + ".json")
+session = data / "users" / user_id / "sessions" / session_id / "client/skills" / pack
+
+def inspect(path):
+    if not path.is_file():
+        return {"exists": False}
+    raw = path.read_bytes()
+    return {"exists": True, "bytes": len(raw),
+            "md5": hashlib.md5(raw, usedforsecurity=False).hexdigest(),
+            "sha256": hashlib.sha256(raw).hexdigest(),
+            "crlf": raw.count(b"\r\n"), "utf8_bom": raw.startswith(b"\xef\xbb\xbf")}
+
+approved = json.loads(record.read_text(encoding="utf-8"))["files"] if record.is_file() else {}
+print("approval_exists:", record.is_file())
+for relative in sorted(set(approved) | {"scripts/run.py", "assets/config.json"}):
+    # The two sample paths can be replaced with the path reported by the tool.
+    parts = relative.split("/")
+    if any(p in {"", ".", ".."} or ":" in p or "\\" in p for p in parts):
+        raise ValueError("Invalid relative path in approval record")
+    print(json.dumps({"file": relative, "approved": approved.get(relative),
+                      "session": inspect(session.joinpath(*parts)),
+                      "library_now": inspect(library.joinpath(pack, *parts))}, ensure_ascii=False))
+```
+
+解释结果：会话摘要匹配批准记录即可保持原信任，当前库可以是更新版本；“库与会话不同”本身不一定故障。若记录匹配当前库、却不匹配旧会话，可能是旧会话首次建立记录后遇到版本差异；需结合升级时间和备份确认。若记录匹配原备份，却不匹配当前会话，则进一步检查会话是否被覆盖或转换格式。字节数不同表明文件不同，字节数相同也不代表摘要相同；不能仅凭打开文件后“内容看起来一样”判断安全。
+
+#### 安全恢复
+
+优先审查并确认管理员库版本，**新建会话**验证，再迁移需要继续处理的用户输入与普通工作文件。不要复制失败会话的 `client/skills/` 或批准记录到新会话；复制整个旧会话同样会保留旧问题。
+
+必须延续原会话时，先停止服务并保留故障现场，只能从可信、同一时间点的备份恢复与原批准记录匹配的会话文件及必要数据，再离线核对摘要并验收。没有匹配的可信版本时保留拒绝，转到新会话；当前没有管理员一键重新下发/重新批准旧会话的功能。
+
+不要删除 `skill_trust/`、手改 JSON 中的 MD5/SHA-256、从当前用户副本重新计算白名单、跳过辅助模块，或关闭校验。删除记录不会刷新旧文件，反而可能在恢复时用另一版本的库建立摘要；直接认可当前字节也会把未知改动变成可信代码。
+
 ## 多 Agent 路径部署
 
-先在管理端“服务接入”下新建并启用 Agent，再把调用方 URL 更新为它的完整地址。没有自动创建的默认 Agent。旧全局 Card 编辑接口与顶级机器入口已删除。
+内置 `image-qc` 在管理端“服务接入”中配置，其他 Agent 在此新建并启用，再把调用方 URL 更新为它的完整地址。旧全局 Card 编辑接口与顶级机器入口已删除。
 
 “智能体管理”配置保存在原 `umeko.db`，无需增加 `.env` 项，也无需为每个 Agent 新开一个端口或应用进程。升级启动时自动添加 Agent 配置表与任务归属字段，旧机器任务可在管理员资源监控中查看，但旧顶级协议地址不再可用；升级前按上节备份数据目录。
 
@@ -547,6 +644,7 @@ UMEKO_DOWNLOAD_TLS_INSECURE_HOSTS=files.example.internal
 | 文件下载 `TLS_CERTIFICATE_VERIFY_FAILED` | 配置 `UMEKO_DOWNLOAD_CA_FILE`；临时兼容指定主机可用 `UMEKO_DOWNLOAD_TLS_INSECURE_HOSTS`，详见[内网文件下载](#download-network) |
 | 浏览器提示网站证书不可信 | 检查网站入口的 HTTPS 证书及浏览器的公司 CA 信任；`MODEL_CA_FILE` 只影响 Python 调用模型 |
 | 新进程里 Provider / 用户 / 历史消失 | `.env` 选择、实际数据目录和容器持久化挂载是否仍与原安装一致 |
+| 升级后技能报 MD5 失败或 `SCRIPT_TRUST_REJECTED` | 区分新旧会话，对比会话副本、原批准记录及当前可信库，按[技能升级与排查](#skill-security-upgrade)处理，不清空记录或关闭检查 |
 | 页面可以用，但管理面 9000 连不上 | 是否启用 `--no-admin`，以及管理面是否仍监听 `127.0.0.1`；它与用户面地址独立 |
 | Run 接口间歇性 404，或重启后任务找不到 | 是否启用了多 worker / 多实例，或进程重启；当前 Run 状态在单进程内 |
 

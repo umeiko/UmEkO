@@ -131,6 +131,12 @@ the engine replaces skill bodies with short references while preserving tool log
 CLI and REST / MCP / A2A tasks share this behavior. See
 [skill loading](https://umeiko.github.io/UmEkO/architecture/#skill-loading).
 
+Within session skill copies, Python files and `config.json` are read only. Execution requires an
+administrator-issued allowlist and matching file hashes. See
+[skill execution trust](https://umeiko.github.io/UmEkO/architecture/skill-security/)
+and the [upgrade checklist](https://umeiko.github.io/UmEkO/deployment/#skill-security-upgrade)
+before changing deployed skills or restoring sessions.
+
 ## Configuration
 
 Model credentials, names, proxies, vision flags and concurrency limits are stored

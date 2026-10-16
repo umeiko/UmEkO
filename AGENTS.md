@@ -64,6 +64,17 @@ npm --prefix frontend run test:smoke
 
 前端源码改动后运行格式检查和构建，并一起提交 `umeko/server/static/ui/`；不要直接编辑构建文件。部署说明见 [docs/deployment.md](docs/deployment.md)，前端说明见 [docs/frontend.md](docs/frontend.md)。
 
+## 受控技能与升级兼容
+
+技能安全机制见 [docs/architecture/skill-security.md](docs/architecture/skill-security.md)，运维步骤见 [docs/deployment.md](docs/deployment.md#skill-security-upgrade)。修改下发、执行器、内置技能安装或升级脚本时，同步检查以下约定：
+
+- 管理员技能库是可信源；会话 `client/skills/` 是下发副本；`UMEKO_DATA_ROOT/skill_trust/<session_id>/<pack>.json` 是私有批准记录。不得从用户可改的副本生成批准记录，不得把记录移入用户可访问目录。
+- 会话技能中的 `.py`、`config.json` 和导入相关受保护文件只读；文件写入、上传、复制、移动、改名、删除、下载落盘和解压均须走硬门禁，目录操作检查后代内容。网页只读不能代替后端检查。
+- 执行前按固定位置、管理员白名单、MD5、SHA-256 检查整个包的受保护文件，含辅助模块与配置；执行校验后的私有副本。摘要按原始字节比较，不能在校验时忽略换行、BOM 或格式变化。
+- 库升级不覆盖已有会话副本或重签已有记录。旧副本和旧记录匹配可继续运行旧版；首次启用门禁时，无记录的旧会话若与当前库不同会拒绝。清空聊天、重启及复制会话不等于获得新版本。
+- 不得以删除 `skill_trust`、清空摘要、跳过不匹配文件或关闭校验作为升级/故障兜底。更新可信库后通过新建会话验收；需延续旧会话时只恢复审查通过、与原记录匹配的成套备份。若未来提供迁移/重新下发能力，须单独设计管理员授权、并发控制和审计。
+- 涉及此链路的变更至少验证新会话、原记录下的旧会话恢复、首次门禁升级的旧副本差异、辅助模块/config 篡改和 LF/CRLF 差异；使用隔离库及临时数据，不操作真实会话。执行通过不等于脚本已沙箱化。
+
 ## 数据与改动范围
 
 保留无关的工作区改动。不要提交 `.env`、本地凭据、数据库或运行数据；测试不得操作真实 `server_data/`、`output/`、技能库或实际 Provider。
