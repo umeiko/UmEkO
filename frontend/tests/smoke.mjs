@@ -1889,6 +1889,19 @@ try {
         'Every admin page, resource, login, logout and management request includes the admin prefix',
       );
       assert.deepEqual(errors, []);
+      const skillContext = await browser.newContext({
+        viewport: { width: 1440, height: 1000 },
+        locale: 'zh-CN',
+      });
+      try {
+        await skillContext.addInitScript((theme) => {
+          localStorage.setItem('umeko:locale', 'zh-CN');
+          localStorage.setItem('umeko:theme', theme);
+        }, appearance);
+        await checkSkillLayout(skillContext, publicBase, adminBase, state, prefix, screenshot);
+      } finally {
+        await skillContext.close();
+      }
       console.log(
         `Passed browser workflows: ${prefix || '/'} (${locale}, ${appearance}, Markdown preview/source, live rendering, highlighted code and clipboard, consistent preview toggle, skill tree/Markdown/edit/save/member files, long titles, file tree multi-selection/keyboard/context menu/batch copy-cut-paste-delete/drag/partial failure/session isolation, composer, admin, files, external file drops/root/nested/blank/duplicates/partial failure/progress/session switching/internal move, 20 folded tools, cancellation, desktop/mobile)`,
       );

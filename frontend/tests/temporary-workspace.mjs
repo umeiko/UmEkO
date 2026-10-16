@@ -27,7 +27,7 @@ export async function checkTemporaryWorkspace(context, publicBase, state, prefix
   await page.getByText('TEMPORARY_RESULT', { exact: true }).waitFor();
   await page.locator('button[data-section="skills"]').click();
   assert.equal(await page.locator('#skills-panel .resource-item').count(), 1);
-  assert.equal(await page.locator('#skills-panel .resource-name').innerText(), 'doc-image-qc.md');
+  assert.equal(await page.locator('#skills-panel .resource-name').innerText(), 'doc-image-qc');
   assert.ok(await page.locator('#skills-panel .resource-mount.attached').isDisabled());
   assert.equal(await page.locator('#skills-panel .resource-toolbar').count(), 0);
   await page.locator('#skills-panel .resource-open').click();
@@ -35,6 +35,11 @@ export async function checkTemporaryWorkspace(context, publicBase, state, prefix
   assert.ok(await page.locator('#save-resource').isHidden());
   await page.locator('#markdown-source').click();
   assert.ok((await page.locator('#resource-editor').getAttribute('readonly')) !== null);
+  await page.locator('#skills-panel [data-skill-path="references/checks.md"]').click();
+  await page.locator('#preview-title').filter({ hasText: 'references/checks.md' }).waitFor();
+  await page.locator('#markdown-source').click();
+  assert.ok((await page.locator('#resource-editor').getAttribute('readonly')) !== null);
+  assert.ok(await page.locator('#save-resource').isHidden());
   await page.locator('button[data-section="workspace"]').click();
   await page.locator('.tree-file[data-path="generate/preview.md"] .file-name').click();
   await page.locator('#markdown-view h1').waitFor();
