@@ -134,6 +134,12 @@ def main():
                         base_path=args.prefix, admin_base_path=args.admin_prefix)
     app = create_app(settings, data_root=directory / "data", workspace_root=directory / "output")
     service, store = app.state.agent_service, app.state.store
+    # Large enough to exercise pagination and cross-page trust selection.
+    trust_fixture = directory / "skills/trust-fixture"
+    (trust_fixture / "scripts").mkdir(parents=True)
+    (trust_fixture / "SKILL.md").write_text("---\nname: trust-fixture\ndescription: Isolated browser fixture\n---\n# Fixture\n", encoding="utf-8")
+    for index in range(205):
+        (trust_fixture / "scripts" / f"unit-{index:03}.py").write_bytes(b"VALUE = 1\n")
     password = secrets.token_urlsafe(20)
     user = store.create_user("ui-admin", password, role="admin")
     retired_user = store.create_user("ui-retired-tools", "fixture-retired-tools")

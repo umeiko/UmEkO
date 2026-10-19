@@ -224,3 +224,134 @@ def test_proxy_optional_skill_dispatch_also_requires_explicit_library_approval(s
     with approved.execution(pack, "run.py") as (script, _):
         assert script.read_bytes() == SOURCE
     assert json.loads((unapproved.records / (pack + ".json")).read_text())["files"] == {}
+
+
+@pytest.mark.parametrize("setup", ["", "/operations/admin"], indirect=True)
+def test_library_catalog_filters_pagination_selection_and_admin_only(setup):
+    service, owner, admin, user, prefix = setup
+    package = service._skills_library_dir() / "catalog-fixture"
+    (package / "scripts").mkdir(parents=True)
+    for index in range(65):
+        (package / "scripts" / f"unit-{index:03}.py").write_bytes(SOURCE)
+    member = "scripts/unit-000.py"
+    service.skill_approvals.approve("catalog-fixture", member, hashlib.sha256(SOURCE).hexdigest(), actor=owner["username"])
+    url = prefix + "/admin/v1/skill-security/catalog"
+    select_url = prefix + "/admin/v1/skill-security/selection"
+    assert admin.get(url).status_code == admin.get(select_url).status_code == 401
+    assert admin.post(prefix + "/admin/v1/skill-security/batch", json={}).status_code == 401
+    login(admin, prefix)
+    response = admin.get(url, params={"pack": "catalog-fixture", "limit": 25})
+    assert response.status_code == 200, response.text
+    page = response.json()
+    assert page["total"] == 65 and len(page["items"]) == 25
+    assert page["counts"]["trusted"] == 1 and page["counts"]["unlisted"] == 64
+    assert "catalog-fixture" in page["packs"] and page["items"][0]["trusted"]
+    next_page = admin.get(url, params={"pack": "catalog-fixture", "offset": 25, "limit": 25}).json()
+    assert not ({r["member"] for r in page["items"]} & {r["member"] for r in next_page["items"]})
+    selected = admin.get(select_url, params={"pack": "catalog-fixture"}).json()
+    assert selected["total"] == len(selected["items"]) == 65
+    assert selected["items"][0]["approved_sha256"] == hashlib.sha256(SOURCE).hexdigest()
+    assert all("content" not in item and "current" not in item for item in selected["items"])
+    filtered = admin.get(url, params={"q": "CATALOG-FIXTURE/scripts/unit-00", "status": "unlisted", "kind": "python"}).json()
+    assert filtered["total"] == 9
+    assert admin.get(url, params={"pack": "catalog-fixture", "kind": "config"}).json()["total"] == 0
+    assert admin.get(url, params={"limit": 201}).status_code == 422
+    assert admin.get(url, params={"status": "unknown"}).status_code == 422
+    assert admin.get(url, params={"pack": "../outside"}).status_code == 400
+    user.post(service.settings.base_path + "/v1/auth/login", json={"username": owner["username"], "password": "fixture-pass"}).raise_for_status()
+    assert user.get(service.settings.base_path + "/admin/v1/skill-security/catalog").status_code == 404
+    assert admin.post(prefix + "/admin/logout").status_code == 204
+    assert admin.get(url).status_code == admin.get(select_url).status_code == 401
+
+
+@pytest.mark.parametrize("member", [MEMBER, "assets/config.json"])
+def test_revoke_blocks_existing_and_legacy_manifests_without_rewriting_them(setup, member):
+    service, owner, admin, _, prefix = setup
+    login(admin, prefix)
+    approve_package(service, owner)
+    old = service.create_session(user_id=owner["id"])
+    manifest = json.loads(record(old).read_text())
+    for hashes in manifest["files"].values():
+        hashes.pop("approval_id", None)  # Sessions issued before revocation support.
+    record(old).write_text(json.dumps(manifest))
+    original = record(old).read_bytes()
+    assert run(old) == "approved fixture"
+    url = prefix + f"/admin/v1/skill-security/{PACK}/{member}"
+    data = admin.get(url).json()
+    assert admin.request("DELETE", url, json={"sha256": "0" * 64}).status_code == 409
+    response = admin.request("DELETE", url, json={"sha256": data["approved"]["sha256"]})
+    assert response.status_code == 200, response.text
+    assert admin.get(url).json()["status"] == "revoked"
+    assert "移出可信区" in run(old)
+    assert "SCRIPT_TRUST_REJECTED" in run(service.create_session(user_id=owner["id"]))
+    service.evict_session(old.id)
+    restored = service.get_session(old.id)
+    assert "移出可信区" in run(restored)
+    assert record(restored).read_bytes() == original
+    service.skill_approvals = SkillApprovals(service)
+    assert service.skill_approvals.status(PACK, member)["status"] == "revoked"
+    # Reapproval only issues a new generation; it must not revive old grants.
+    assert admin.post(url, json={"sha256": data["current"]["sha256"]}).json()["trusted"]
+    assert run(service.create_session(user_id=owner["id"])) == "approved fixture"
+    cloned = service.clone_session(restored.id, owner["id"])
+    assert "移出可信区" in run(cloned)
+    assert record(restored).read_bytes() == original
+    with service.store.connect() as db:
+        events = db.execute("SELECT action,actor_id FROM skill_file_approval_events WHERE pack=? AND member=? ORDER BY id", (PACK, member)).fetchall()
+        assert [r["action"] for r in events][-2:] == ["revoke", "approve"]
+        assert events[-1]["actor_id"] == owner["id"]
+
+
+def test_catalog_can_revoke_missing_and_changed_files_and_exposes_invalid_code(setup):
+    service, owner, admin, _, prefix = setup
+    login(admin, prefix)
+    approve_package(service, owner)
+    package = service._skills_library_dir() / PACK
+    missing = "assets/config.json"
+    (package / missing).unlink()
+    (package / MEMBER).write_bytes(SOURCE + b"\n")
+    (package / "references/unsupported.py").write_bytes(SOURCE)
+    url = prefix + "/admin/v1/skill-security/catalog"
+    catalog = admin.get(url, params={"pack": PACK}).json()
+    rows = {r["member"]: r for r in catalog["items"]}
+    assert rows[missing]["status"] == "missing" and not rows[missing]["approvable"]
+    assert rows[MEMBER]["status"] == "changed" and rows[MEMBER]["approvable"]
+    assert rows["references/unsupported.py"]["status"] == "invalid"
+    items = [{"pack": PACK, "member": m, "sha256": rows[m]["approved"]["sha256"]} for m in [missing, MEMBER]]
+    result = admin.post(prefix + "/admin/v1/skill-security/batch", json={"action": "revoke", "items": items}).json()
+    assert result["succeeded"] == 2 and result["failed"] == 0
+    assert not service.skill_approvals.approved_files(PACK).get(missing)
+    with service.store.connect() as db:
+        assert db.execute("SELECT count(*) FROM skill_file_revocations WHERE pack=?", (PACK,)).fetchone()[0] == 2
+
+
+def test_batch_reports_stale_files_without_approving_them_or_rolling_back_successes(setup):
+    service, owner, admin, _, prefix = setup
+    login(admin, prefix)
+    config = "assets/config.json"
+    first = service.skill_approvals.status(PACK, MEMBER)
+    second = service.skill_approvals.status(PACK, config)
+    (service._skills_library_dir() / PACK / config).write_bytes(b"{}\n")
+    items = [{"pack": PACK, "member": item["member"], "sha256": item["current"]["sha256"]} for item in [first, second]]
+    url = prefix + "/admin/v1/skill-security/batch"
+    result = admin.post(url, json={"action": "approve", "items": items}).json()
+    assert result["succeeded"] == result["failed"] == 1
+    assert result["results"][0]["ok"] and not result["results"][1]["ok"]
+    assert service.skill_approvals.status(PACK, MEMBER)["trusted"]
+    assert not service.skill_approvals.status(PACK, config)["trusted"]
+    assert admin.post(url, json={"action": "approve", "items": [items[0], items[0]]}).status_code == 400
+    assert admin.post(url, json={"action": "approve", "items": items * 101}).status_code == 422
+    assert admin.post(url, json={"action": "anything", "items": items}).status_code == 422
+    assert admin.post(url, json={"action": "approve", "items": []}).status_code == 422
+
+
+def test_failed_revocation_audit_cannot_remove_an_approval(setup):
+    service, owner, _, _, _ = setup
+    approve_package(service, owner)
+    with service.store.connect() as db:
+        db.execute("CREATE TRIGGER fail_revocation BEFORE INSERT ON skill_file_approval_events "
+                   "WHEN NEW.action='revoke' BEGIN SELECT RAISE(ABORT, 'synthetic failure'); END")
+    with pytest.raises(Exception, match="synthetic failure"):
+        service.skill_approvals.revoke(PACK, MEMBER, hashlib.sha256(SOURCE).hexdigest(), actor=owner["username"])
+    assert service.skill_approvals.status(PACK, MEMBER)["trusted"]
+    assert run(service.create_session(user_id=owner["id"])) == "approved fixture"

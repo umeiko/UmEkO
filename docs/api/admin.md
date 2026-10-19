@@ -144,15 +144,26 @@ CLI 的导入文件只包含内层文档。导入按 Provider / 模型名称合�
 | `/skill-members/{pack}/{member_name}` | PUT `{content}` / DELETE 包内非脚本资源 |
 | `/skill-scripts-template` | GET 脚本模板 |
 | `/skill-scripts/{pack}/{script_name}/test` | POST 测试脚本 |
-| `/skill-security/{pack}/{member}` | GET 查看当前文件版本信任状态与双摘要；POST 批准当前版本进入可信白名单 |
+| `/skill-security/catalog` | GET 搜索、筛选及分页查看整库文件信任状态 |
+| `/skill-security/selection` | GET 返回全部筛选结果的版本快照，用于跨页全选 |
+| `/skill-security/batch` | POST 批量批准或移出，逐文件报告结果 |
+| `/skill-security/{pack}/{member}` | GET 查看当前版本状态与双摘要；POST 批准；DELETE 移出可信区 |
 
 默认技能启停主要影响新会话，不自动撤销已经分发到现有会话的副本。服务器技能库写入应用目录的 `skills/`，备份时需单独包含。
 
 技能内容 PUT 的 JSON 为 `{"content":"..."}`，创建 / 更新通常返回 `201`，删除为 `204`；完整模型以参考为准。Python 脚本保存检查语法。测试请求为 `{"args":"{}","timeout":10}`，`args` 是 JSON **字符串**；超时限制在 1–30 秒，使用临时工作目录并返回 `{output: ...}`。这是受信任脚本的执行测试，不是容器级隔离。
 
-安全门禁仅支持包内 `scripts/` 下的 `.py` 与 `config.json`，使用独立管理前缀。GET 返回 `current` 双摘要及字节大小、`trusted`、`status`（`unlisted` / `trusted` / `changed`）、`readonly` 和最近批准版本 `approved`（无记录时为 `null`；否则含双摘要、操作人、时间）。不扫描旧会话。POST JSON 为 `{"sha256":"GET 返回的 current.sha256"}`；摘要必须是 64 位十六进制，源文件变化返回 `409`，额外字段（包括旧 `redispatch`）返回 `422`。不接受客户端传入文件内容、批准摘要或操作人。
+安全门禁仅允许批准包内 `scripts/` 下的 `.py` 与 `config.json`，使用独立管理前缀。单文件 GET 返回 `current` 双摘要及字节大小、`trusted`、`status`（`unlisted` / `trusted` / `changed` / `revoked`）、`readonly`、最近批准版本 `approved`（无记录时为 `null`）及最近撤销 `revoked`。批准和撤销均含操作人、时间；批准另含授权序号 `approval_id`。不扫描旧会话。POST JSON 为 `{"sha256":"GET 返回的 current.sha256"}`；摘要必须是 64 位十六进制，源文件变化返回 `409`，额外字段（包括旧 `redispatch`）返回 `422`。不接受客户端传入文件内容、批准摘要或操作人。
 
 POST 返回更新后的文件信任状态及审计 `event_id`。批准对后续新会话和管理端测试生效；未批准及批准后变化的代码、辅助模块、配置都不能绕过整包校验。批准不执行脚本，不更新旧会话副本和批准记录。维护流程见[当前版本信任管理](../deployment.md#skill-admin-reapproval)。
+
+DELETE JSON 为 `{"sha256":"approved.sha256"}`，核对要移出的批准版本；可信记录已变返回 `409`。返回 `{pack, member, trusted:false, status:"revoked", event_id}`。即使源文件已删除，也能用原批准记录移出。移出拦截此前下发版本的后续调用，不中断已启动脚本；重新批准只让新会话取得新授权。
+
+`catalog` 支持 `q`（技能名/包内路径、不区分大小写，最多 200 字符）、`pack`、`kind`（空、`python`、`config`）、`status`（空、`trusted`、`unlisted`、`changed`、`revoked`、`missing`、`invalid`）、`offset` 和 `limit`（默认 50，最大 200）。返回 `items`、筛选后 `total`、分页参数、技能选项 `packs` 及未套用状态筛选的分类 `counts`。条目含 `approvable` 和错误状态，异常路径不能批准；已保存的授权可以撤销。服务端不跟随符号链接或目录联接扫描。
+
+`selection` 支持相同搜索、技能、类型与状态筛选，不分页；返回 `{items,total}`，条目只含 `pack`、`member`、`status`、当前 `sha256`、`approved_sha256` 及 `approvable`，不返回源码。用于选择全部筛选结果后提交明确文件版本，避免批量操作时悄悄改用新字节。
+
+`batch` JSON 为 `{"action":"approve或revoke","items":[{"pack":"sample","member":"scripts/run.py","sha256":"待操作版本的64位SHA-256"}]}`，每批 1–200 项；批准使用当前摘要，移出使用批准摘要。重复文件整批返回 `400`，参数异常返回 `422`；其他情况逐文件检查，返回 `{action,results,succeeded,failed}`。每个结果含文件、`ok`、成功后的 `status` 或失败 `error`，单个失败不回滚其他成功项。所有入口均要求管理员身份，使用管理前缀，不暴露在用户服务端口。
 
 ## 工具回合上限
 

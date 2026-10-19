@@ -1777,6 +1777,73 @@
 }
 ```
 
+### _SkillTrustBatchIn
+
+```json
+{
+  "additionalProperties": false,
+  "properties": {
+    "action": {
+      "enum": [
+        "approve",
+        "revoke"
+      ],
+      "title": "Action",
+      "type": "string"
+    },
+    "items": {
+      "items": {
+        "$ref": "#/components/schemas/_SkillTrustItem"
+      },
+      "maxItems": 200,
+      "minItems": 1,
+      "title": "Items",
+      "type": "array"
+    }
+  },
+  "required": [
+    "action",
+    "items"
+  ],
+  "title": "_SkillTrustBatchIn",
+  "type": "object"
+}
+```
+
+### _SkillTrustItem
+
+```json
+{
+  "additionalProperties": false,
+  "properties": {
+    "member": {
+      "maxLength": 500,
+      "minLength": 1,
+      "title": "Member",
+      "type": "string"
+    },
+    "pack": {
+      "maxLength": 120,
+      "minLength": 1,
+      "title": "Pack",
+      "type": "string"
+    },
+    "sha256": {
+      "pattern": "^[0-9a-f]{64}$",
+      "title": "Sha256",
+      "type": "string"
+    }
+  },
+  "required": [
+    "sha256",
+    "pack",
+    "member"
+  ],
+  "title": "_SkillTrustItem",
+  "type": "object"
+}
+```
+
 ### _ToolDispatchIn
 
 ```json

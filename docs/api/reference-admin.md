@@ -2,7 +2,7 @@
 
 > 自动生成：请修改源码或生成器，不直接编辑本文件。
 
-共 **68** 个 HTTP 操作。[下载 OpenAPI](openapi-admin.json) · [数据结构](schemas.md)
+共 **72** 个 HTTP 操作。[下载 OpenAPI](openapi-admin.json) · [数据结构](schemas.md)
 
 路径为应用内部路由；带前缀部署时在公共 URL 前加 `UMEKO_ADMIN_BASE_PATH`。登录、原始字节体与 SSE 契约由生成器显式补充。
 
@@ -77,8 +77,12 @@
 | DELETE | `/admin/v1/skill-source/{name}` | Delete Skill Source |
 | GET | `/admin/v1/skill-library` | Skill Library Tree |
 | GET | `/admin/v1/skill-scripts-template` | Skill Script Template |
+| GET | `/admin/v1/skill-security/catalog` | Skill Security Catalog |
+| GET | `/admin/v1/skill-security/selection` | Skill Security Selection |
+| POST | `/admin/v1/skill-security/batch` | Skill Security Batch |
 | GET | `/admin/v1/skill-security/{pack}/{member}` | Skill Security Status |
 | POST | `/admin/v1/skill-security/{pack}/{member}` | Approve Skill File |
+| DELETE | `/admin/v1/skill-security/{pack}/{member}` | Revoke Skill File |
 | POST | `/admin/v1/skill-scripts/{pack}/{script_name}/test` | Test Skill Script |
 
 ## GET /health
@@ -1070,6 +1074,65 @@ Skill Script Template
 | --- | --- |
 | 200 | application/json: object |
 
+## GET /admin/v1/skill-security/catalog
+
+Skill Security Catalog
+
+认证：`umeko_admin` Cookie。
+
+分页搜索整个技能库的 Python、config.json 与已保存的可信记录。
+
+| 参数 | 位置 | 必填 | 类型与约束 |
+| --- | --- | --- | --- |
+| `q` | query | 否 | `{"default": "", "maxLength": 200, "title": "Q", "type": "string"}` |
+| `pack` | query | 否 | `{"default": "", "maxLength": 120, "title": "Pack", "type": "string"}` |
+| `status` | query | 否 | `{"default": "", "enum": ["", "trusted", "unlisted", "changed", "revoked", "missing", "invalid"], "title": "Status", "type": "string"}` |
+| `kind` | query | 否 | `{"default": "", "enum": ["", "python", "config"], "title": "Kind", "type": "string"}` |
+| `offset` | query | 否 | `{"default": 0, "minimum": 0, "title": "Offset", "type": "integer"}` |
+| `limit` | query | 否 | `{"default": 50, "maximum": 200, "minimum": 1, "title": "Limit", "type": "integer"}` |
+
+| 响应码 | 内容 |
+| --- | --- |
+| 200 | application/json: object |
+| 422 | application/json: HTTPValidationError |
+
+## GET /admin/v1/skill-security/selection
+
+Skill Security Selection
+
+认证：`umeko_admin` Cookie。
+
+取得全部筛选结果的文件版本快照，用于跨页全选。
+
+| 参数 | 位置 | 必填 | 类型与约束 |
+| --- | --- | --- | --- |
+| `q` | query | 否 | `{"default": "", "maxLength": 200, "title": "Q", "type": "string"}` |
+| `pack` | query | 否 | `{"default": "", "maxLength": 120, "title": "Pack", "type": "string"}` |
+| `status` | query | 否 | `{"default": "", "enum": ["", "trusted", "unlisted", "changed", "revoked", "missing", "invalid"], "title": "Status", "type": "string"}` |
+| `kind` | query | 否 | `{"default": "", "enum": ["", "python", "config"], "title": "Kind", "type": "string"}` |
+
+| 响应码 | 内容 |
+| --- | --- |
+| 200 | application/json: object |
+| 422 | application/json: HTTPValidationError |
+
+## POST /admin/v1/skill-security/batch
+
+Skill Security Batch
+
+认证：`umeko_admin` Cookie。
+
+批量批准或移出可信区；每个文件独立检查版本并报告结果。
+
+请求体：必填。
+
+`application/json` → `_SkillTrustBatchIn`
+
+| 响应码 | 内容 |
+| --- | --- |
+| 200 | application/json: object |
+| 422 | application/json: HTTPValidationError |
+
 ## GET /admin/v1/skill-security/{pack}/{member}
 
 Skill Security Status
@@ -1095,6 +1158,28 @@ Approve Skill File
 认证：`umeko_admin` Cookie。
 
 重算并批准管理员库当前文件版本，不修改旧会话。
+
+| 参数 | 位置 | 必填 | 类型与约束 |
+| --- | --- | --- | --- |
+| `pack` | path | 是 | `{"title": "Pack", "type": "string"}` |
+| `member` | path | 是 | `{"title": "Member", "type": "string"}` |
+
+请求体：必填。
+
+`application/json` → `_SkillApprovalIn`
+
+| 响应码 | 内容 |
+| --- | --- |
+| 200 | application/json: object |
+| 422 | application/json: HTTPValidationError |
+
+## DELETE /admin/v1/skill-security/{pack}/{member}
+
+Revoke Skill File
+
+认证：`umeko_admin` Cookie。
+
+移出可信区；阻止已下发版本的后续调用，不改写会话文件。
 
 | 参数 | 位置 | 必填 | 类型与约束 |
 | --- | --- | --- | --- |

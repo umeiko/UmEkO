@@ -550,6 +550,63 @@
         "title": "_SkillApprovalIn",
         "type": "object"
       },
+      "_SkillTrustBatchIn": {
+        "additionalProperties": false,
+        "properties": {
+          "action": {
+            "enum": [
+              "approve",
+              "revoke"
+            ],
+            "title": "Action",
+            "type": "string"
+          },
+          "items": {
+            "items": {
+              "$ref": "#/components/schemas/_SkillTrustItem"
+            },
+            "maxItems": 200,
+            "minItems": 1,
+            "title": "Items",
+            "type": "array"
+          }
+        },
+        "required": [
+          "action",
+          "items"
+        ],
+        "title": "_SkillTrustBatchIn",
+        "type": "object"
+      },
+      "_SkillTrustItem": {
+        "additionalProperties": false,
+        "properties": {
+          "member": {
+            "maxLength": 500,
+            "minLength": 1,
+            "title": "Member",
+            "type": "string"
+          },
+          "pack": {
+            "maxLength": 120,
+            "minLength": 1,
+            "title": "Pack",
+            "type": "string"
+          },
+          "sha256": {
+            "pattern": "^[0-9a-f]{64}$",
+            "title": "Sha256",
+            "type": "string"
+          }
+        },
+        "required": [
+          "sha256",
+          "pack",
+          "member"
+        ],
+        "title": "_SkillTrustItem",
+        "type": "object"
+      },
       "_ToolDispatchIn": {
         "additionalProperties": false,
         "properties": {
@@ -2608,7 +2665,328 @@
         "summary": "Test Skill Script"
       }
     },
+    "/admin/v1/skill-security/batch": {
+      "post": {
+        "description": "批量批准或移出可信区；每个文件独立检查版本并报告结果。",
+        "operationId": "skill_security_batch_admin_v1_skill_security_batch_post",
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/_SkillTrustBatchIn"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "additionalProperties": true,
+                  "title": "Response Skill Security Batch Admin V1 Skill Security Batch Post",
+                  "type": "object"
+                }
+              }
+            },
+            "description": "Successful Response"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            },
+            "description": "Validation Error"
+          }
+        },
+        "security": [
+          {
+            "umeko_admin": []
+          }
+        ],
+        "summary": "Skill Security Batch"
+      }
+    },
+    "/admin/v1/skill-security/catalog": {
+      "get": {
+        "description": "分页搜索整个技能库的 Python、config.json 与已保存的可信记录。",
+        "operationId": "skill_security_catalog_admin_v1_skill_security_catalog_get",
+        "parameters": [
+          {
+            "in": "query",
+            "name": "q",
+            "required": false,
+            "schema": {
+              "default": "",
+              "maxLength": 200,
+              "title": "Q",
+              "type": "string"
+            }
+          },
+          {
+            "in": "query",
+            "name": "pack",
+            "required": false,
+            "schema": {
+              "default": "",
+              "maxLength": 120,
+              "title": "Pack",
+              "type": "string"
+            }
+          },
+          {
+            "in": "query",
+            "name": "status",
+            "required": false,
+            "schema": {
+              "default": "",
+              "enum": [
+                "",
+                "trusted",
+                "unlisted",
+                "changed",
+                "revoked",
+                "missing",
+                "invalid"
+              ],
+              "title": "Status",
+              "type": "string"
+            }
+          },
+          {
+            "in": "query",
+            "name": "kind",
+            "required": false,
+            "schema": {
+              "default": "",
+              "enum": [
+                "",
+                "python",
+                "config"
+              ],
+              "title": "Kind",
+              "type": "string"
+            }
+          },
+          {
+            "in": "query",
+            "name": "offset",
+            "required": false,
+            "schema": {
+              "default": 0,
+              "minimum": 0,
+              "title": "Offset",
+              "type": "integer"
+            }
+          },
+          {
+            "in": "query",
+            "name": "limit",
+            "required": false,
+            "schema": {
+              "default": 50,
+              "maximum": 200,
+              "minimum": 1,
+              "title": "Limit",
+              "type": "integer"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "additionalProperties": true,
+                  "title": "Response Skill Security Catalog Admin V1 Skill Security Catalog Get",
+                  "type": "object"
+                }
+              }
+            },
+            "description": "Successful Response"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            },
+            "description": "Validation Error"
+          }
+        },
+        "security": [
+          {
+            "umeko_admin": []
+          }
+        ],
+        "summary": "Skill Security Catalog"
+      }
+    },
+    "/admin/v1/skill-security/selection": {
+      "get": {
+        "description": "取得全部筛选结果的文件版本快照，用于跨页全选。",
+        "operationId": "skill_security_selection_admin_v1_skill_security_selection_get",
+        "parameters": [
+          {
+            "in": "query",
+            "name": "q",
+            "required": false,
+            "schema": {
+              "default": "",
+              "maxLength": 200,
+              "title": "Q",
+              "type": "string"
+            }
+          },
+          {
+            "in": "query",
+            "name": "pack",
+            "required": false,
+            "schema": {
+              "default": "",
+              "maxLength": 120,
+              "title": "Pack",
+              "type": "string"
+            }
+          },
+          {
+            "in": "query",
+            "name": "status",
+            "required": false,
+            "schema": {
+              "default": "",
+              "enum": [
+                "",
+                "trusted",
+                "unlisted",
+                "changed",
+                "revoked",
+                "missing",
+                "invalid"
+              ],
+              "title": "Status",
+              "type": "string"
+            }
+          },
+          {
+            "in": "query",
+            "name": "kind",
+            "required": false,
+            "schema": {
+              "default": "",
+              "enum": [
+                "",
+                "python",
+                "config"
+              ],
+              "title": "Kind",
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "additionalProperties": true,
+                  "title": "Response Skill Security Selection Admin V1 Skill Security Selection Get",
+                  "type": "object"
+                }
+              }
+            },
+            "description": "Successful Response"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            },
+            "description": "Validation Error"
+          }
+        },
+        "security": [
+          {
+            "umeko_admin": []
+          }
+        ],
+        "summary": "Skill Security Selection"
+      }
+    },
     "/admin/v1/skill-security/{pack}/{member}": {
+      "delete": {
+        "description": "移出可信区；阻止已下发版本的后续调用，不改写会话文件。",
+        "operationId": "revoke_skill_file_admin_v1_skill_security__pack___member__delete",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "pack",
+            "required": true,
+            "schema": {
+              "title": "Pack",
+              "type": "string"
+            }
+          },
+          {
+            "in": "path",
+            "name": "member",
+            "required": true,
+            "schema": {
+              "title": "Member",
+              "type": "string"
+            }
+          }
+        ],
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/_SkillApprovalIn"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "additionalProperties": true,
+                  "title": "Response Revoke Skill File Admin V1 Skill Security  Pack   Member  Delete",
+                  "type": "object"
+                }
+              }
+            },
+            "description": "Successful Response"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            },
+            "description": "Validation Error"
+          }
+        },
+        "security": [
+          {
+            "umeko_admin": []
+          }
+        ],
+        "summary": "Revoke Skill File"
+      },
       "get": {
         "description": "查看管理员库当前文件版本是否在可信白名单中。",
         "operationId": "skill_security_status_admin_v1_skill_security__pack___member__get",

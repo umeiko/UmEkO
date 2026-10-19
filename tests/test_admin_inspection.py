@@ -46,7 +46,7 @@ def test_admin_record_inspection_auth_context_and_no_session_wakeup(machine_app)
         assert view["messages"][-1]["attachments"] == ["pasted.png"]
         assert view["tools"][0]["id"] == session_tool
         assert json.loads(view["tools"][0]["result"]) == "workspace/\n└── input.txt"
-        assert set(service.sessions) == loaded_before
+        assert set(service.sessions) <= loaded_before
         assert user.get(settings.base_path + "/admin/v1/sessions/" + session.id).status_code == 404
 
         definition = app.state.fixture_agent
@@ -84,13 +84,15 @@ def test_admin_record_inspection_auth_context_and_no_session_wakeup(machine_app)
         assert detail["messages"][0]["content"] == "inspect task"
         assert detail["messages"][-1]["content"] == detail["output"]["reply"]
         assert detail["events"] and detail["record"]["run_id"] == row["run_id"]
-        assert set(service.sessions) == loaded_before
+        # Background temporary-workspace cleanup may evict a finished task;
+        # inspection must not load any new session.
+        assert set(service.sessions) <= loaded_before
         assert "fixture-key" not in json.dumps(detail)
         files = admin.get(prefix + "/admin/v1/tasks/" + task["id"] + "/files")
         assert files.status_code == 200
         assert files.json()["file_count"] == 2
         assert files.json()["total_size"] > 0
-        assert set(service.sessions) == loaded_before
+        assert set(service.sessions) <= loaded_before
         assert "password_hash" not in json.dumps(detail)
         assert user.get(settings.base_path + "/admin/v1/tasks/" + task["id"]).status_code == 404
         assert admin.get(prefix + "/admin/v1/tasks/missing").status_code == 404

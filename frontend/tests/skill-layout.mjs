@@ -1,4 +1,5 @@
 import assert from 'node:assert/strict';
+import { checkSkillTrust } from './skill-trust.mjs';
 
 export async function checkSkillLayout(context, publicBase, adminBase, state, prefix, screenshot) {
   for (const target of [adminBase + '/admin/login', publicBase + '/v1/auth/login']) {
@@ -247,6 +248,7 @@ export async function checkSkillLayout(context, publicBase, adminBase, state, pr
   await screenshot(admin, 'skill-security-mobile', prefix);
   await security.getByRole('button', { name: 'Close', exact: true }).click();
   await admin.setViewportSize({ width: 1440, height: 1000 });
+  await checkSkillTrust(admin, context, adminBase, prefix, screenshot);
   await context.request.post(adminBase + '/admin/logout');
   assert.ok(
     securityRequests.length >= 4 &&

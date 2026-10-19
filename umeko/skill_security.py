@@ -89,12 +89,13 @@ def _files(package: Path):
 
 
 class ScriptTrust:
-    def __init__(self, skill_root: Path, records: Path):
+    def __init__(self, skill_root: Path, records: Path, *, revocation_check=None):
         self.skill_root = Path(skill_root).resolve()
         self.records = Path(records).resolve()
         if self.records.is_relative_to(self.skill_root):
             raise SkillSecurityError("执行白名单必须保存在用户技能目录之外")
         self.records.mkdir(parents=True, exist_ok=True)
+        self.revocation_check = revocation_check
 
     def issue(self, pack: str, administrator_library: Path, *, approved_files: dict | None = None) -> None:
         """Issue an immutable manifest from administrator authority.
@@ -144,6 +145,8 @@ class ScriptTrust:
         if manifest.get("version") != 1 or manifest.get("pack") != pack or relative not in manifest.get("scripts", []):
             raise SkillSecurityError("脚本不在管理员下发的执行白名单中")
         expected = manifest["files"]
+        if self.revocation_check:
+            self.revocation_check(pack, expected)
         verified, data_files = {}, {}
         total_bytes = 0
         for name, path in _files(package):
@@ -172,4 +175,6 @@ class ScriptTrust:
                 output = checked(base, pack + "/" + name)
                 output.parent.mkdir(parents=True, exist_ok=True)
                 output.write_bytes(data)
+            if self.revocation_check:
+                self.revocation_check(pack, expected)
             yield checked(base, pack + "/" + relative), base

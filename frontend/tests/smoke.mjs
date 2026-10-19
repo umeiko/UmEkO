@@ -1314,6 +1314,7 @@ try {
       await page.locator('.skill-file-button').filter({ hasText: 'SKILL.md' }).click();
       await page.locator('.skill-document h1').waitFor();
       assert.equal(await page.locator('#skill-preview').getAttribute('aria-pressed'), 'true');
+      await page.waitForFunction(() => document.querySelectorAll('.skill-file-name').length === 3);
       const skillNames = await page.locator('.skill-file-name').evaluateAll((els) =>
         els.map((el) => ({
           x: el.getBoundingClientRect().x,

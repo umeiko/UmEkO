@@ -12,6 +12,7 @@ import UiModal from '../../shared/UiModal.vue';
 import CodeEditor from '../../shared/CodeEditor.vue';
 import SkillTree from '../../shared/SkillTree.vue';
 import SkillSecurityModal from '../components/SkillSecurityModal.vue';
+import SkillTrustManager from '../components/SkillTrustManager.vue';
 const packs = ref([]),
   active = ref(''),
   selected = ref(null),
@@ -24,6 +25,7 @@ const packs = ref([]),
   testBusy = ref(false),
   testOutput = ref('');
 const securityOpen = ref(false);
+const trustManagerOpen = ref(false);
 const protectedFile = computed(
   () =>
     selected.value &&
@@ -293,6 +295,9 @@ async function upload(files, into = false) {
         />
       </div>
       <div class="row">
+        <button id="skill-trust-manager" @click="trustManagerOpen = true">
+          <UiIcon name="shield" :size="18" />{{ tr('可信代码管理') }}
+        </button>
         <label class="skill-import"
           ><UiIcon name="upload" :size="18" />{{ tr('导入技能') }}
           <input
@@ -459,6 +464,7 @@ async function upload(files, into = false) {
       :pack="selected?.pack || ''"
       :member="selected?.name || ''"
     />
+    <SkillTrustManager v-model="trustManagerOpen" />
   </section>
 </template>
 <style scoped>

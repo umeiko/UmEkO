@@ -36,6 +36,17 @@ class _SkillApprovalIn(BaseModel):
     sha256: str = Field(pattern=r"^[0-9a-f]{64}$")
 
 
+class _SkillTrustItem(_SkillApprovalIn):
+    pack: str = Field(min_length=1, max_length=120)
+    member: str = Field(min_length=1, max_length=500)
+
+
+class _SkillTrustBatchIn(BaseModel):
+    model_config = ConfigDict(extra="forbid")
+    action: Literal["approve", "revoke"]
+    items: list[_SkillTrustItem] = Field(min_length=1, max_length=200)
+
+
 TEMPLATE_SCRIPT = """#!/usr/bin/env python
 \""\"UMEKO 技能包脚本模板（统一契约）
 
@@ -933,6 +944,35 @@ def create_admin_app(settings: Settings, service: AgentService, store: Store, pu
             "content": TEMPLATE_SCRIPT,
         }
 
+    @app.get("/admin/v1/skill-security/catalog")
+    def skill_security_catalog(q: str = Query("", max_length=200), pack: str = Query("", max_length=120),
+            status: Literal["", "trusted", "unlisted", "changed", "revoked", "missing", "invalid"] = "",
+            kind: Literal["", "python", "config"] = "", offset: int = Query(0, ge=0), limit: int = Query(50, ge=1, le=200)) -> dict:
+        """分页搜索整个技能库的 Python、config.json 与已保存的可信记录。"""
+        try:
+            return service.skill_approvals.catalog(q=q, pack=pack, status=status, kind=kind, offset=offset, limit=limit)
+        except (OSError, ValueError) as exc:
+            raise HTTPException(400, "无法读取技能安全目录") from exc
+
+    @app.get("/admin/v1/skill-security/selection")
+    def skill_security_selection(q: str = Query("", max_length=200), pack: str = Query("", max_length=120),
+            status: Literal["", "trusted", "unlisted", "changed", "revoked", "missing", "invalid"] = "",
+            kind: Literal["", "python", "config"] = "") -> dict:
+        """取得全部筛选结果的文件版本快照，用于跨页全选。"""
+        try:
+            return service.skill_approvals.catalog(q=q, pack=pack, status=status, kind=kind, selection=True)
+        except (OSError, ValueError) as exc:
+            raise HTTPException(400, "无法读取技能安全目录") from exc
+
+    @app.post("/admin/v1/skill-security/batch")
+    def skill_security_batch(payload: _SkillTrustBatchIn, request: Request) -> dict:
+        """批量批准或移出可信区；每个文件独立检查版本并报告结果。"""
+        try:
+            return service.skill_approvals.batch(payload.action, [item.model_dump() for item in payload.items],
+                actor=request.state.admin["username"], actor_id=request.state.admin["id"])
+        except ValueError as exc:
+            raise HTTPException(400, str(exc)) from exc
+
     @app.get("/admin/v1/skill-security/{pack}/{member:path}")
     def skill_security_status(pack: str, member: str) -> dict:
         """查看管理员库当前文件版本是否在可信白名单中。"""
@@ -946,6 +986,17 @@ def create_admin_app(settings: Settings, service: AgentService, store: Store, pu
         """重算并批准管理员库当前文件版本，不修改旧会话。"""
         try:
             return service.skill_approvals.approve(pack, member, payload.sha256,
+                actor=request.state.admin["username"], actor_id=request.state.admin["id"])
+        except RuntimeError as exc:
+            raise HTTPException(409, str(exc)) from exc
+        except (OSError, ValueError) as exc:
+            raise HTTPException(400, str(exc)) from exc
+
+    @app.delete("/admin/v1/skill-security/{pack}/{member:path}")
+    def revoke_skill_file(pack: str, member: str, payload: _SkillApprovalIn, request: Request) -> dict:
+        """移出可信区；阻止已下发版本的后续调用，不改写会话文件。"""
+        try:
+            return service.skill_approvals.revoke(pack, member, payload.sha256,
                 actor=request.state.admin["username"], actor_id=request.state.admin["id"])
         except RuntimeError as exc:
             raise HTTPException(409, str(exc)) from exc
@@ -966,7 +1017,7 @@ def create_admin_app(settings: Settings, service: AgentService, store: Store, pu
         if not target.is_file():
             raise HTTPException(404, "脚本不存在")
         with tempfile.TemporaryDirectory() as tmp:
-            trust = ScriptTrust(base, Path(tmp) / "trust")
+            trust = ScriptTrust(base, Path(tmp) / "trust", revocation_check=service.skill_approvals.check_revocations)
             with service.skill_approvals.lock:
                 trust.issue(pack, base, approved_files=service.skill_approvals.approved_files(pack))
             result = run_skill_script(

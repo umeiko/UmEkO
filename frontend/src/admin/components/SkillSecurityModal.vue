@@ -1,6 +1,6 @@
 <script setup>
 import { ref, watch } from 'vue';
-import { api, notify } from '../state.js';
+import { api, confirm, notify } from '../state.js';
 import { encode } from '../../shared/api.js';
 import { useAdminI18n } from '../../shared/adminI18n.js';
 import UiModal from '../../shared/UiModal.vue';
@@ -18,6 +18,7 @@ const labels = {
   trusted: '当前版本已信任',
   changed: '文件已变化，需重新确认',
   unlisted: '当前版本未加入白名单',
+  revoked: '已移出可信区',
 };
 const endpoint = () => `/admin/v1/skill-security/${encode(props.pack)}/${encode(props.member)}`;
 async function load() {
@@ -52,6 +53,28 @@ async function approve() {
   } catch (e) {
     error.value = e.message;
     await load();
+    error.value = e.message;
+  } finally {
+    busy.value = false;
+  }
+}
+async function revoke() {
+  if (!data.value?.approved || busy.value || loading.value) return;
+  if (
+    !(await confirm(
+      tr('移出可信区'),
+      tr('将 {count} 个文件移出可信区？已下发会话的后续调用也会被阻止，正在执行的脚本不受影响。', {
+        count: 1,
+      }),
+    ))
+  )
+    return;
+  busy.value = true;
+  try {
+    await api('DELETE', endpoint(), { sha256: data.value.approved.sha256 });
+    await load();
+    notify(tr('已移出可信区'));
+  } catch (e) {
     error.value = e.message;
   } finally {
     busy.value = false;
@@ -118,9 +141,21 @@ async function approve() {
             </dd>
           </dl>
         </div>
+        <p v-if="!data.approved && data.revoked" class="security-muted">
+          {{ tr('最近移出') }} · {{ data.revoked.actor }} · {{ date(data.revoked.created_at) }}
+        </p>
       </template>
     </section>
     <template #footer>
+      <button
+        v-if="data?.approved"
+        class="danger"
+        :disabled="loading || busy"
+        data-revoke-skill
+        @click="revoke"
+      >
+        {{ tr('移出可信区') }}
+      </button>
       <button :disabled="loading || busy" @click="load">
         <UiIcon name="refresh" :size="16" />{{ tr('刷新状态') }}
       </button>
@@ -194,7 +229,8 @@ async function approve() {
   color: var(--success-ink);
 }
 .security-status.changed,
-.security-status.unlisted {
+.security-status.unlisted,
+.security-status.revoked {
   color: var(--warning);
 }
 .security-section h3 {

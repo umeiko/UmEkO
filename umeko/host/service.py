@@ -397,7 +397,8 @@ class AgentService:
         target = root / "client" / "skills"
         target.mkdir(parents=True, exist_ok=True)
         migrate_library(target)
-        script_trust = ScriptTrust(target, self.data_root / "skill_trust" / session_id)
+        script_trust = ScriptTrust(target, self.data_root / "skill_trust" / session_id,
+                                   revocation_check=self.skill_approvals.check_revocations)
         # Skill 分发唯一通道：管理员在管理面「默认 Skill」维护（default_skills 表）。
         # 文件系统 skills/ 目录不再自动播种——是否下发由管理员决定；停用项不下发。
         dispatched = agent_snapshot["dispatched_skills"] if agent_snapshot else self.store.default_skills(enabled_only=True)
