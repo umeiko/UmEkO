@@ -5,6 +5,7 @@ from copy import deepcopy
 import json
 
 import pytest
+from PIL import Image
 from openai.types.chat import ChatCompletionMessage
 
 from umeko.agent import UmekoAgent
@@ -206,7 +207,7 @@ def test_use_skill_only_loads_main_instructions_and_cannot_bypass_member_permiss
 def test_multimodal_request_keeps_metadata_and_image(engine, tmp_path):
     agent, _, _ = engine
     image = tmp_path / "image.png"
-    image.write_bytes(b"fixture")
+    Image.new("RGB", (2, 2), "white").save(image)
     agent._vision = True
     agent._llm = llm = FakeLLM(response())
     agent.chat("inspect image", images=[image])

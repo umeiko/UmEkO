@@ -52,9 +52,10 @@ def run_script(tmp_path, args, pack=PACK, script="generate_drawio.py"):
 
 
 @pytest.mark.parametrize("user_prefix,admin_prefix", [("", ""), ("/teams/docs/workbench", "/operations/umeko/admin")])
-def test_admin_dispatch_session_generation_and_download(tmp_path, user_prefix, admin_prefix):
+def test_admin_dispatch_session_generation_and_download(tmp_path, user_prefix, admin_prefix, approve_skill_files):
     app = app_for(tmp_path, user_prefix, admin_prefix)
     service, store = app.state.agent_service, app.state.store
+    approve_skill_files(service, "drawio-flowchart")
     admin_app = create_admin_app(service.settings, service, store)
     account = store.create_user("skill-admin", "fixture-pass", role="admin")
     sessions = []
@@ -318,11 +319,12 @@ def test_style_file_errors_are_explicit(tmp_path, style_path):
 
 
 @pytest.mark.parametrize("diagram_type", ["flowchart", "architecture"])
-def test_delegated_reading_and_xml_do_not_enter_main_context(tmp_path, diagram_type):
+def test_delegated_reading_and_xml_do_not_enter_main_context(tmp_path, diagram_type, approve_skill_files):
     from copy import deepcopy
 
     app = app_for(tmp_path)
     service = app.state.agent_service
+    approve_skill_files(service, "drawio-flowchart")
     service.store.set_default_skill_enabled(FLOWCHART_SKILL, True)
     owner = service.store.create_user("diagram-writer", "fixture-pass")
     state = service.create_session(user_id=owner["id"])
@@ -405,11 +407,12 @@ def test_invalid_structure_and_paths_leave_no_output(tmp_path, args):
 
 
 @pytest.mark.parametrize("renderer_failure", [False, True])
-def test_export_diagnosis_enters_agents_next_model_request(tmp_path, monkeypatch, renderer_failure):
+def test_export_diagnosis_enters_agents_next_model_request(tmp_path, monkeypatch, renderer_failure, approve_skill_files):
     from copy import deepcopy
 
     app = app_for(tmp_path)
     service = app.state.agent_service
+    approve_skill_files(service, "drawio-flowchart")
     service.store.set_default_skill_enabled(FLOWCHART_SKILL, True)
     owner = service.store.create_user("diagram-errors", "fixture-pass")
     state = service.create_session(user_id=owner["id"])

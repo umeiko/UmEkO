@@ -30,11 +30,17 @@ a = Analysis(
         "uvicorn.protocols.websockets.wsproto_impl",
         "uvicorn.lifespan.on",
         "anyio._backends._asyncio",
+        "PIL.PngImagePlugin",
+        "PIL.JpegImagePlugin",
+        "PIL.WebPImagePlugin",
+        "PIL.GifImagePlugin",
+        "PIL.BmpImagePlugin",
+        "PIL.TiffImagePlugin",
     ],
     hookspath=[],
     hooksconfig={},
     runtime_hooks=[],
-    excludes=["tkinter", "matplotlib", "numpy", "PIL"],
+    excludes=["tkinter", "matplotlib", "numpy"],
     noarchive=False,
 )
 pyz = PYZ(a.pure)

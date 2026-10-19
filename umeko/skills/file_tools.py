@@ -16,7 +16,7 @@ from ..config import DownloadConfig
 from ..archives import archive_members, extract_archive, create_zip
 from ..file_operations import bounded_path, operate_files
 from ..skill_security import guard_skill_write
-from ..images import validate_image
+from ..images import ImageInputError, validate_image
 from ..llm import LLMClient
 from ..prompts.vision import IMAGE_REASONING_DESCRIPTION, IMAGE_REASONING_PROMPT_DESCRIPTION
 from ..session import Session
@@ -570,13 +570,16 @@ def _make_image_reasoning_handler(
             nonlocal reasoning_chars
             reasoning_chars += len(text)
 
-        return llm.chat_with_images_stream(
-            [{"role": "user", "content": prompt.strip()}],
-            images,
-            on_delta=output_delta,
-            on_reasoning=reasoning_delta,
-            should_cancel=should_cancel,
-        )
+        try:
+            return llm.chat_with_images_stream(
+                [{"role": "user", "content": prompt.strip()}],
+                images,
+                on_delta=output_delta,
+                on_reasoning=reasoning_delta,
+                should_cancel=should_cancel,
+            )
+        except ImageInputError as exc:
+            return f"错误：图片预处理失败：{exc}"
 
     return image_reasoning
 

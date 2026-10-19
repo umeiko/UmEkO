@@ -20,7 +20,7 @@ from typing import Callable, Iterable
 from . import events as ev
 from .cancellation import OperationCancelled
 from .config import Settings
-from .images import image_data_url, validate_image
+from .images import image_message_parts, validate_image
 from .llm import LLMClient, message_text
 from .prompts.vision import image_input_guidance
 from .session import Session
@@ -518,10 +518,7 @@ class UmekoAgent:
     def _multimodal_message(text: str, images: list[Path]) -> dict:
         return {
             "role": "user",
-            "content": [{"type": "text", "text": text}] + [
-                {"type": "image_url", "image_url": {"url": image_data_url(p)}}
-                for p in images
-            ],
+            "content": [{"type": "text", "text": text}] + image_message_parts(images),
         }
 
     @staticmethod

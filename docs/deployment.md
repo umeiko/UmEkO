@@ -394,6 +394,10 @@ JSON 导入也支持模型字段 `max_concurrent_requests`，省略时不会覆�
 独立 CLI 进程的调用不计入 Web 服务的额度；通过独立 CLI 导入修改上限后，重启正在运行的 Web 服务以应用更新。
 队列本身不创建新会话；已有的任务接收、历史保留和 Session 清理策略仍需按部署需求另行设置。
 
+## 图像输入与部署依赖
+
+图像输入使用 Pillow 识别和预处理，安装依赖时需包含 `Pillow>=12.3,<14`。源码部署更新后重新安装项目依赖，容器重新构建镜像；离线部署应准备目标系统对应的 Pillow wheel 及依赖。项目已将它加入基础依赖和锁文件，Windows exe 打包也包含所需解码器，不再排除 PIL。不要只复制新源码而沿用缺少图片依赖的旧环境。预处理不修改原附件，尺寸、体积与格式范围见[图片输入策略](architecture/index.md#image-input)。
+
 ## 内网模型的工具调用兼容
 
 如果 LiteLLM 返回 `400`，错误包含 `"auto" tool choice requires --enable-auto-tool-choice and --tool-call-parser`，

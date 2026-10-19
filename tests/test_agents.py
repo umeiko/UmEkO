@@ -294,7 +294,7 @@ def test_agent_vision_routes_real_tools_and_keeps_queued_choice(machine_client, 
     def chat(agent, prompt, images=None):
         text_models.append(agent.settings.text_model.model_id)
         image = agent._output_root / "attachments" / "fixture.png"
-        image.write_bytes(base64.b64decode("iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAQAAAC1HAwCAAAAC0lEQVR42mP8/x8AAwMCAO+/lXcAAAAASUVORK5CYII="))
+        image.write_bytes(base64.b64decode("iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAIAAACQd1PeAAAADElEQVR4nGP4//8/AAX+Av4N70a4AAAAAElFTkSuQmCC"))
         result = agent._skills["image_reasoning"].handler(prompt="inspect", image_paths=[str(image)])
         sub_result = agent._subagent._skills["image_reasoning"].handler(prompt="inspect", image_paths=[str(image)])
         assert result == sub_result == "visual fixture output"

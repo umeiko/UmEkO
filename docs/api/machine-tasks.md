@@ -31,14 +31,31 @@ A2A 的等待、查询和流式操作需要 `tasks:read`，发送还需要 `task
 
 仅有提交或取消权限时，相关响应只提供任务状态和标识，回复、错误正文及产物列表为空；幂等重试也不会绕过读取权限。
 
+## 输入门禁 {#input-validation}
+
+REST、MCP、A2A 在创建业务任务、会话和暂存附件之前共用输入门禁。`prompt` / A2A 文本 Part 只放需求；文件通过 REST/MCP 的 `files[].content_base64`，或 A2A 1.0 的 `parts[].raw` 传输。A2A SDK 的 `raw` 使用 bytes，JSON 线上的值才是 base64；不要把整个附件对象序列化后塞进 `text` 或 `data`。
+
+以下输入会直接拒绝，不进入模型、队列或会话历史：
+
+- 正文中的实际 base64 data URL、包含文件编码的附件 JSON、具有常见图片/压缩包/PDF 文件头的编码。
+- 连续或只用空白、转义换行分隔的长编码块，累计达到 4096 字符；较短的 base64 讨论示例和普通代码、文本仍可使用。识别是确定性的格式规则，不代替文件内容审查，也不保证识别任意变形的编码。
+- 需求文本超过 200000 字符；A2A 所有 text/data Part 合计受同一上限限制，整条消息最多 64 个 Part。
+- 文件名/编码不合法、附件超过 10 个或解码后总大小超过 20 MiB。整条 HTTP 请求另有 30 MiB 限制，超过时返回 413。
+
+门禁错误含稳定的 `code`、`field`、`retryable=false`、`task_created=false`、`next_action` 和正确附件用法 `file_transport`，不回显输入文件字节。REST 返回 HTTP 400 的 `detail`，请求 Schema 校验错误保持 HTTP 422 并同样省略原始输入；MCP 返回 `isError=true`，`structuredContent.error` 与文本错误内容一致；A2A 返回 `InvalidParams`，在错误 data 的 `ErrorInfo.metadata` 中携带这些字段，官方 SDK 可通过异常的 `data` 读取。
+
+例如 `FILE_CONTENT_IN_TEXT` 表示文件误放进正文，`PROMPT_TOO_LARGE` 表示文本过长。调用 Agent 应修正附件结构后再提交，不能原样重试、拆段重试或改塞进其他文本字段。无法上传时，及时告诉用户需要补充附件。拒绝发生在任务创建之前，因此没有 Task ID 或临时工作台链接；不要轮询不存在的任务。队列满的 429 属于另一类可稍后重试的错误。
+
 ## 临时工作台 {#temporary-workspace}
 
 网页使用方式、外部 Agent 续聊示例与接口范围见[临时工作台与续聊](temporary-workspace.md)。
 
 完整权限调用方的任务响应含 `workspace_url` 和 `workspace_hint`。地址为用户服务完整基址下的
 `/TMP/<Temp_session_id>`，包含 `UMEKO_BASE_PATH`，不包含管理前缀或 `/agent/<slug>`。
-MCP 的 `submit_task`、`get_task` 和任务列表直接返回这些字段；A2A 在 Task 的 `metadata.workspaceUrl`
-和 `metadata.workspaceHint` 返回。可以把链接交给用户，在浏览器继续同一会话，无需另外注册或登录。
+REST 与 MCP 的提交、查询和取消响应直接返回这些字段；A2A 在 Task 的 `metadata.workspaceUrl`
+和 `metadata.workspaceHint` 返回。链接在成功提交时即可取得，无需等待模型完成；MCP 提交回执的文字块和 A2A Task 的 `status.message` 也直接提供可点击链接及接续提示。
+
+调用 Agent 应在提交成功后立即把链接交给用户，邀请其实时查看进度、工具记录和文件，任务结束后可在浏览器继续同一会话，无需另外注册或登录。排队时工作台显示准备页。若缺少必要图片、文档或需人工处理，说明待补事项并引导用户在该节点补齐，不要空等或重新创建任务。服务会返回明确引导，实际向用户展示仍取决于调用方 Agent。
 
 临时工作台复用聊天、工具记录、上传、文件树、预览、下载与 SSE。账号、新建会话、会话管理和模型选择不可操作；
 技能仅展示任务提交时该 Agent 下发的选定技能，全部勾选且只读。任务排队时显示准备页，准备好后自动打开；

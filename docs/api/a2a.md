@@ -32,7 +32,7 @@ Agent Card：`BASE_URL/.well-known/agent-card.json`；协议入口：`BASE_URL/a
 }
 ```
 
-`raw` 在 JSON 中为 base64，SDK 对象中为 bytes。也可发送 `data` 对象。URL 文件仅接受本服务、同一账号有权读取的任务产物；其他文件用 raw 上传。模型由管理员配置，`metadata.umeko.model_id` 不再接受。
+`raw` 在 JSON 中为 base64，SDK 对象中为 bytes。也可发送普通 `data` 对象，但不能用 text/data 包裹文件编码或附件 JSON。正文中的文件编码、长编码块和过量 Part 会在建任务前被拒绝，返回 `InvalidParams` 与 `retryable=false`，正确附件用法见错误 data；不要原样或拆段重试。规则见[输入门禁](machine-tasks.md#input-validation)。URL 文件仅接受本服务、同一账号有权读取的任务产物；其他文件用 raw 上传。模型由管理员配置，`metadata.umeko.model_id` 不再接受。
 
 主模型和默认视觉模型的配置方法见[智能体管理](agents.md)。文件序号列表和文件/文件夹下载可通过同一 Agent 的 [REST 接口](machine-tasks.md) 或 [MCP 工具](mcp.md) 完成，仍使用该 Task 的 `id`。
 
@@ -73,8 +73,8 @@ asyncio.run(main())
 
 SDK `streaming=False` 使用非流式发送。任务很长时可用 `return_immediately`，拿到 ID 后轮询或订阅，避免代理请求超时。
 
-完整权限调用方收到的 Task 在 `metadata.workspaceUrl`、`metadata.workspaceHint` 中提供临时工作台地址与提示。
-可把地址交给用户，在网页中继续同一会话。流式初始 Task、查询与任务列表均携带此信息；限制与有效期见
+完整权限调用方收到的 Task 在 `metadata.workspaceUrl`、`metadata.workspaceHint` 中提供临时工作台地址与提示，`status.message` 同时给出可点击链接。
+调用 Agent 应在提交成功后立即展示给用户，邀请其查看进度、文件和工具记录，任务结束后在网页中继续同一会话。流式初始 Task 与查询均携带此信息；非流式可设置 `returnImmediately=true` 立即取得链接。限制与有效期见
 [临时工作台](machine-tasks.md#temporary-workspace)。
 外部 Agent 也可通过临时会话 REST 接口继续原上下文，并实时同步到已打开的网页；这不会向原 A2A Task 追加消息。
 具体调用步骤见[临时工作台与续聊](temporary-workspace.md)。

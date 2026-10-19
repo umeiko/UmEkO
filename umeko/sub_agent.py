@@ -10,7 +10,7 @@ from typing import Callable
 
 from .cancellation import OperationCancelled
 from .config import Settings
-from .images import image_data_url, validate_image
+from .images import ImageInputError, image_message_parts, validate_image
 from .llm import LLMClient, message_text
 from .prompts.vision import (
     IMAGE_REASONING_DESCRIPTION, IMAGE_REASONING_PROMPT_DESCRIPTION, image_input_guidance,
@@ -212,13 +212,16 @@ class FileSubAgent:
                 reasoning_delta=text,
             )
 
-        return self._image_reasoning_llm.chat_with_images_stream(
-            [{"role": "user", "content": prompt.strip()}],
-            images,
-            on_delta=output_delta,
-            on_reasoning=reasoning_delta,
-            should_cancel=self._should_cancel,
-        )
+        try:
+            return self._image_reasoning_llm.chat_with_images_stream(
+                [{"role": "user", "content": prompt.strip()}],
+                images,
+                on_delta=output_delta,
+                on_reasoning=reasoning_delta,
+                should_cancel=self._should_cancel,
+            )
+        except ImageInputError as exc:
+            return f"错误：图片预处理失败：{exc}"
 
     @property
     def tool_names(self) -> set[str]:
@@ -294,13 +297,7 @@ class FileSubAgent:
                     messages.append({"role": "user", "content": note})
                     override = {
                         "role": "user",
-                        "content": [{"type": "text", "text": note}] + [
-                            {
-                                "type": "image_url",
-                                "image_url": {"url": image_data_url(path)},
-                            }
-                            for path in pending
-                        ],
+                        "content": [{"type": "text", "text": note}] + image_message_parts(pending),
                     }
             return self._finish(
                 f"子 Agent 在 {self._max_tool_iterations} 个工具回合后仍未完成"

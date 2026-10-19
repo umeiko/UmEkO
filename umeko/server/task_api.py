@@ -8,23 +8,26 @@ from ipaddress import ip_address
 from urllib.parse import unquote
 
 from fastapi import HTTPException, Query, Request
+from fastapi.exceptions import RequestValidationError
+from fastapi.exception_handlers import request_validation_exception_handler
 from fastapi.responses import FileResponse, JSONResponse, StreamingResponse
 from starlette.background import BackgroundTask
 from pydantic import BaseModel, ConfigDict, Field
 
 from ..host.identities import SCOPES
 from ..host.tasks import IdempotencyConflict, QueueFull, TERMINAL
+from ..host.task_input import TaskInputError
 
 
 class TaskFileInput(BaseModel):
     model_config = ConfigDict(extra="forbid")
-    name: str = Field(min_length=1, max_length=200)
-    content_base64: str = Field(max_length=28_000_000)
+    name: str = Field(min_length=1, max_length=200, description="附件文件名，不是服务器路径")
+    content_base64: str = Field(max_length=28_000_000, description="原始文件字节的 base64，不含 data URL 头部；不能粘贴进 prompt")
 
 
 class TaskCreateInput(BaseModel):
     model_config = ConfigDict(extra="forbid")
-    prompt: str = Field(min_length=1, max_length=200_000)
+    prompt: str = Field(min_length=1, max_length=200_000, description="任务需求文本；文件 base64 和 data URL 必须通过附件字段传输")
     files: list[TaskFileInput] = Field(default_factory=list, max_length=10)
 
 
@@ -46,12 +49,14 @@ def task_view(task: dict, base: str) -> dict:
     service_base = base.rsplit("/agent/", 1)[0]
     return {**{key: value for key, value in task.items() if key != "workspace_token"}, "task_id": task["id"],
             "workspace_url": service_base + "/TMP/" + token if token else None,
-            "workspace_hint": "可打开临时工作台查看本次任务并继续同一会话；若缺少必要图片、文档或需人工处理，请外层 Agent 及时提供此链接和待补事项，邀请用户进入工作台处理，不要空等。链接持有者可访问本会话，到期后请重新提交任务。" if token else None,
+            "workspace_hint": "提交后请立即把 workspace_url 作为可点击链接交给用户，说明可打开临时工作台实时查看进度、文件和工具记录，任务结束后可继续同一会话；排队时显示准备页。若缺少必要图片、文档或需人工处理，及时说明待补事项，邀请用户进入工作台处理，不要空等或重复提交。链接持有者可访问本会话，仅交给预期使用者，到期后请重新提交任务。" if token else None,
             "artifacts": [{**a, "download_url": base + f"/v1/tasks/{task['id']}/artifacts/{a['id']}/content"}
                                  for a in task["artifacts"]]}
 
 
 def api_error(exc):
+    if isinstance(exc, TaskInputError):
+        return HTTPException(400, exc.detail())
     if isinstance(exc, PermissionError):
         return HTTPException(403, str(exc))
     if isinstance(exc, KeyError):
@@ -62,6 +67,18 @@ def api_error(exc):
 
 
 def add_task_routes(app, settings, tasks, identities):
+    @app.exception_handler(RequestValidationError)
+    async def task_validation_error(request: Request, exc: RequestValidationError):
+        if (getattr(request.state, "principal", None) is None or request.method != "POST"
+                or not request.url.path.endswith("/v1/tasks")):
+            return await request_validation_exception_handler(request, exc)
+        # Pydantic includes the rejected input in errors by default. Never reflect
+        # a multi-megabyte encoded file back into the caller's model context.
+        error = TaskInputError("INVALID_TASK_INPUT", "请求结构不正确，请按接口定义传入需求文本与附件。", "request")
+        if any(item["loc"] == ("body", "prompt") and item["type"] == "string_too_long" for item in exc.errors()):
+            error = TaskInputError("PROMPT_TOO_LARGE", "需求文本最多 200000 字符；文件内容请通过附件上传。")
+        return JSONResponse({"detail": error.detail()}, status_code=422)
+
     @app.post("/v1/tasks", status_code=202, tags=["machine tasks"])
     def submit_task(payload: TaskCreateInput, request: Request) -> dict:
         try:

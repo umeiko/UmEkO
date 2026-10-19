@@ -5,7 +5,7 @@ import asyncio
 import base64
 import json
 from urllib.parse import urlsplit
-from typing import Any
+from typing import Annotated, Any
 from fastapi import Request
 from fastapi.responses import JSONResponse
 
@@ -23,11 +23,12 @@ from mcp.server import MCPServer
 from mcp.server.mcpserver import Context
 from mcp.server.mcpserver.exceptions import ToolError
 from mcp.server.transport_security import TransportSecuritySettings
-from mcp.types import ToolAnnotations
+from mcp.types import CallToolResult, TextContent, ToolAnnotations
 
 from .. import __version__
 from ..host.tasks import TERMINAL
-from .task_api import caller_ip, public_base, task_view
+from ..host.task_input import MAX_MESSAGE_PARTS, MAX_PROMPT_CHARS, TaskInputError
+from .task_api import TaskFileInput, caller_ip, public_base, task_view
 
 def _mcp_call(fn, *args, **kwargs):
     try:
@@ -42,7 +43,9 @@ def _mcp_server(settings, tasks):
         "用 submit_task 返回的 task_id 查询本次执行；结束后 read_results 获取自然语言结果和 Agent 选择的最终文件清单。"
         "按清单的 file_id 调用 download_file 下载，文件夹为 ZIP；list_file 可逐层查看其他任务文件。"
         "取消用 cancel_task。主模型和视觉模型由管理员配置，调用方不能选择。"
-        "任务返回 workspace_url，可交给用户打开临时工作台查看文件与继续同一会话。"
+        "prompt 只写需求，禁止把文件 base64 或 data URL 塞进正文；文件必须使用 files 的 name/content_base64。"
+        "输入被拒绝时不要原样或拆段重试，应按错误提示修正附件结构，不能上传时通知用户。"
+        "提交成功后立即把 workspace_url 作为可点击链接交给用户，邀请其打开临时工作台查看进度、文件与继续同一会话。"
         "若回复说明缺少必要图片、文档或需要人工处理，立即提供真实 workspace_url 和待补事项，邀请用户进入工作台处理；"
         "不要一直 get_task 等待补传文件，后续通过工作台或其会话 REST 接口继续。"
         "链接等同本会话访问凭据，请仅交给预期使用者。"))
@@ -54,7 +57,9 @@ def _mcp_server(settings, tasks):
         """首次接入时读取：用最少步骤完成本 MCP 的任务提交、状态查询、文件下载和人工接续。"""
         return """按以下契约使用当前 Agent 的 MCP：
 1. 可先 get_agent_info 了解能力。submit_task(prompt=用户需求, files=可选附件) 提交一次，保存返回的 task_id 和 workspace_url。
-   files 使用 name/content_base64，不传服务器路径；模型由管理员配置，不传 model_id。本服务不提供模型列表或任务列表。
+   files 使用 name/content_base64，不传服务器路径；prompt 只写需求，不放 base64、data URL 或伪装成文字的附件 JSON。
+   提交成功后立即把真实 workspace_url 作为可点击链接交给用户，说明可实时查看进度、文件和工具记录，任务结束后可继续同一会话。
+   输入被拒绝时不要原样或拆段重试，按错误提示修正；无法上传时向用户说明需要附件。模型由管理员配置，不传 model_id。本服务不提供模型列表或任务列表。
 2. 提交成功不等于执行完成。只用这次返回的 task_id 调用 get_task；不能用固定 agent_id 替代。
    queued/running/cancelling 时隔几秒查询，避免密集轮询和重复提交；重试同一次提交时复用 idempotency_key。
 3. completed 时调用 read_results(task_id)，ready=true 后交付 text，并按 files 中的 file_id 调用 download_file(task_id, file_id) 获取下载链接。
@@ -76,20 +81,32 @@ def _mcp_server(settings, tasks):
                                                request.state.agent_definition)
 
     @server.tool(structured_output=True, annotations=ToolAnnotations(readOnlyHint=False, destructiveHint=False, openWorldHint=True))
-    async def submit_task(prompt: str, ctx: Context, files: list[dict[str, str]] | None = None,
-                          idempotency_key: str | None = None) -> dict[str, Any]:
+    async def submit_task(prompt: str, ctx: Context, files: list[TaskFileInput] | None = None,
+                          idempotency_key: str | None = None) -> Annotated[CallToolResult, dict[str, Any]]:
         """提交 Agent 任务并立即返回本次执行的 id/task_id 和当前服务的 agent_id。files 为 name/content_base64 列表，最多 10 个、合计 20 MiB；
         不接受服务器路径。任务独立执行，默认保留 24 小时；幂等键防止重复提交。
         使用管理员配置的默认模型，不接受调用方选择模型。
-        返回 workspace_url，可在浏览器继续此会话。"""
+        prompt 只写需求，不得粘贴文件 base64/data URL；输入拒绝时不要原样或拆段重试，先修正附件结构或通知用户。
+        成功回执含 workspace_url，请立即作为链接交给用户，邀请其实时查看进度、文件并在任务结束后继续此会话。"""
         # The SDK may ignore undeclared arguments; reject this removed option explicitly.
         if "model_id" in ((ctx.request_context.params or {}).get("arguments") or {}):
             raise ToolError("对外任务不支持选择 model_id，请使用管理员配置的默认模型")
-        task = await asyncio.to_thread(_mcp_call, tasks.submit, principal(ctx),
-                                      {"prompt": prompt, "files": files or []},
-                                      source="mcp", idempotency_key=idempotency_key,
-                                      caller_ip=caller_ip(ctx.request_context.request))
-        return task_view(task, public_base(settings, ctx.request_context.request))
+        try:
+            task = await asyncio.to_thread(tasks.submit, principal(ctx),
+                                          {"prompt": prompt, "files": [file.model_dump() for file in files or []]},
+                                          source="mcp", idempotency_key=idempotency_key,
+                                          caller_ip=caller_ip(ctx.request_context.request))
+        except TaskInputError as exc:
+            detail = {"error": exc.detail()}
+            return CallToolResult(is_error=True, structured_content=detail,
+                                  content=[TextContent(type="text", text=json.dumps(detail, ensure_ascii=False))])
+        except (ValueError, KeyError, PermissionError) as exc:
+            raise ToolError(str(exc)) from exc
+        view = task_view(task, public_base(settings, ctx.request_context.request))
+        content = [TextContent(type="text", text=json.dumps(view, ensure_ascii=False))]
+        if view["workspace_url"]:
+            content.append(TextContent(type="text", text=f"请立即向用户展示：[打开临时工作台]({view['workspace_url']})\n{view['workspace_hint']}"))
+        return CallToolResult(content=content, structured_content=view)
 
     @server.tool(structured_output=True, annotations=ToolAnnotations(readOnlyHint=True, openWorldHint=False))
     def get_task(task_id: str, ctx: Context) -> dict[str, Any]:
@@ -184,6 +201,11 @@ class A2AHandler(RequestHandler):
                                                 parts=[a2a.Part(text=record["error"])]))
         task = a2a.Task(id=record["id"], context_id=record["context_id"], status=status)
         view = task_view(record, base)
+        if view["workspace_url"]:
+            status_text = ((record["error"] + "\n\n") if record["error"] else "")
+            status_text += f"[打开临时工作台]({view['workspace_url']})\n{view['workspace_hint']}"
+            task.status.message.CopyFrom(a2a.Message(message_id=record["id"] + "-status", role=a2a.Role.ROLE_AGENT,
+                                                     parts=[a2a.Part(text=status_text)]))
         ParseDict({"expiresAt": record["expires_at"], "source": record["source"], "agentId": record["agent_id"],
                    "workspaceExpiresAt": record.get("workspace_expires_at"), "workspaceState": record.get("workspace_state"),
                    "workspaceUrl": view["workspace_url"], "workspaceHint": view["workspace_hint"]}, task.metadata)
@@ -232,14 +254,21 @@ class A2AHandler(RequestHandler):
         if params.configuration.accepted_output_modes and not any(
                 m in {"text/plain", "application/octet-stream", "text/*", "*/*"} for m in params.configuration.accepted_output_modes):
             raise InvalidParamsError("需要接受 text/plain 输出")
-        prompt, files = [], []
+        if len(message.parts) > MAX_MESSAGE_PARTS:
+            exc = TaskInputError("TOO_MANY_PARTS", "消息最多包含 64 个 Part；请合并需求文本并通过文件 Part 上传附件。", "message.parts")
+            raise InvalidParamsError(str(exc), data=exc.detail())
+        prompt, files, text_length, file_bytes = [], [], 0, 0
         for part in message.parts:
             kind = part.WhichOneof("content")
-            if kind == "text":
-                prompt.append(part.text)
-            elif kind == "data":
-                prompt.append(json.dumps(MessageToDict(part.data), ensure_ascii=False))
+            if kind in {"text", "data"}:
+                text = part.text if kind == "text" else json.dumps(MessageToDict(part.data), ensure_ascii=False)
+                text_length += len(text) + bool(prompt)
+                if text_length > MAX_PROMPT_CHARS:
+                    exc = TaskInputError("PROMPT_TOO_LARGE", "所有文本和 data Part 合计最多 200000 字符；文件内容请通过 raw Part 上传。", "message.parts")
+                    raise InvalidParamsError(str(exc), data=exc.detail())
+                prompt.append(text)
             elif kind == "raw":
+                file_bytes += len(part.raw)
                 files.append({"name": part.filename or "attachment.bin", "content_base64": base64.b64encode(part.raw).decode()})
             elif kind == "url":
                 # Only our authenticated artifact references are accepted; no arbitrary URL fetching.
@@ -253,11 +282,16 @@ class A2AHandler(RequestHandler):
                     path, _ = self.tasks.artifact(context.state["principal"], pieces[0], pieces[2])
                     if path.stat().st_size > 20 * 1024 * 1024:
                         raise ValueError("文件超过 20 MiB")
-                    files.append({"name": part.filename or path.name, "content_base64": base64.b64encode(path.read_bytes()).decode()})
+                    content = path.read_bytes()
+                    file_bytes += len(content)
+                    files.append({"name": part.filename or path.name, "content_base64": base64.b64encode(content).decode()})
                 except (KeyError, PermissionError, ValueError) as exc:
                     raise InvalidParamsError(str(exc)) from exc
             else:
                 raise InvalidParamsError("不支持的消息 Part")
+            if len(files) > 10 or file_bytes > 20 * 1024 * 1024:
+                exc = TaskInputError("INVALID_FILES", "最多上传 10 个文件，总大小不超过 20 MiB。", "message.parts")
+                raise InvalidParamsError(str(exc), data=exc.detail())
         options = MessageToDict(params.metadata).get("umeko", {})
         if not isinstance(options, dict):
             raise InvalidParamsError("metadata.umeko 须为对象")
@@ -269,6 +303,8 @@ class A2AHandler(RequestHandler):
                 context_id=message.context_id or None, idempotency_key=options.get("idempotency_key") or "a2a:" + message.message_id,
                 message_id=message.message_id, caller_ip=context.state.get("caller_ip"))
             return record
+        except TaskInputError as exc:
+            raise InvalidParamsError(str(exc), data=exc.detail()) from exc
         except KeyError as exc:
             raise TaskNotFoundError(str(exc)) from exc
         except (ValueError, PermissionError) as exc:

@@ -18,7 +18,7 @@ from umeko.llm import LLMClient
 from umeko.server.admin import create_admin_app
 from umeko.server.app import create_app
 
-PNG = "iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAQAAAC1HAwCAAAAC0lEQVR42mP8/x8AAwMCAO+/lXcAAAAASUVORK5CYII="
+PNG = "iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAIAAACQd1PeAAAADElEQVR4nGP4//8/AAX+Av4N70a4AAAAAElFTkSuQmCC"
 
 
 def app_for(tmp_path, user_prefix="", admin_prefix=""):
@@ -96,7 +96,8 @@ def test_upgrade_keeps_existing_same_slug_definitions(tmp_path):
 
 @pytest.mark.parametrize("prefix", ["", "/teams/umeko"])
 @pytest.mark.parametrize("count", [1, 5])
-def test_image_reasoning_tasks_accept_images_and_open_prompt(tmp_path, monkeypatch, prefix, count):
+@pytest.mark.parametrize("suffix", [".png", "", ".bin", ".jpg"])
+def test_image_reasoning_tasks_accept_images_and_open_prompt(tmp_path, monkeypatch, prefix, count, suffix):
     app = app_for(tmp_path, prefix)
     service, store = app.state.agent_service, app.state.store
     provider = store.create_provider("fixture", "https://unused.invalid", "fixture-key")
@@ -130,7 +131,7 @@ def test_image_reasoning_tasks_accept_images_and_open_prompt(tmp_path, monkeypat
     with TestClient(app) as client:
         base = prefix + "/agent/" + IMAGE_REASONING_SLUG + "/v1/tasks"
         response = client.post(base, json={"prompt": question, "files": [
-            {"name": f"image-{index}.png", "content_base64": PNG} for index in range(count)]})
+            {"name": f"image-{index}{suffix}", "content_base64": PNG} for index in range(count)]})
         assert response.status_code == 202, response.text
         for _ in range(200):
             result = client.get(base + "/" + response.json()["id"]).json()

@@ -758,6 +758,7 @@
       "type": "array"
     },
     "prompt": {
+      "description": "任务需求文本；文件 base64 和 data URL 必须通过附件字段传输",
       "maxLength": 200000,
       "minLength": 1,
       "title": "Prompt",
@@ -779,11 +780,13 @@
   "additionalProperties": false,
   "properties": {
     "content_base64": {
+      "description": "原始文件字节的 base64，不含 data URL 头部；不能粘贴进 prompt",
       "maxLength": 28000000,
       "title": "Content Base64",
       "type": "string"
     },
     "name": {
+      "description": "附件文件名，不是服务器路径",
       "maxLength": 200,
       "minLength": 1,
       "title": "Name",

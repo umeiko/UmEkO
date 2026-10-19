@@ -5,6 +5,7 @@ import json
 import shutil
 
 import pytest
+from PIL import Image
 from openai.types.chat import ChatCompletionMessage
 
 from umeko.agent import UmekoAgent
@@ -13,9 +14,11 @@ from umeko.host.builtin_agents import ASSETS, IMAGE_QC_PROMPT
 from umeko.llm import LLMClient
 from umeko.prompts.system import DEFAULT_SYSTEM
 from umeko.session import Session
+from umeko import images as image_module
+from io import BytesIO
 
 
-PNG = base64.b64decode("iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAQAAAC1HAwCAAAAC0lEQVR42mP8/x8AAwMCAO+/lXcAAAAASUVORK5CYII=")
+PNG = base64.b64decode("iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAIAAACQd1PeAAAADElEQVR4nGP4//8/AAX+Av4N70a4AAAAAElFTkSuQmCC")
 
 
 def reply(content="done", *, tool=None, arguments=None, call_id="call"):
@@ -171,3 +174,47 @@ def test_qc_keeps_skill_workflow_and_passes_checks_to_delegated_visual_tool(agen
                    for message in agent._messages for call in message.get("tool_calls", []))
     assert "必须遵守，不用通用看图流程替代它" in agent._messages[0]["content"]
     assert "专业质检的检查标准与执行流程必须来自主 Agent 交给你的 Skill" in sub_requests[0][0]["content"]
+
+
+def test_main_and_subagent_prepare_extensionless_images_before_streaming(agent_factory, monkeypatch, tmp_path):
+    agent, original, events = agent_factory(separate_vision=True)
+    path = original.with_name("upload-without-extension")
+    with Image.new("RGBA", (400, 200), (10, 50, 100, 80)) as image:
+        image.save(path, format="PNG")
+    before = path.read_bytes()
+    monkeypatch.setattr(image_module, "MAX_IMAGE_EDGE", 64)
+    requests = []
+    def stream(llm, messages, on_delta=None, on_reasoning=None, **kwargs):
+        assert llm._model.name == "visual"
+        parts = messages[-1]["content"]
+        assert parts[0]["text"] == "inspect"
+        assert "等比缩小" in parts[1]["text"]
+        raw = base64.b64decode(parts[2]["image_url"]["url"].split(",", 1)[1])
+        with Image.open(BytesIO(raw)) as image:
+            assert image.size == (64, 32) and image.mode == "RGBA"
+        requests.append(messages)
+        if on_delta:
+            on_delta("视觉输出")
+        if on_reasoning:
+            on_reasoning("视觉推理")
+        return "视觉输出"
+    monkeypatch.setattr(LLMClient, "chat_stream", stream)
+    for handler in [agent._skills["image_reasoning"].handler, agent._subagent._skills["image_reasoning"].handler]:
+        assert handler(prompt="inspect", image_paths=["attachments/" + path.name]) == "视觉输出"
+    assert len(requests) == 2 and path.read_bytes() == before
+    assert any(name == "tool.progress" for name, _ in events)
+    outside = tmp_path / "outside.png"
+    with Image.new("RGB", (2, 2)) as image:
+        image.save(outside)
+    for handler in [agent._skills["image_reasoning"].handler, agent._subagent._skills["image_reasoning"].handler]:
+        assert handler(prompt="inspect", image_paths=[str(outside)]).startswith("错误：")
+    assert len(requests) == 2
+
+
+def test_invalid_image_content_never_reaches_visual_model(agent_factory, monkeypatch):
+    agent, path, _ = agent_factory(separate_vision=True)
+    path.write_bytes(b"<html>not an image</html>")
+    monkeypatch.setattr(LLMClient, "chat_stream", lambda *a, **kw: pytest.fail("bad image reached model"))
+    for handler in [agent._skills["image_reasoning"].handler, agent._subagent._skills["image_reasoning"].handler]:
+        result = handler(prompt="inspect", image_paths=[str(path)])
+        assert result.startswith("错误：") and "文件内容" in result

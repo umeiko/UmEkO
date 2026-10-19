@@ -22,7 +22,7 @@ from ..cancellation import (
     watch_cancellation,
 )
 from ..config import ModelConfig
-from ..images import image_data_url
+from ..images import image_message_parts
 from .concurrency import ModelCallQueue, model_call_queue
 from .tool_compat import parse_text_message, text_messages, unsupported_tools
 
@@ -526,10 +526,7 @@ class LLMClient:
         """把图片以 base64 data URL 附加到最后一条消息，返回新列表。"""
         msgs = [dict(m) for m in messages]
         last = dict(msgs[-1])
-        last["content"] = [{"type": "text", "text": last["content"]}] + [
-            {"type": "image_url", "image_url": {"url": image_data_url(p)}}
-            for p in image_paths
-        ]
+        last["content"] = [{"type": "text", "text": last["content"]}] + image_message_parts(image_paths)
         msgs[-1] = last
         return msgs
 

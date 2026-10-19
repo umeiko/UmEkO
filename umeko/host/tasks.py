@@ -23,6 +23,7 @@ from pathlib import Path, PurePosixPath
 from .identities import SCOPES, now, require_scope
 from .file_manifest import ROOTS, _linked, session_root
 from .results import validate_result, verify_result_files
+from .task_input import TaskInputError, validate_prompt
 
 TERMINAL = frozenset({"completed", "failed", "cancelled"})
 MAX_FILE_BYTES = 20 * 1024 * 1024
@@ -43,29 +44,28 @@ class IdempotencyConflict(ValueError):
 
 def validate_input(payload: dict) -> tuple[dict, list[bytes]]:
     prompt = payload.get("prompt", "")
-    if not isinstance(prompt, str) or not prompt.strip() or len(prompt) > 200_000:
-        raise ValueError("prompt 须为非空文本，最多 200000 字符")
+    validate_prompt(prompt)
     if "model_id" in payload:
         raise ValueError("对外任务不支持选择 model_id，请使用管理员配置的默认模型")
     files = payload.get("files", [])
     if not isinstance(files, list) or len(files) > 10:
-        raise ValueError("最多上传 10 个文件，总大小不超过 20 MiB")
+        raise TaskInputError("INVALID_FILES", "最多上传 10 个文件，总大小不超过 20 MiB。", "files")
     contents, file_views, total = [], [], 0
     for item in files:
         if not isinstance(item, dict):
-            raise ValueError("文件须包含 name 和 content_base64")
+            raise TaskInputError("INVALID_FILE", "文件须包含 name 和 content_base64。", "files")
         name, encoded = item.get("name"), item.get("content_base64")
         if (not isinstance(name, str) or not 1 <= len(name) <= 200 or name in {".", ".."}
                 or any(c in name for c in '/\\:\x00') or name.endswith((' ', '.')) or not isinstance(encoded, str)
                 or len(encoded) > (MAX_FILE_BYTES * 4 // 3 + 4)):
-            raise ValueError("文件名或 base64 内容无效，不能使用服务器路径")
+            raise TaskInputError("INVALID_FILE", "文件名或 base64 内容无效，不能使用服务器路径。", "files")
         try:
             content = base64.b64decode(encoded, validate=True)
         except (ValueError, binascii.Error) as exc:
-            raise ValueError("文件内容不是合法 base64") from exc
+            raise TaskInputError("INVALID_FILE_ENCODING", "文件内容不是合法 base64；不要包含 data URL 头部。", "files") from exc
         total += len(content)
         if total > MAX_FILE_BYTES:
-            raise ValueError("文件总大小不能超过 20 MiB")
+            raise TaskInputError("FILES_TOO_LARGE", "文件总大小不能超过 20 MiB。", "files")
         contents.append(content)
         file_views.append({"name": name, "size": len(content), "sha256": hashlib.sha256(content).hexdigest()})
     return {"prompt": prompt, "model_id": None, "files": file_views}, contents

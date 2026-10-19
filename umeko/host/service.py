@@ -35,6 +35,7 @@ from .profile import CLOUD_PROFILE, Profile
 from ..skillpacks import parse_skill_pack_text, skill_packs_dir
 from ..skill_layout import copy_package, entry_path, entries, file_metadata, migrate_library
 from ..skill_security import ScriptTrust, guard_skill_write, protected_name
+from ..images import IMAGE_EXTS, detect_image_format, validate_image
 from .skill_approvals import SkillApprovals, skill_maintenance
 from .storage import Store
 from .results import MACHINE_RESULTS_PROMPT, SUBMISSION_REMINDER, ResultSubmission
@@ -636,8 +637,8 @@ class AgentService:
             if session.result_submission:
                 session.result_submission.begin_run(run.id)
             try:
-                image_suffixes = {".png", ".jpg", ".jpeg", ".webp", ".gif", ".bmp"}
-                images = [path for path in paths if path.suffix.lower() in image_suffixes]
+                images = [validate_image(path) for path in paths
+                          if detect_image_format(path) is not None or path.suffix.lower() in IMAGE_EXTS]
                 documents = [path for path in paths if path not in images]
                 prompt = user_input
                 session.mounted_resources = self.store.resource_mounts(session.id)

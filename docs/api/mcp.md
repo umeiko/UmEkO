@@ -9,7 +9,7 @@
 | 工具 | 参数 | 结果 |
 | --- | --- | --- |
 | `get_agent_info` | 无 | 当前路径对应的公开 Agent Card，含介绍和实际披露的技能 |
-| `submit_task` | `prompt`，可选 `files`、`idempotency_key` | 立即返回本次执行的 `id/task_id` 与当前服务的 `agent_id` |
+| `submit_task` | `prompt`，可选 `files`、`idempotency_key` | 立即返回本次执行的 `id/task_id`、`agent_id`、临时工作台链接与用户接续提示 |
 | `get_task` | `task_id` | 状态、最终回复、错误、产物与到期时间 |
 | `list_file` | `task_id`，可选 `directory_id` | 当前目录的直接子项，包含文件名、类型、大小和稳定序号 `file_id` |
 | `download_file` | `task_id`、`file_id` | 受保护的 HTTP 下载链接；文件夹自动打包 ZIP |
@@ -17,6 +17,8 @@
 | `read_results` | `task_id` | `ready`、自然语言 `text`、最终文件 `files`、结果更新时间及执行/节点状态 |
 
 提交的 `files` 为 `[{"name":"input.txt","content_base64":"..."}]`，不接受服务器路径。输入限制、权限与幂等规则见 [机器任务](machine-tasks.md)。`read_results` 读取持久化的结果 JSON，不再次调用模型、不读取文件字节；文件统一使用 `download_file` 下载。
+
+`tools/list` 会在 `submit_task.files` 的 JSON Schema 中明确披露 `name`、`content_base64` 和限制。文件编码不能放进 `prompt`，也不能粘贴 data URL；这类输入会在建任务前直接拒绝。检查 `is_error` 和 `structured_content["error"]`，按 `file_transport` 修正，`retryable=false` 时不要原样重试。完整规则见[输入门禁](machine-tasks.md#input-validation)。
 
 ## 最终结果
 
@@ -72,6 +74,8 @@ async def main():
             if result.is_error:
                 raise RuntimeError(str(result.content))
             task = result.structured_content
+            if task["workspace_url"]:
+                print("可在临时工作台查看进度并继续处理：", task["workspace_url"])
             while task["status"] not in {"completed", "failed", "cancelled"}:
                 await asyncio.sleep(1)
                 result = await client.call_tool("get_task", {"task_id": task["id"]})
@@ -91,7 +95,7 @@ asyncio.run(main())
 
 业务错误通过 MCP 工具错误返回，客户端检查 `is_error`。身份无效为 HTTP 401。调用方断开后，已经提交的业务任务继续运行；需要停止时调用 `cancel_task`。
 
-完整权限任务的响应还含 `workspace_url`、`workspace_hint`，调用 Agent 可把链接交给用户打开临时工作台继续处理。
+完整权限任务的响应还含 `workspace_url`、`workspace_hint`。提交成功的文字回执另附可点击链接；调用 Agent 应立即展示给用户，邀请其查看进度、文件和工具记录，任务结束后可继续同一会话。
 链接包含用户服务前缀，且只能访问该任务的原会话；权限、有效期与限制见[临时工作台](machine-tasks.md#temporary-workspace)。
 外部 Agent 可通过临时会话 REST 接口继续原上下文，已经打开的网页会自动同步输入、流式回复和工具记录。
 再次 `submit_task` 使用新幂等键会建立新会话；沿用原会话的示例见[临时工作台与续聊](temporary-workspace.md)。

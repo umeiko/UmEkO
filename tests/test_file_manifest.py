@@ -112,6 +112,16 @@ def test_task_snapshot_survives_file_removal_without_rehydration(machine_client,
                              "files": [{"name": "input.txt", "content_base64": base64.b64encode(b"PRIVATE_UPLOAD_CONTENT").decode()}]}).json()
     if outcome == "cancelled":
         wait_task(client, task["id"], caller["token"], terminal=False)
+        # The scheduler marks a task running before its session/files exist.
+        # This case exercises a run with uploaded files, not pre-start cancel.
+        deadline = time.monotonic() + 5
+        while time.monotonic() < deadline:
+            with store.connect() as db:
+                started = db.execute("SELECT run_id FROM service_tasks WHERE id=?", (task["id"],)).fetchone()
+            if started["run_id"]:
+                break
+            time.sleep(.02)
+        assert started["run_id"]
         client.post('/agent/fixture/v1/tasks/' + task["id"] + '/cancel', headers={"Authorization": "Bearer " + caller["token"]})
     result = wait_task(client, task["id"], caller["token"])
     assert result["status"] == outcome
