@@ -758,7 +758,7 @@
       "type": "array"
     },
     "prompt": {
-      "description": "任务需求文本；文件 base64 和 data URL 必须通过附件字段传输",
+      "description": "任务需求文本，可含普通 HTTP/HTTPS 下载链接；文件 base64 和 data URL 必须通过附件字段传输",
       "maxLength": 200000,
       "minLength": 1,
       "title": "Prompt",

@@ -163,6 +163,48 @@ def tool_call(name, arguments, identity):
     return {"id": identity, "type": "function", "function": {"name": name, "arguments": json.dumps(arguments)}}
 
 
+@pytest.mark.parametrize("machine_app", ["", "/teams/docs/workbench"], indirect=True)
+@pytest.mark.parametrize("can_continue", [False, True])
+def test_agent_decides_whether_download_failure_blocks_the_task(machine_client, monkeypatch, can_continue):
+    client, app, account, _ = machine_client
+    url = "https://files.example.invalid/input.png"
+    turns, downloads = [], []
+    def failed_download(*args, **kwargs):
+        downloads.append(args[0])
+        return "错误：下载失败 [HTTP_ERROR]，HTTP 403，无法取得参考图片。"
+    def llm_chat(llm, messages, tools, **kwargs):
+        turns.append(len(messages))
+        if len(turns) == 1:
+            assert "下载或处理失败后，由你判断" in messages[0]["content"]
+            return ChatCompletionMessage(role="assistant", tool_calls=[
+                tool_call("download_url", {"url": url}, "download")])
+        if len(turns) == 2:
+            assert "HTTP_ERROR" in messages[-1]["content"]
+            if can_continue:
+                return ChatCompletionMessage(role="assistant", tool_calls=[
+                    tool_call("write_file", {"path": "generate/summary.txt", "content": "基于已有资料完成可执行部分。"}, "write")])
+        assert len(turns) == (3 if can_continue else 2), "Successful submission must finish the loop"
+        text = ("可选参考图片下载失败，已用现有资料完成可执行部分。" if can_continue else
+                "必要图片下载失败（HTTP 403），本轮无法继续质检。请外层 Agent 将响应 workspace_url 提供给用户，在临时工作台上传图片后继续。")
+        return ChatCompletionMessage(role="assistant", tool_calls=[tool_call("submit_results", {
+            "text": text, "files": [{"path": "generate/summary.txt"}] if can_continue else []}, "submit")])
+    monkeypatch.setattr("umeko.skills.file_tools.download_url", failed_download)
+    monkeypatch.setattr(UmekoAgent, "chat", REAL_CHAT)
+    monkeypatch.setattr(LLMClient, "chat_with_tools_stream", llm_chat)
+    headers = {"Authorization": "Bearer " + account["token"]}
+    base = app.state.agent_service.settings.base_path + "/agent/fixture/v1/tasks"
+    response = client.post(base, headers=headers, json={"prompt": "请下载参考图并按已有资料分析：" + url})
+    assert response.status_code == 202, response.text
+    task_id = response.json()["id"]
+    completed = wait(client, base, task_id, headers)
+    assert completed["status"] == "completed" and completed["error"] is None, completed
+    assert completed["workspace_url"].startswith("http://127.0.0.1" + app.state.agent_service.settings.base_path + "/TMP/")
+    results = client.get(base + f"/{task_id}/results", headers=headers).json()
+    assert results["ready"] and "下载失败" in results["text"]
+    assert len(results["files"]) == int(can_continue)
+    assert downloads == [url] and len(turns) == (3 if can_continue else 2)
+
+
 def test_model_can_correct_invalid_submission_and_later_calls_are_not_executed(machine_client, monkeypatch):
     client, app, account, _ = machine_client
     turns = []

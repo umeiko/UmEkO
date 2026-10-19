@@ -34,6 +34,8 @@ Agent Card：`BASE_URL/.well-known/agent-card.json`；协议入口：`BASE_URL/a
 
 `raw` 在 JSON 中为 base64，SDK 对象中为 bytes。也可发送普通 `data` 对象，但不能用 text/data 包裹文件编码或附件 JSON。正文中的文件编码、长编码块和过量 Part 会在建任务前被拒绝，返回 `InvalidParams` 与 `retryable=false`，正确附件用法见错误 data；不要原样或拆段重试。规则见[输入门禁](machine-tasks.md#input-validation)。URL 文件仅接受本服务、同一账号有权读取的任务产物；其他文件用 raw 上传。模型由管理员配置，`metadata.umeko.model_id` 不再接受。
 
+上述 URL 文件限制针对协议的 `url` Part；普通 HTTP/HTTPS 下载链接可以直接放进 `text` 需求正文，让 Agent 使用下载工具处理。下载或处理失败交给 Agent 判断，关键材料确实不可用时及时提交情况说明、请调用方提供工作台链接；平台不会因为一次工具失败强制结束任务。
+
 主模型和默认视觉模型的配置方法见[智能体管理](agents.md)。文件序号列表和文件/文件夹下载可通过同一 Agent 的 [REST 接口](machine-tasks.md) 或 [MCP 工具](mcp.md) 完成，仍使用该 Task 的 `id`。
 
 `messageId` 必须非空且不超过 150 字符，默认用于幂等。自定义幂等键使用 `metadata.umeko.idempotency_key`。已有任务暂不接受补充输入；`contextId` 只分组自己已有的任务，不继承模型记忆。

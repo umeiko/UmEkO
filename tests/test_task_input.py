@@ -56,6 +56,25 @@ def test_normal_text_and_short_encoding_examples_remain_valid(prompt):
     validate_prompt(prompt)
 
 
+@pytest.mark.parametrize("url", [
+    "https://files.example.invalid/image.png",
+    "https://files.example.invalid/" + PNG,
+    "https://files.example.invalid/download?signature=" + ENCODED,
+    "HTTP://files.example.invalid/" + ENCODED,
+    "https://files.example.invalid/download?value=data:image/png;base64," + PNG,
+], ids=["plain", "encoded-path", "long-signature", "uppercase-http", "opaque-query"])
+def test_http_links_are_not_confused_with_inline_files(url):
+    prompt = f"请尝试下载并处理 [文件]({url})，下载或处理失败时说明情况。"
+    normalized, _ = validate_input({"prompt": prompt})
+    assert normalized["prompt"] == prompt
+
+
+@pytest.mark.parametrize("separator", ["\n", "\\n", " "])
+def test_a_link_does_not_hide_an_inline_file_outside_it(separator):
+    with pytest.raises(TaskInputError, match="FILE_CONTENT_IN_TEXT"):
+        validate_prompt("https://files.example.invalid/image.png" + separator + PNG)
+
+
 def test_encoding_block_boundary_and_correct_attachment():
     validate_prompt("x" * 4095)
     with pytest.raises(TaskInputError):
@@ -121,7 +140,8 @@ def test_mcp_rejection_and_immediate_workspace_receipt(machine_server, monkeypat
                 # Pause scheduling to prove the URL exists in the submit receipt,
                 # before a session/run or model result has been produced.
                 app.state.task_service.stop()
-                result = await client.call_tool("submit_task", {"prompt": "正常任务", "files": [
+                prompt = "下载并处理 https://files.example.invalid/input?signature=" + ENCODED
+                result = await client.call_tool("submit_task", {"prompt": prompt, "files": [
                     {"name": "input.bin", "content_base64": ENCODED}]})
                 assert not result.is_error
                 receipt = result.structured_content
@@ -130,6 +150,9 @@ def test_mcp_rejection_and_immediate_workspace_receipt(machine_server, monkeypat
                 assert workspace.startswith(base.rsplit("/agent/", 1)[0] + "/TMP/")
                 assert "立即" in receipt["workspace_hint"]
                 assert workspace in result.content[-1].text and "请立即向用户展示" in result.content[-1].text
+                with app.state.store.connect() as db:
+                    stored = db.execute("SELECT input_json FROM service_tasks WHERE id=?", (receipt["id"],)).fetchone()[0]
+                assert json.loads(stored)["prompt"] == prompt
                 async with httpx.AsyncClient(trust_env=False) as browser:
                     assert (await browser.get(workspace)).status_code == 200
     asyncio.run(check())
@@ -169,8 +192,9 @@ def test_a2a_immediate_workspace_receipt(machine_server):
     async def check():
         async with httpx.AsyncClient(headers={"Authorization": "Bearer " + caller["token"], "A2A-Version": "1.0"}, trust_env=False) as http:
             client = await ClientFactory(ClientConfig(httpx_client=http, streaming=False)).create_from_url(base)
+            prompt = "下载并处理 https://files.example.invalid/input?signature=" + ENCODED
             request = a2a.SendMessageRequest(message=a2a.Message(message_id="queued-workspace", role=a2a.Role.ROLE_USER,
-                parts=[a2a.Part(text="检查附件"), a2a.Part(raw=b"file bytes", filename="input.bin")]),
+                parts=[a2a.Part(text=prompt), a2a.Part(raw=b"file bytes", filename="input.bin")]),
                 configuration=a2a.SendMessageConfiguration(return_immediately=True))
             events = [event async for event in client.send_message(request)]
             task = events[0].task
@@ -179,5 +203,8 @@ def test_a2a_immediate_workspace_receipt(machine_server):
             assert workspace.startswith(base.rsplit("/agent/", 1)[0] + "/TMP/")
             assert workspace in task.status.message.parts[0].text
             assert "立即" in task.status.message.parts[0].text
+            with app.state.store.connect() as db:
+                stored = db.execute("SELECT input_json FROM service_tasks WHERE id=?", (task.id,)).fetchone()[0]
+            assert json.loads(stored)["prompt"] == prompt
             assert (await http.get(workspace)).status_code == 200
     asyncio.run(check())

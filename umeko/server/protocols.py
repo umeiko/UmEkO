@@ -43,7 +43,7 @@ def _mcp_server(settings, tasks):
         "用 submit_task 返回的 task_id 查询本次执行；结束后 read_results 获取自然语言结果和 Agent 选择的最终文件清单。"
         "按清单的 file_id 调用 download_file 下载，文件夹为 ZIP；list_file 可逐层查看其他任务文件。"
         "取消用 cancel_task。主模型和视觉模型由管理员配置，调用方不能选择。"
-        "prompt 只写需求，禁止把文件 base64 或 data URL 塞进正文；文件必须使用 files 的 name/content_base64。"
+        "prompt 可写需求和普通 HTTP/HTTPS 下载链接，禁止把文件 base64 或 data URL 塞进正文；文件字节使用 files 的 name/content_base64。"
         "输入被拒绝时不要原样或拆段重试，应按错误提示修正附件结构，不能上传时通知用户。"
         "提交成功后立即把 workspace_url 作为可点击链接交给用户，邀请其打开临时工作台查看进度、文件与继续同一会话。"
         "若回复说明缺少必要图片、文档或需要人工处理，立即提供真实 workspace_url 和待补事项，邀请用户进入工作台处理；"
@@ -57,7 +57,7 @@ def _mcp_server(settings, tasks):
         """首次接入时读取：用最少步骤完成本 MCP 的任务提交、状态查询、文件下载和人工接续。"""
         return """按以下契约使用当前 Agent 的 MCP：
 1. 可先 get_agent_info 了解能力。submit_task(prompt=用户需求, files=可选附件) 提交一次，保存返回的 task_id 和 workspace_url。
-   files 使用 name/content_base64，不传服务器路径；prompt 只写需求，不放 base64、data URL 或伪装成文字的附件 JSON。
+   files 使用 name/content_base64，不传服务器路径；prompt 可写需求和普通 HTTP/HTTPS 下载链接，不放 base64、data URL 或伪装成文字的附件 JSON。
    提交成功后立即把真实 workspace_url 作为可点击链接交给用户，说明可实时查看进度、文件和工具记录，任务结束后可继续同一会话。
    输入被拒绝时不要原样或拆段重试，按错误提示修正；无法上传时向用户说明需要附件。模型由管理员配置，不传 model_id。本服务不提供模型列表或任务列表。
 2. 提交成功不等于执行完成。只用这次返回的 task_id 调用 get_task；不能用固定 agent_id 替代。
@@ -86,7 +86,7 @@ def _mcp_server(settings, tasks):
         """提交 Agent 任务并立即返回本次执行的 id/task_id 和当前服务的 agent_id。files 为 name/content_base64 列表，最多 10 个、合计 20 MiB；
         不接受服务器路径。任务独立执行，默认保留 24 小时；幂等键防止重复提交。
         使用管理员配置的默认模型，不接受调用方选择模型。
-        prompt 只写需求，不得粘贴文件 base64/data URL；输入拒绝时不要原样或拆段重试，先修正附件结构或通知用户。
+        prompt 可写需求和普通 HTTP/HTTPS 下载链接，不得粘贴文件 base64/data URL；输入拒绝时不要原样或拆段重试，先修正附件结构或通知用户。
         成功回执含 workspace_url，请立即作为链接交给用户，邀请其实时查看进度、文件并在任务结束后继续此会话。"""
         # The SDK may ignore undeclared arguments; reject this removed option explicitly.
         if "model_id" in ((ctx.request_context.params or {}).get("arguments") or {}):
@@ -274,7 +274,7 @@ class A2AHandler(RequestHandler):
                 # Only our authenticated artifact references are accepted; no arbitrary URL fetching.
                 base = context.state["base"] + "/v1/tasks/"
                 if not part.url.startswith(base):
-                    raise InvalidParamsError("文件 URL 仅接受当前 UMEKO 的任务产物；其他文件请使用 raw/base64")
+                    raise InvalidParamsError("文件 URL Part 仅接受当前 UMEKO 的任务产物；其他文件请用 raw 上传，或将普通 HTTP/HTTPS 链接放入 text，由 Agent 尝试下载")
                 pieces = part.url[len(base):].split("/")
                 if len(pieces) != 4 or pieces[1] != "artifacts" or pieces[3] != "content":
                     raise InvalidParamsError("产物 URL 无效")

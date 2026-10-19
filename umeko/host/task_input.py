@@ -12,6 +12,7 @@ _ENCODED_BLOCK_CHARS = 4096
 _TOKENS = re.compile(r"[A-Za-z0-9+/_-]{32,}={0,2}")
 _DATA_URL = re.compile(r"data:[^\s,\"'<>]{0,160};base64,\s*[A-Za-z0-9+/_-]{32,}", re.IGNORECASE)
 _FILE_FIELD = re.compile(r'"(?:content_base64|raw)"\s*:\s*"[A-Za-z0-9+/_-]{16,}={0,2}"')
+_HTTP_URL = re.compile(r"https?://[^\s<>\"'\\]+", re.IGNORECASE)
 _FILE_HEADERS = (b"\x89PNG\r\n\x1a\n", b"\xff\xd8\xff", b"GIF87a", b"GIF89a", b"BM", b"II*\x00",
                  b"MM\x00*", b"%PDF-", b"PK\x03\x04", b"7z\xbc\xaf\x27\x1c", b"\x1f\x8b")
 
@@ -28,7 +29,7 @@ class TaskInputError(ValueError):
                 "next_action": "fix_request_or_ask_user",
                 "hint": "不要原样重试、拆段重试或把文件改塞进其他文本字段。修正附件结构后再提交；不能正确上传时，向用户说明需要补充附件。",
                 "file_transport": {
-                    "mcp_rest": "prompt 只写需求；附件放 files: [{name: 'input.png', content_base64: '<base64 bytes>'}]。",
+                    "mcp_rest": "prompt 写需求，可含普通 HTTP/HTTPS 下载链接；文件字节放 files: [{name: 'input.png', content_base64: '<base64 bytes>'}]。",
                     "a2a": "A2A 1.0 message.parts 分开传 {text: '需求'} 和 {raw: '<base64 bytes>', filename: 'input.png', mediaType: 'image/png'}；SDK 的 raw 使用 bytes。",
                 }}
 
@@ -48,7 +49,9 @@ def validate_prompt(prompt: str, *, field: str = "prompt") -> None:
         raise TaskInputError("INVALID_PROMPT", "需求须为非空文本。", field)
     if len(prompt) > MAX_PROMPT_CHARS:
         raise TaskInputError("PROMPT_TOO_LARGE", "需求文本最多 200000 字符；文件内容请通过附件上传。", field)
-    text = prompt.replace("\\r", "\r").replace("\\n", "\n")
+    # Links may legitimately have long opaque paths or signed query values.
+    # Leave their retrieval/usability to the Agent and its download tool.
+    text = _HTTP_URL.sub("[URL]", prompt).replace("\\r", "\r").replace("\\n", "\n")
     if _DATA_URL.search(text) or _FILE_FIELD.search(text):
         raise TaskInputError("FILE_CONTENT_IN_TEXT", "文本中包含 base64 data URL 或附件 JSON，请使用附件字段传文件。", field)
     # Count runs separated only by whitespace (or escaped JSON newlines). This

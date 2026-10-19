@@ -27,7 +27,7 @@ class TaskFileInput(BaseModel):
 
 class TaskCreateInput(BaseModel):
     model_config = ConfigDict(extra="forbid")
-    prompt: str = Field(min_length=1, max_length=200_000, description="任务需求文本；文件 base64 和 data URL 必须通过附件字段传输")
+    prompt: str = Field(min_length=1, max_length=200_000, description="任务需求文本，可含普通 HTTP/HTTPS 下载链接；文件 base64 和 data URL 必须通过附件字段传输")
     files: list[TaskFileInput] = Field(default_factory=list, max_length=10)
 
 

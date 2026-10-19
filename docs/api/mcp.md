@@ -20,6 +20,8 @@
 
 `tools/list` 会在 `submit_task.files` 的 JSON Schema 中明确披露 `name`、`content_base64` 和限制。文件编码不能放进 `prompt`，也不能粘贴 data URL；这类输入会在建任务前直接拒绝。检查 `is_error` 和 `structured_content["error"]`，按 `file_transport` 修正，`retryable=false` 时不要原样重试。完整规则见[输入门禁](machine-tasks.md#input-validation)。
 
+普通 HTTP/HTTPS 下载链接可以写进 `prompt`，由 Agent 按需尝试下载。下载和处理失败不触发新的强制门禁：Agent 自行判断是否缺少关键材料，无法继续时提交原因和补齐方式，并请调用方提供工作台链接；可选资料失败时仍可继续其余工作。
+
 ## 最终结果
 
 机器任务运行时向主 Agent 注入专用的 `submit_results` 工具和提交指引。Agent 调用 `submit_results(text="自然语言结果", files=[{"path":"generate/final.drawio", "description":"可编辑图表"}])` 提交答案，普通聊天回复无需写成独立 JSON。工具即时校验参数、真实文件和会话边界；失败时把原因返回模型修正，成功后直接完成本轮，不再依赖下一次模型回复。平台持久化明确选择的文件并分配稳定的 `file_id`。没有文件时使用空数组；不会扫描目录补齐清单，也不把草稿自动认作最终产物。
