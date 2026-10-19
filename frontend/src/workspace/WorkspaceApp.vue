@@ -3,6 +3,7 @@ import { onMounted, onBeforeUnmount, ref } from 'vue';
 import ThemeSwitch from '../shared/ThemeSwitch.vue';
 import BrandMark from '../shared/BrandMark.vue';
 import UiIcon from '../shared/UiIcon.vue';
+import GuideLink from '../shared/GuideLink.vue';
 import SessionBar from './components/SessionBar.vue';
 import FileSidebar from './components/FileSidebar.vue';
 import ConversationPane from './components/ConversationPane.vue';
@@ -56,6 +57,7 @@ onBeforeUnmount(() => dispose?.());
         ><span class="workbench-label" data-i18n="workbench.title">工作台</span>
       </div>
       <div class="workbench-actions">
+        <GuideLink localized />
         <button
           id="toggle-preview"
           class="preview-toggle"

@@ -23,6 +23,8 @@ UMEKO 是一个用于处理文件的 Python Agent 服务，提供网页工作台
 
 **[在线文档站](https://umeiko.github.io/UmEkO/)** · [架构设计](https://umeiko.github.io/UmEkO/architecture/) · [API 文档](https://umeiko.github.io/UmEkO/api/)
 
+服务另带内网使用手册，地址为 `<用户服务基址>/guide/`，包含管理员图文指南、API/MCP/A2A 调用与会话生命周期。在工作台或管理控制台点击“使用文档”即可打开，地址随外部基址与部署前缀生成。
+
 ![深色工作台中的英文对话、折叠调用历史、文件树与 Markdown 报告预览](docs/screenshots/workspace.png)
 
 深色工作台：英文交流、折叠调用历史与 Markdown 预览。

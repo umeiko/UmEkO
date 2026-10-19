@@ -34,6 +34,16 @@ uv sync --extra server
 
 仓库已包含构建后的 Vue 前端，直接启动 Python 服务即可，生产环境不需要 Node 或 Vite 服务。修改 `frontend/` 源码后，在打包或部署前执行 `cd frontend`、`npm ci`、`npm run build`；将更新后的 `umeko/server/static/ui/` 与后端一起发布，勿只拷贝首页。开发与验证步骤见[前端开发](frontend.md)。
 
+### 内网使用手册
+
+服务自带独立使用手册，入口为 `<用户服务基址>/guide/`，工作台与管理控制台均有“使用文档”链接。内容包含软件架构、带截图的管理员指南、REST/MCP/A2A 调用和临时节点生命周期。它与 GitHub Pages 的开发文档分别维护，FastAPI 的 `/docs` 仍是接口调试页。
+
+文档链接优先为 `UMEKO_PUBLIC_URL + /guide/`，因此管理页也能指向用户服务的真实外部地址；未配置时使用当前入口的运行时前缀，不猜测其他端口或域名。项目没有 `UMEKO_BASE_URL` 配置项：路径前缀使用 `UMEKO_BASE_PATH`，外部完整基址使用 `UMEKO_PUBLIC_URL`。例如 `UMEKO_BASE_PATH=/workbench`、`UMEKO_PUBLIC_URL=https://agents.example.internal/workbench` 时，文档地址为 `https://agents.example.internal/workbench/guide/`。
+
+代理必须转发用户前缀下的全部 `/guide/` 子路径，包括导航页面、图片、样式、脚本和搜索索引；与其他请求一样只移除一次前缀。文档无需登录且不读取平台数据，所有依赖随包提供，内网无需访问 CDN。
+
+构建后的 `umeko/server/static/guide/` 已随源码提交，完整升级时一起更新此目录。若自行维护 `service_docs/`，在文档环境安装 `requirements-docs.txt` 后执行 `python scripts/build_service_docs.py`，再执行 `python scripts/build_service_docs.py --check`。wheel/exe 打包时同样保留整个目录。详见[手册维护](contributing.md#service-handbook)。
+
 首次部署从 [.env.example](https://github.com/umeiko/UmEkO/blob/main/.env.example) 复制 `.env`；已经有 `.env` 时保留现有文件。
 Windows PowerShell 可以使用：
 

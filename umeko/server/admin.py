@@ -203,6 +203,7 @@ class _AgentIn(BaseModel):
 
 
 def create_admin_app(settings: Settings, service: AgentService, store: Store, public_url: str | None = None) -> FastAPI:
+    from .guide import add_guide
     base_path = normalize_base_path(settings.admin_base_path, "UMEKO_ADMIN_BASE_PATH")
     public_base = settings.public_url or public_url or "http://127.0.0.1:8000" + settings.base_path
     app = FastAPI(
@@ -210,6 +211,7 @@ def create_admin_app(settings: Settings, service: AgentService, store: Store, pu
         root_path=base_path,
         docs_url=None, redoc_url=None, openapi_url=None,  # 不暴露任何 API 文档
     )
+    add_guide(app)
 
     @app.middleware("http")
     async def authenticate_admin(request: Request, call_next):
@@ -227,7 +229,8 @@ def create_admin_app(settings: Settings, service: AgentService, store: Store, pu
     @app.get("/", response_class=HTMLResponse, include_in_schema=False)
     def admin_page() -> HTMLResponse:
         from .ui import render_ui
-        return HTMLResponse(render_ui("admin.html", base_path))
+        from .guide import guide_url
+        return HTMLResponse(render_ui("admin.html", base_path, guide_url=guide_url(settings.public_url or public_url, base_path)))
 
     @app.get("/health")
     def health() -> dict:

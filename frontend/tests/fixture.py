@@ -125,13 +125,15 @@ def main():
     parser.add_argument("--prefix", default="")
     parser.add_argument("--admin-prefix", default="")
     parser.add_argument("--public-url", default="")
+    parser.add_argument("--configure-public-url", action="store_true")
     args = parser.parse_args()
     directory = args.directory.resolve()
     # Skill source writes stay in the test directory, including Python scripts.
     os.environ["UMEKO_SKILL_DIR"] = str(directory / "skills")
     script_runner.skill_packs_dir = lambda: directory / "skills"
     settings = Settings(ModelConfig("fixture-text", "fixture-only", "https://example.invalid/v1"),
-                        base_path=args.prefix, admin_base_path=args.admin_prefix)
+                        base_path=args.prefix, admin_base_path=args.admin_prefix,
+                        public_url=args.public_url if args.configure_public_url else None)
     app = create_app(settings, data_root=directory / "data", workspace_root=directory / "output")
     service, store = app.state.agent_service, app.state.store
     # Large enough to exercise pagination and cross-page trust selection.

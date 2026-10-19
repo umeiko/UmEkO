@@ -1,0 +1,19 @@
+<svg xmlns="http://www.w3.org/2000/svg" width="1100" height="560" viewBox="0 0 1100 560" role="img" aria-label="UMEKO 软件架构">
+<defs><marker id="arrow" markerWidth="8" markerHeight="8" refX="6" refY="4" orient="auto"><path d="M0 0 8 4 0 8" fill="#12858a"/></marker></defs>
+<rect width="1100" height="560" rx="20" fill="#f3f9f9"/>
+<g font-family="Microsoft YaHei, sans-serif" text-anchor="middle">
+<text x="550" y="45" fill="#173e49" font-size="24" font-weight="700">多个入口，共用一套执行内核</text>
+<g fill="#fff" stroke="#b9d7db" stroke-width="2"><rect x="40" y="84" width="220" height="78" rx="12"/><rect x="294" y="84" width="220" height="78" rx="12"/><rect x="548" y="84" width="220" height="78" rx="12"/><rect x="802" y="84" width="258" height="78" rx="12"/></g>
+<g fill="#173e49" font-size="20"><text x="150" y="116">网页工作台</text><text x="404" y="116">REST / MCP / A2A</text><text x="658" y="116">管理控制台</text><text x="931" y="116">NGINX / ALB</text></g>
+<g fill="#5b7880" font-size="14"><text x="150" y="142">对话 · 上传 · 预览</text><text x="404" y="142">机器任务 · 协议发现</text><text x="658" y="142">模型 · 智能体 · 权限</text><text x="931" y="142">可选的统一外部入口</text></g>
+<g stroke="#12858a" stroke-width="2" fill="none" marker-end="url(#arrow)"><path d="M150 164v46h110"/><path d="M404 164v46h-35"/><path d="M658 164v45"/><path d="M930 164v45h-175"/></g>
+<rect x="100" y="228" width="900" height="74" rx="12" fill="#e1f2f2" stroke="#8dc9cb"/>
+<text x="550" y="259" font-size="21" font-weight="700" fill="#146c75">身份与输入检查 → TaskService → Worker → AgentService / Run</text>
+<text x="550" y="284" font-size="14" fill="#446e77">任务与会话隔离 · 幂等与排队 · 工具调用 · 技能按需加载 · 结果提交</text>
+<g stroke="#12858a" stroke-width="2" fill="none" marker-end="url(#arrow)"><path d="M270 305v42"/><path d="M550 305v42"/><path d="M830 305v42"/></g>
+<g fill="#fff" stroke="#b9d7db" stroke-width="2"><rect x="80" y="360" width="310" height="92" rx="12"/><rect x="414" y="360" width="272" height="92" rx="12"/><rect x="710" y="360" width="310" height="92" rx="12"/></g>
+<g fill="#173e49" font-size="20"><text x="235" y="394">每模型队列 → 上游模型</text><text x="550" y="394">SQLite 持久化</text><text x="865" y="394">隔离会话目录</text></g>
+<g fill="#5b7880" font-size="14"><text x="235" y="423">主模型 · 子模型 · 视觉模型</text><text x="550" y="423">配置 · 状态 · 消息 · 工具记录</text><text x="865" y="423">附件 · 工作材料 · 产物 · 技能副本</text></g>
+<text x="550" y="505" fill="#146c75" font-size="18">机器任务返回临时工作台：查看过程 → 补充材料 → 继续同一 Session</text>
+<text x="550" y="535" fill="#5b7880" font-size="14">闲置节点清理文件和内存，调用记录与文件树快照按保留期保存</text>
+</g></svg>

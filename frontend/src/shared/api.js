@@ -41,6 +41,8 @@ export const deploymentPrefix = () => {
 };
 export const temporaryWorkspacePath = () =>
   document.querySelector('meta[name="umeko-temporary-path"]')?.content || '';
+export const guideUrl = () =>
+  document.querySelector('meta[name="umeko-guide-url"]')?.content || appUrl('/guide/');
 export const appUrl = (path) =>
   typeof path === 'string' && path.startsWith('/') && !path.startsWith('//')
     ? deploymentPrefix() + (path.startsWith('/v1/') ? temporaryWorkspacePath() : '') + path

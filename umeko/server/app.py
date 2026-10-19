@@ -26,6 +26,7 @@ from .agent_card import AgentCards
 from .agent_routing import AgentRoutingMiddleware, publish_agent_schema
 from .protocols import add_a2a_routes, build_mcp
 from .task_api import add_task_routes, public_base
+from .guide import add_guide, guide_url
 from ..runner import Run as RunState
 from .models import (
     ArtifactView,
@@ -148,6 +149,7 @@ def create_app(
     # 本地场景：所有请求都落在隐式单用户上，免登录直达工作台
     local_user = None if profile.auth_enabled else store.ensure_local_user()
     app.mount("/static", StaticFiles(directory=STATIC_DIR), name="static")
+    add_guide(app)
 
     @app.middleware("http")
     async def authenticate_request(request: Request, call_next):
@@ -160,7 +162,8 @@ def create_app(
         root_path = request.scope.get("root_path", "")
         if root_path and (path == root_path or path.startswith(root_path + "/")):
             path = path[len(root_path):] or "/"
-        public = path in {"/", "/health", "/openapi.json", "/v1/auth/register", "/v1/auth/login"} or path.startswith("/static/")
+        public = (path in {"/", "/health", "/openapi.json", "/v1/auth/register", "/v1/auth/login", "/guide"}
+                  or path.startswith(("/static/", "/guide/")))
         user = (
             store.user_for_token(request.cookies.get(AUTH_COOKIE))
             if profile.auth_enabled else local_user
@@ -215,7 +218,7 @@ def create_app(
                                  "agent_card": base + "/.well-known/agent-card.json", "a2a": base + "/a2a",
                                  "mcp": base + "/mcp", "tasks": base + "/v1/tasks"})
         from .ui import render_ui
-        return HTMLResponse(render_ui("index.html", base_path))
+        return HTMLResponse(render_ui("index.html", base_path, guide_url=guide_url(settings.public_url, base_path)))
 
     @app.get("/agent", tags=["agent discovery"])
     def agent_catalogue(request: Request) -> dict:
@@ -1086,7 +1089,8 @@ def create_app(
     app.mount("/", mcp_app)
     app.add_middleware(AgentRoutingMiddleware, registry=service.agent_registry)
     from .temporary import TemporaryWorkspaceMiddleware
-    app.add_middleware(TemporaryWorkspaceMiddleware, tasks=service.task_service, base_path=base_path)
+    app.add_middleware(TemporaryWorkspaceMiddleware, tasks=service.task_service, base_path=base_path,
+                       guide_url=guide_url(settings.public_url, base_path))
     internal_openapi = app.openapi
     def agent_openapi():
         return publish_agent_schema(internal_openapi())

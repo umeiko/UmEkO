@@ -2,6 +2,7 @@
 import BrandMark from '../../shared/BrandMark.vue';
 import ThemeSwitch from '../../shared/ThemeSwitch.vue';
 import WorkspaceHelp from './WorkspaceHelp.vue';
+import GuideLink from '../../shared/GuideLink.vue';
 </script>
 <template>
   <div id="file-context-menu" class="file-context-menu hidden" role="menu">
@@ -86,6 +87,7 @@ import WorkspaceHelp from './WorkspaceHelp.vue';
     <form id="auth-form">
       <div class="auth-brand"><BrandMark /><strong>UMEKO</strong><ThemeSwitch localized /></div>
       <h2 data-i18n="auth.title">登录工作台</h2>
+      <GuideLink localized />
       <label for="auth-username" data-i18n="auth.username">用户名</label
       ><input id="auth-username" autocomplete="username" required minlength="3" autofocus />
       <label for="auth-password" data-i18n="auth.password">密码</label

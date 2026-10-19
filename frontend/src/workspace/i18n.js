@@ -6,6 +6,7 @@
 const I18N_LOCALES = {
   'zh-CN': {
     'workbench.title': '工作台',
+    'guide.title': '使用文档',
     'preview.edit': '编辑',
     'skill.metadata': '技能信息',
     'preview.download': '下载文件',
@@ -343,6 +344,7 @@ const I18N_LOCALES = {
   },
   en: {
     'workbench.title': 'Workbench',
+    'guide.title': 'User guide',
     'preview.edit': 'Edit',
     'skill.metadata': 'Skill metadata',
     'preview.download': 'Download file',
@@ -689,6 +691,7 @@ const I18N_LOCALES = {
   },
   'zh-TW': {
     'workbench.title': '工作台',
+    'guide.title': '使用說明',
     'preview.edit': '編輯',
     'skill.metadata': '技能資訊',
     'preview.download': '下載檔案',
@@ -1027,6 +1030,7 @@ const I18N_LOCALES = {
   },
   ko: {
     'workbench.title': '작업 공간',
+    'guide.title': '사용 설명서',
     'preview.edit': '편집',
     'skill.metadata': '스킬 정보',
     'preview.download': '파일 다운로드',
@@ -1373,6 +1377,7 @@ const I18N_LOCALES = {
   },
   fr: {
     'workbench.title': 'Espace de travail',
+    'guide.title': 'Guide utilisateur',
     'preview.edit': 'Modifier',
     'skill.metadata': 'Informations du skill',
     'preview.download': 'Télécharger le fichier',
@@ -1730,6 +1735,7 @@ const I18N_LOCALES = {
   },
   de: {
     'workbench.title': 'Arbeitsbereich',
+    'guide.title': 'Benutzerhandbuch',
     'preview.edit': 'Bearbeiten',
     'skill.metadata': 'Skill-Informationen',
     'preview.download': 'Datei herunterladen',
@@ -2084,6 +2090,7 @@ const I18N_LOCALES = {
   },
   it: {
     'workbench.title': 'Area di lavoro',
+    'guide.title': 'Guida utente',
     'preview.edit': 'Modifica',
     'skill.metadata': 'Informazioni skill',
     'preview.download': 'Scarica file',

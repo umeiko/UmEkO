@@ -64,6 +64,8 @@ npm --prefix frontend run test:smoke
 
 前端源码改动后运行格式检查和构建，并一起提交 `umeko/server/static/ui/`；不要直接编辑构建文件。部署说明见 [docs/deployment.md](docs/deployment.md)，前端说明见 [docs/frontend.md](docs/frontend.md)。
 
+内网使用手册位于 `service_docs/`，与 GitHub Pages 的 `docs/` 独立。手册内部页面与资源使用相对链接；工作台及管理页的文档入口统一读取服务端注入的 `umeko-guide-url`，优先指向 `UMEKO_PUBLIC_URL + /guide/`，未配置时使用当前服务前缀。临时工作台的能力路径不能混入手册链接。修改手册后运行 `python scripts/build_service_docs.py` 和 `--check`，一起提交 `umeko/server/static/guide/`；截图只使用隔离的合成数据。
+
 ## 受控技能与升级兼容
 
 技能安全机制见 [docs/architecture/skill-security.md](docs/architecture/skill-security.md)，运维步骤见 [docs/deployment.md](docs/deployment.md#skill-security-upgrade)。修改下发、执行器、内置技能安装或升级脚本时，同步检查以下约定：

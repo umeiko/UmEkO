@@ -1,0 +1,71 @@
+site_name: UMEKO 使用手册
+site_description: 工作台、管理员指南与机器服务接入
+docs_dir: service_docs
+site_dir: umeko/server/static/guide
+use_directory_urls: true
+theme:
+  name: material
+  language: zh
+  font: false
+  logo: assets/logo.svg
+  favicon: assets/logo.svg
+  palette:
+    - scheme: default
+      primary: teal
+      accent: teal
+      toggle:
+        icon: material/weather-night
+        name: 切换深色模式
+    - scheme: slate
+      primary: teal
+      accent: teal
+      toggle:
+        icon: material/weather-sunny
+        name: 切换浅色模式
+  features:
+    - navigation.tabs
+    - navigation.sections
+    - navigation.indexes
+    - navigation.top
+    - content.code.copy
+    - search.suggest
+    - search.highlight
+plugins:
+  - search:
+      lang: [zh, en]
+markdown_extensions:
+  - admonition
+  - attr_list
+  - tables
+  - toc:
+      permalink: true
+  - pymdownx.details
+  - pymdownx.superfences
+extra_css:
+  - assets/guide.css
+validation:
+  nav:
+    omitted_files: warn
+  links:
+    not_found: warn
+    anchors: warn
+nav:
+  - 开始使用:
+      - 使用手册: index.md
+      - 工作台入门: workspace.md
+  - 软件架构: architecture.md
+  - 管理员指南:
+      - 配置顺序与导航: admin/index.md
+      - 模型与供应商: admin/models.md
+      - 智能体与服务接入: admin/agents.md
+      - 技能与可信代码: admin/skills.md
+      - Tools 与用户权限: admin/permissions.md
+      - 资源监控与排查: admin/monitoring.md
+  - 服务调用:
+      - 选择接入方式: integration/index.md
+      - REST API: integration/rest.md
+      - MCP: integration/mcp.md
+      - A2A: integration/a2a.md
+      - 会话与节点生命周期: integration/lifecycle.md
+      - 临时工作台与接续: integration/workspace.md
+      - 常见问题与注意事项: integration/troubleshooting.md

@@ -19,8 +19,9 @@ def session_revision(store, sid):
 
 
 class TemporaryWorkspaceMiddleware:
-    def __init__(self, app, tasks, base_path):
+    def __init__(self, app, tasks, base_path, guide_url=""):
         self.app, self.tasks, self.base_path = app, tasks, base_path
+        self.guide_url = guide_url
 
     async def __call__(self, scope, receive, send):
         if scope["type"] != "http":
@@ -35,7 +36,7 @@ class TemporaryWorkspaceMiddleware:
         token, rest = match.group(1), match.group(2) or "/"
         method = scope["method"]
         if rest == "/" and method == "GET":
-            return await HTMLResponse(render_ui("index.html", self.base_path, temporary_path="/TMP/" + token), headers=PRIVATE)(scope, receive, send)
+            return await HTMLResponse(render_ui("index.html", self.base_path, temporary_path="/TMP/" + token, guide_url=self.guide_url), headers=PRIVATE)(scope, receive, send)
         task = self.tasks.temporary_workspace(token)
         if task is None:
             return await JSONResponse(EXPIRED, status_code=410, headers=PRIVATE)(scope, receive, send)

@@ -992,6 +992,7 @@ try {
         adminPrefix,
         '--public-url',
         publicBase,
+        ...(process.env.UMEKO_UI_FOCUS === 'guide' ? ['--configure-public-url'] : []),
       ],
       {
         cwd: root,
@@ -1012,6 +1013,7 @@ try {
       await ready(adminBase + '/health', child);
       if (prefix) {
         assert.equal((await fetch(base + '/static/ui/missing.js')).status, 404);
+        assert.equal((await fetch(base + '/guide/')).status, 404);
         assert.equal((await fetch(base + '/admin/login', { method: 'POST' })).status, 404);
         assert.equal((await fetch(adminBase + '/admin/v1/users')).status, 401);
       }
@@ -1020,6 +1022,50 @@ try {
       const locale = prefix ? 'en-US' : 'zh-CN';
       const appearance = prefix ? 'dark' : 'light';
       context = await browser.newContext({ viewport: { width: 1440, height: 1000 }, locale });
+      if (process.env.UMEKO_UI_FOCUS === 'guide') {
+        const page = await context.newPage();
+        for (const entry of [adminBase, publicBase]) {
+          await page.goto(entry + '/');
+          await page.locator('.guide-link').last().waitFor();
+          assert.equal(
+            await page.locator('.guide-link').last().getAttribute('href'),
+            publicBase + '/guide/',
+          );
+        }
+        const opened = context.waitForEvent('page');
+        await page.locator('.guide-link').last().click();
+        const handbook = await opened;
+        await handbook.waitForLoadState();
+        assert.equal(handbook.url(), publicBase + '/guide/');
+        await handbook.getByRole('link', { name: '软件架构', exact: true }).first().click();
+        await handbook.getByRole('heading', { name: /^软件架构/ }).waitFor();
+        assert.ok(
+          await handbook
+            .locator('article img')
+            .evaluateAll(
+              (images) =>
+                images.length > 0 && images.every((img) => img.complete && img.naturalWidth > 0),
+            ),
+        );
+        await handbook.getByRole('link', { name: '管理员指南', exact: true }).first().click();
+        await handbook.getByRole('link', { name: '模型与供应商', exact: true }).first().click();
+        await handbook.getByRole('heading', { name: /^模型与供应商/ }).waitFor();
+        await handbook
+          .locator('article img')
+          .evaluateAll((images) => Promise.all(images.map((img) => img.decode())));
+        await handbook.getByRole('textbox', { name: '搜索', exact: true }).fill('临时工作台');
+        await handbook.locator('.md-search-result__item').first().waitFor();
+        assert.ok(
+          (await handbook.locator('.md-search-result__list').innerText()).includes('临时工作台'),
+        );
+        await handbook.keyboard.press('Escape');
+        await screenshot(handbook, 'handbook', prefix);
+        assert.equal((await fetch(adminBase + '/admin/v1/users')).status, 401);
+        console.log(
+          `Passed service handbook: ${prefix || '/'} (public URL, user/admin entry, assets, screenshots, navigation, search)`,
+        );
+        continue;
+      }
       if (process.env.UMEKO_UI_FOCUS === 'skills') {
         await context.addInitScript((theme) => {
           localStorage.setItem('umeko:locale', 'zh-CN');

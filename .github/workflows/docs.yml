@@ -5,6 +5,9 @@ on:
     branches: [main]
     paths:
       - "docs/**"
+      - "service_docs/**"
+      - "mkdocs.service.yml"
+      - "scripts/build_service_docs.py"
       - "umeko/**"
       - "scripts/generate_api_docs.py"
       - "requirements-docs.txt"
@@ -15,6 +18,9 @@ on:
     branches: [main]
     paths:
       - "docs/**"
+      - "service_docs/**"
+      - "mkdocs.service.yml"
+      - "scripts/build_service_docs.py"
       - "umeko/**"
       - "scripts/generate_api_docs.py"
       - "requirements-docs.txt"
@@ -46,6 +52,8 @@ jobs:
         run: python scripts/generate_api_docs.py --check
       - name: Build documentation
         run: python -m mkdocs build --strict
+      - name: Check bundled service handbook
+        run: python scripts/build_service_docs.py --check
       - uses: actions/upload-pages-artifact@v4
         with:
           path: site

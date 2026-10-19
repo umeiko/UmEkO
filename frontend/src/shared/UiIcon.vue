@@ -1,6 +1,7 @@
 <script setup>
 defineProps({ name: String, size: { default: 18 } });
 const paths = {
+  book: 'M12 5C9 3 5 3 2 4v15c3-1 7-1 10 1 3-2 7-2 10-1V4c-3-1-7-1-10 1Zm0 0v15',
   sun: 'M12 8a4 4 0 1 1 0 8 4 4 0 0 1 0-8 M12 2v2 M12 20v2 M2 12h2 M20 12h2 M4.9 4.9l1.4 1.4 M17.7 17.7l1.4 1.4 M4.9 19.1l1.4-1.4 M17.7 6.3l1.4-1.4',
   moon: 'M21 13a9 9 0 1 1-10-10 7 7 0 0 0 10 10Z',
   users:

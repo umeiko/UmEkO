@@ -24,6 +24,8 @@ a CLI and an HTTP API, with model configuration, user management and skill packs
 
 **[Documentation site](https://umeiko.github.io/UmEkO/)** · [Architecture](https://umeiko.github.io/UmEkO/architecture/) · [API reference](https://umeiko.github.io/UmEkO/api/)
 
+The service also bundles an offline user handbook at `<user-service-base>/guide/`, covering administrator workflows, API/MCP/A2A integration and session lifecycles. Open **User guide** in the workbench or admin console; its address follows the configured public base and deployment prefix.
+
 ![English conversation in the dark workbench, with folded tool history, a file tree and a Markdown report preview](docs/screenshots/workspace.png)
 
 English conversation, folded call history and Markdown previews in the dark workbench.

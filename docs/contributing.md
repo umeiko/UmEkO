@@ -24,6 +24,23 @@ python -m mkdocs build --strict
 
 文档预览默认也用 8000 端口。若 Agent 服务已经占用，改成 `python -m mkdocs serve -a 127.0.0.1:8766`。构建输出 `site/`，不提交构建产物。
 
+## 随服务发布的内网使用手册 { #service-handbook }
+
+内网手册的源文件是 `service_docs/`，配置是 `mkdocs.service.yml`，与本页所述的 GitHub Pages 开发文档独立维护。它面向工作台用户、管理员和机器调用方，随服务提供在 `<用户服务基址>/guide/`。无需外网字体或 CDN，运行服务时也不需要安装 MkDocs。
+
+使用前述文档环境构建并检查：
+
+```sh
+python scripts/build_service_docs.py
+python scripts/build_service_docs.py --check
+```
+
+将 `service_docs/`、配置、构建脚本及生成的 `umeko/server/static/guide/` 一起提交。源码、wheel 和 exe 都应包含整个生成目录；仅修改 Markdown 而未重新构建不会更新服务中的手册。CI 检查生成内容是否与源文件一致，GitHub Pages 仍只发布 `docs/`。
+
+新增图片使用相对链接，所有手册资源保持相对路径，不填固定域名、端口或前缀。工作台和管理页通过服务端注入的 `umeko-guide-url` 使用 `UMEKO_PUBLIC_URL` 下的文档地址；未配置时回退到当前入口的运行时前缀。不要从当前页面路径推测用户服务地址。
+
+截图必须使用隔离数据。`scripts/serve_handbook_demo.py` 在临时目录中创建合成账号、模型、任务和资源指标，不读取 `.env`，不调用真实模型。演示用户与管理端口为 18008、19008；分别通过移除一次 `/teams/demo`、`/operations/guide` 的测试代理访问，根路径拒绝其他请求。临时登录信息仅写入忽略的 `smoke/`。截图不展示密码、凭据、真实监控数据或可用工作台令牌。
+
 ## API 文档同步
 
 生成器创建临时数据库和占位模型配置，只读取应用路由和模型，不加载 `.env`、真实账号、Provider Key 或用户数据，也不发起模型调用。

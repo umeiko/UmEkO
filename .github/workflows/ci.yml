@@ -62,7 +62,9 @@ jobs:
       - name: Browser workflow checks
         timeout-minutes: 5
         working-directory: frontend
-        run: npm run test:smoke
+        run: |
+          npm run test:smoke
+          UMEKO_UI_FOCUS=guide node tests/smoke.mjs
         env:
           UMEKO_TEST_NGINX: /usr/sbin/nginx
 
