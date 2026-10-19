@@ -43,10 +43,11 @@ def test_legacy_files_move_once_and_conflicts_and_deletions_are_preserved(tmp_pa
     assert not (library / "sample/assets/config.json").exists()
 
 
-def test_model_edits_prose_and_executes_only_administrator_dispatched_code(tmp_path):
+def test_model_edits_prose_and_executes_only_administrator_dispatched_code(tmp_path, approve_skill_files):
     app = app_for(tmp_path)
     service = app.state.agent_service
     member_path(service._skills_library_dir(), "drawio-correction", "prepare_correction.py").write_text(SCRIPT, encoding="utf-8")
+    approve_skill_files(service, "drawio-correction")
     owner = service.store.create_user("copy-owner", "fixture-pass")
     definition = service.agent_registry.by_slug("flowchart-correction")
     snapshot = service.agent_registry.snapshot(definition)

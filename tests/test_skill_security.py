@@ -291,7 +291,7 @@ def test_user_api_and_model_tools_enforce_readonly_code_and_config(tmp_path, pre
         assert not record.exists()
 
 
-def test_restore_never_reapproves_tampered_config_and_clone_keeps_issued_version(tmp_path, monkeypatch):
+def test_restore_never_reapproves_tampered_config_and_clone_keeps_issued_version(tmp_path, monkeypatch, approve_skill_files):
     app = create_app(Settings(ModelConfig("fixture", "unused", "https://unused.invalid")),
                      data_root=tmp_path / "data", workspace_root=tmp_path / "output")
     service = app.state.agent_service
@@ -300,6 +300,7 @@ def test_restore_never_reapproves_tampered_config_and_clone_keeps_issued_version
     script = library / "drawio-correction/scripts/prepare_correction.py"
     source = 'import json\nprint(json.dumps({"ok":True,"result":"issued version"}))'
     script.write_text(source, encoding="utf-8")
+    approve_skill_files(service, "drawio-correction")
     def run(state):
         return state.agent._skills["run_skill_script"].handler(pack="drawio-correction", script="prepare_correction.py", args="{}")
     try:
@@ -315,6 +316,7 @@ def test_restore_never_reapproves_tampered_config_and_clone_keeps_issued_version
             patch.setattr(script_runner.subprocess, "Popen", lambda *a, **kw: pytest.fail("restore approved tampering"))
             assert "MD5" in run(restored)
         script.write_text(source.replace("issued version", "new version"), encoding="utf-8")
+        approve_skill_files(service, "drawio-correction")
         cloned = service.clone_session(second.id, owner["id"])
         assert run(cloned) == run(second) == "issued version"
         fresh = service.create_session(user_id=owner["id"])

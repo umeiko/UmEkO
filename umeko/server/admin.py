@@ -34,7 +34,6 @@ SECRET_MASK = "********"
 class _SkillApprovalIn(BaseModel):
     model_config = ConfigDict(extra="forbid")
     sha256: str = Field(pattern=r"^[0-9a-f]{64}$")
-    redispatch: StrictBool = False
 
 
 TEMPLATE_SCRIPT = """#!/usr/bin/env python
@@ -935,19 +934,19 @@ def create_admin_app(settings: Settings, service: AgentService, store: Store, pu
         }
 
     @app.get("/admin/v1/skill-security/{pack}/{member:path}")
-    def skill_security_status(pack: str, member: str, offset: int = Query(0, ge=0), limit: int = Query(30, ge=1, le=100)) -> dict:
-        """查看可信源摘要、会话批准与最近的管理员操作。"""
+    def skill_security_status(pack: str, member: str) -> dict:
+        """查看管理员库当前文件版本是否在可信白名单中。"""
         try:
-            return service.skill_approvals.status(pack, member, offset=offset, limit=limit)
+            return service.skill_approvals.status(pack, member)
         except (OSError, ValueError) as exc:
             raise HTTPException(400, str(exc)) from exc
 
     @app.post("/admin/v1/skill-security/{pack}/{member:path}")
     def approve_skill_file(pack: str, member: str, payload: _SkillApprovalIn, request: Request) -> dict:
-        """从管理员库重算摘要并同步已有会话白名单，可显式重新下发此文件。"""
+        """重算并批准管理员库当前文件版本，不修改旧会话。"""
         try:
             return service.skill_approvals.approve(pack, member, payload.sha256,
-                actor=request.state.admin["username"], actor_id=request.state.admin["id"], redispatch=payload.redispatch)
+                actor=request.state.admin["username"], actor_id=request.state.admin["id"])
         except RuntimeError as exc:
             raise HTTPException(409, str(exc)) from exc
         except (OSError, ValueError) as exc:
@@ -958,6 +957,7 @@ def create_admin_app(settings: Settings, service: AgentService, store: Store, pu
         """在隔离环境测试脚本：临时 workdir，超时强杀，返回结果与进度。"""
         import tempfile
         from ..skills.script_runner import run_skill_script
+        from ..skill_security import ScriptTrust
         base = service._skills_library_dir()
         try:
             target = member_path(base, pack, script_name)
@@ -966,11 +966,15 @@ def create_admin_app(settings: Settings, service: AgentService, store: Store, pu
         if not target.is_file():
             raise HTTPException(404, "脚本不存在")
         with tempfile.TemporaryDirectory() as tmp:
+            trust = ScriptTrust(base, Path(tmp) / "trust")
+            with service.skill_approvals.lock:
+                trust.issue(pack, base, approved_files=service.skill_approvals.approved_files(pack))
             result = run_skill_script(
                 pack=pack, script=script_name,
                 args=payload.args,
                 workdir=Path(tmp), session_root=Path(tmp),
                 timeout=min(max(1, payload.timeout), 30),
+                directory=base, trust=trust,
             )
         return {"output": result}
 

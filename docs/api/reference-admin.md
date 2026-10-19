@@ -1076,14 +1076,12 @@ Skill Security Status
 
 认证：`umeko_admin` Cookie。
 
-查看可信源摘要、会话批准与最近的管理员操作。
+查看管理员库当前文件版本是否在可信白名单中。
 
 | 参数 | 位置 | 必填 | 类型与约束 |
 | --- | --- | --- | --- |
 | `pack` | path | 是 | `{"title": "Pack", "type": "string"}` |
 | `member` | path | 是 | `{"title": "Member", "type": "string"}` |
-| `offset` | query | 否 | `{"default": 0, "minimum": 0, "title": "Offset", "type": "integer"}` |
-| `limit` | query | 否 | `{"default": 30, "maximum": 100, "minimum": 1, "title": "Limit", "type": "integer"}` |
 
 | 响应码 | 内容 |
 | --- | --- |
@@ -1096,7 +1094,7 @@ Approve Skill File
 
 认证：`umeko_admin` Cookie。
 
-从管理员库重算摘要并同步已有会话白名单，可显式重新下发此文件。
+重算并批准管理员库当前文件版本，不修改旧会话。
 
 | 参数 | 位置 | 必填 | 类型与约束 |
 | --- | --- | --- | --- |

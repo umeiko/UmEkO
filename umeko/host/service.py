@@ -403,7 +403,8 @@ class AgentService:
         dispatched = agent_snapshot["dispatched_skills"] if agent_snapshot else self.store.default_skills(enabled_only=True)
         for item in dispatched:
             dest = copy_package(self._skills_library_dir(), target, item["name"], item["content"])
-            script_trust.issue(item["name"], self._skills_library_dir())
+            script_trust.issue(item["name"], self._skills_library_dir(),
+                               approved_files=self.skill_approvals.approved_files(item["name"]))
             if parse_skill_pack_text(item["content"]) is not None:
                 builtin_resources["skills"].add(item["name"])
             # Dispatch complete, independent packages; subsequent reads/execution
@@ -555,7 +556,6 @@ class AgentService:
                     self.store.set_resource_mount(session_id, "skills", name, True)
         return state
 
-    @skill_maintenance
     def get_session(self, session_id: str) -> SessionState:
         try:
             return self.sessions[session_id]
@@ -577,7 +577,6 @@ class AgentService:
 
     # ---------- Run 执行 ----------
 
-    @skill_maintenance
     def create_run(self, session_id: str, user_input: str, attachments: list[str]) -> Run:
         session = self.get_session(session_id)
         active = session.active_run_holder["run"]
@@ -735,7 +734,6 @@ class AgentService:
 
     # ---------- Session 复制 ----------
 
-    @skill_maintenance
     def clone_session(self, session_id: str, user_id: str) -> SessionState:
         """复制会话：目录树（workspace/attachments/generate/client）+ 对话记录 + 上下文摘要。
 
@@ -779,7 +777,6 @@ class AgentService:
 
     # ---------- 管理面（仅 admin 端口暴露；用户面路由不含这些入口） ----------
 
-    @skill_maintenance
     def evict_session(self, session_id: str) -> bool:
         """驱逐内存态 Session（取消在跑 Run、丢弃 Agent）；DB 历史保留。"""
         with self._lock:

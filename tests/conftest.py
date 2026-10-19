@@ -26,6 +26,17 @@ def isolated_skill_library(tmp_path, monkeypatch):
 
 
 @pytest.fixture
+def approve_skill_files():
+    """Explicitly approve isolated fixture files, never seed production trust."""
+    from umeko.skill_security import _files, _digests, protected_name
+    def approve(service, pack):
+        for member, path in _files(service._skills_library_dir() / pack):
+            if protected_name(path):
+                service.skill_approvals.approve(pack, member, _digests(path.read_bytes())["sha256"], actor="fixture-admin")
+    return approve
+
+
+@pytest.fixture
 def machine_app(tmp_path, monkeypatch, request):
     def chat(agent, prompt, images=None):
         if prompt.startswith("hold"):

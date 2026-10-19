@@ -1288,6 +1288,11 @@ try {
       await page.waitForFunction(
         () => !document.querySelector('.editor-toolbar').textContent.includes('●'),
       );
+      await page.locator('#skill-security').click();
+      await page.locator('[data-current-md5]').waitFor();
+      await page.locator('[data-approve-skill]').click();
+      await page.getByText('当前版本已信任', { exact: true }).waitFor();
+      await page.locator('dialog[open]').getByRole('button', { name: '关闭', exact: true }).click();
       await page
         .locator('.editor-toolbar')
         .getByRole('button', { name: '测试', exact: true })

@@ -538,11 +538,6 @@
       "_SkillApprovalIn": {
         "additionalProperties": false,
         "properties": {
-          "redispatch": {
-            "default": false,
-            "title": "Redispatch",
-            "type": "boolean"
-          },
           "sha256": {
             "pattern": "^[0-9a-f]{64}$",
             "title": "Sha256",
@@ -2615,7 +2610,7 @@
     },
     "/admin/v1/skill-security/{pack}/{member}": {
       "get": {
-        "description": "查看可信源摘要、会话批准与最近的管理员操作。",
+        "description": "查看管理员库当前文件版本是否在可信白名单中。",
         "operationId": "skill_security_status_admin_v1_skill_security__pack___member__get",
         "parameters": [
           {
@@ -2634,29 +2629,6 @@
             "schema": {
               "title": "Member",
               "type": "string"
-            }
-          },
-          {
-            "in": "query",
-            "name": "offset",
-            "required": false,
-            "schema": {
-              "default": 0,
-              "minimum": 0,
-              "title": "Offset",
-              "type": "integer"
-            }
-          },
-          {
-            "in": "query",
-            "name": "limit",
-            "required": false,
-            "schema": {
-              "default": 30,
-              "maximum": 100,
-              "minimum": 1,
-              "title": "Limit",
-              "type": "integer"
             }
           }
         ],
@@ -2692,7 +2664,7 @@
         "summary": "Skill Security Status"
       },
       "post": {
-        "description": "从管理员库重算摘要并同步已有会话白名单，可显式重新下发此文件。",
+        "description": "重算并批准管理员库当前文件版本，不修改旧会话。",
         "operationId": "approve_skill_file_admin_v1_skill_security__pack___member__post",
         "parameters": [
           {

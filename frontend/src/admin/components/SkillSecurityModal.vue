@@ -12,18 +12,12 @@ const emit = defineEmits(['update:modelValue']);
 const data = ref(null),
   loading = ref(false),
   busy = ref(false),
-  error = ref(''),
-  redispatch = ref(false),
-  result = ref(null),
-  offset = ref(0);
+  error = ref('');
 let sequence = 0;
 const labels = {
-  approved: '本文件已通过',
-  old_version: '已批准旧版本',
-  mismatch: '摘要不匹配',
-  unlisted: '未加入白名单',
-  missing: '文件缺失',
-  invalid: '记录或路径异常',
+  trusted: '当前版本已信任',
+  changed: '文件已变化，需重新确认',
+  unlisted: '当前版本未加入白名单',
 };
 const endpoint = () => `/admin/v1/skill-security/${encode(props.pack)}/${encode(props.member)}`;
 async function load() {
@@ -31,7 +25,7 @@ async function load() {
   loading.value = true;
   error.value = '';
   try {
-    const response = await api('GET', `${endpoint()}?offset=${offset.value}`);
+    const response = await api('GET', endpoint());
     if (ticket === sequence) data.value = response;
   } catch (e) {
     if (ticket === sequence) error.value = e.message;
@@ -44,40 +38,24 @@ watch(
   () => {
     sequence++;
     if (!props.modelValue) return;
-    offset.value = 0;
     data.value = null;
-    result.value = null;
-    redispatch.value = false;
     load();
   },
 );
 async function approve() {
-  if (!data.value || busy.value || loading.value) return;
+  if (!data.value || busy.value || loading.value || data.value.trusted) return;
   busy.value = true;
+  error.value = '';
   try {
-    result.value = await api('POST', endpoint(), {
-      sha256: data.value.current.sha256,
-      redispatch: redispatch.value,
-    });
-    const skipped =
-      result.value.skipped_mismatch +
-      result.value.skipped_busy +
-      result.value.skipped_invalid +
-      result.value.failed;
-    notify(
-      tr('重算完成，更新 {updated}，跳过 {skipped}', { updated: result.value.updated, skipped }),
-      result.value.failed > 0,
-    );
-    await load();
+    data.value = await api('POST', endpoint(), { sha256: data.value.current.sha256 });
+    if (data.value.trusted) notify(tr('当前文件版本已加入可信白名单'));
   } catch (e) {
+    error.value = e.message;
+    await load();
     error.value = e.message;
   } finally {
     busy.value = false;
   }
-}
-async function page(delta) {
-  offset.value = Math.max(0, offset.value + delta * data.value.limit);
-  await load();
 }
 </script>
 <template>
@@ -93,7 +71,7 @@ async function page(delta) {
       <HelpTip
         :text="
           tr(
-            '新会话下发时自动生成白名单。此操作从管理员库读取已保存文件，默认只同步内容一致的旧副本；不直接批准用户修改。文件通过仍需其他受保护文件同时通过整包校验。',
+            '仅批准管理员库中已保存文件的当前版本，用于后续新会话下发与管理端测试。修改后需重新确认；入口、辅助模块和配置都必须通过校验。旧会话不重新下发。',
           )
         "
       />
@@ -108,6 +86,9 @@ async function page(delta) {
       <p v-if="error" class="feedback bad" role="alert">{{ error }}</p>
       <p v-if="loading && !data" role="status">{{ tr('正在读取…') }}</p>
       <template v-if="data">
+        <div class="security-status" :class="data.status" data-trust-status role="status">
+          <UiIcon name="shield" :size="20" />{{ tr(labels[data.status]) }}
+        </div>
         <div class="security-section">
           <h3>{{ tr('管理员库当前摘要') }}</h3>
           <dl class="security-hashes">
@@ -121,131 +102,37 @@ async function page(delta) {
             </dd>
           </dl>
         </div>
-        <div v-if="data.events.length" class="security-section">
-          <h3>
-            {{ tr('最近管理员确认') }}
-            <span
-              class="security-pill"
-              :class="data.events[0].matches_current ? 'approved' : 'mismatch'"
-              >{{ data.events[0].matches_current ? tr('与当前文件一致') : tr('文件已变化') }}</span
-            >
-          </h3>
-          <p>{{ data.events[0].actor }} · {{ date(data.events[0].created_at) }}</p>
+        <div v-if="data.approved" class="security-section">
+          <h3>{{ tr('最近批准版本') }}</h3>
+          <p class="security-muted">
+            {{ data.approved.actor }} · {{ date(data.approved.created_at) }}
+          </p>
           <dl class="security-hashes">
             <dt>MD5</dt>
             <dd>
-              <code>{{ data.events[0].md5 }}</code>
+              <code>{{ data.approved.md5 }}</code>
             </dd>
             <dt>SHA-256</dt>
             <dd>
-              <code>{{ data.events[0].sha256 }}</code>
+              <code>{{ data.approved.sha256 }}</code>
             </dd>
           </dl>
-        </div>
-        <p v-else class="security-muted">
-          {{ tr('尚无手动确认记录；新会话仍按管理员库自动下发批准。') }}
-        </p>
-        <div class="security-section">
-          <h3>
-            {{ tr('已有会话门禁') }} <span class="badge">{{ data.total }}</span>
-          </h3>
-          <p class="security-counts">
-            {{
-              tr('通过 {passed} · 旧版 {old} · 不匹配 {mismatch}', {
-                passed: data.counts.approved,
-                old: data.counts.old_version,
-                mismatch: data.counts.mismatch,
-              })
-            }}
-          </p>
-          <p v-if="!data.total" class="security-muted">{{ tr('暂无已下发此技能的会话记录') }}</p>
-          <details v-for="row in data.sessions" :key="row.session_id" class="security-session">
-            <summary>
-              <span class="security-session-name" :title="row.username + ' · ' + row.title"
-                >{{ row.username }} · {{ row.title }}</span
-              ><span class="security-pill" :class="row.status">{{
-                tr(labels[row.status] || row.status)
-              }}</span>
-            </summary>
-            <code class="security-session-id">{{ row.session_id }}</code>
-            <dl class="security-hashes">
-              <dt>{{ tr('批准 MD5') }}</dt>
-              <dd>
-                <code>{{ row.approved?.md5 || '—' }}</code>
-              </dd>
-              <dt>{{ tr('实际 MD5') }}</dt>
-              <dd>
-                <code>{{ row.actual?.md5 || '—' }}</code>
-              </dd>
-              <dt>{{ tr('批准 SHA-256') }}</dt>
-              <dd>
-                <code>{{ row.approved?.sha256 || '—' }}</code>
-              </dd>
-              <dt>{{ tr('实际 SHA-256') }}</dt>
-              <dd>
-                <code>{{ row.actual?.sha256 || '—' }}</code>
-              </dd>
-            </dl>
-          </details>
-          <div v-if="data.total > data.limit" class="security-pagination">
-            <button :disabled="loading || busy || !offset" @click="page(-1)">
-              {{ tr('上一页') }}
-            </button>
-            <span
-              >{{ offset + 1 }}–{{ Math.min(offset + data.limit, data.total) }} /
-              {{ data.total }}</span
-            >
-            <button
-              :disabled="loading || busy || offset + data.limit >= data.total"
-              @click="page(1)"
-            >
-              {{ tr('下一页') }}
-            </button>
-          </div>
-        </div>
-        <label class="security-redispatch"
-          ><input v-model="redispatch" type="checkbox" :disabled="busy" data-redispatch />{{
-            tr('重新下发管理员版本到旧会话')
-          }}<HelpTip
-            :text="
-              tr(
-                '替换已下发会话中的此文件，再更新其批准摘要。仅此文件生效；运行中的会话跳过。请确保入口、辅助模块和配置版本兼容。',
-              )
-            "
-        /></label>
-        <div v-if="result" class="security-result" role="status">
-          <p>
-            {{
-              tr('已更新 {updated} · 已一致 {unchanged} · 运行中跳过 {busy}', {
-                updated: result.updated,
-                unchanged: result.unchanged,
-                busy: result.skipped_busy,
-              })
-            }}
-          </p>
-          <p>
-            {{
-              tr('副本不同跳过 {mismatch} · 异常跳过 {invalid} · 失败 {failed}', {
-                mismatch: result.skipped_mismatch,
-                invalid: result.skipped_invalid,
-                failed: result.failed,
-              })
-            }}
-          </p>
         </div>
       </template>
     </section>
     <template #footer>
-      <button :disabled="busy || loading" @click="load">
-        <UiIcon name="refresh" :size="17" />{{ tr('刷新状态') }}
+      <button :disabled="loading || busy" @click="load">
+        <UiIcon name="refresh" :size="16" />{{ tr('刷新状态') }}
       </button>
       <button
         class="primary"
-        :disabled="busy || loading || !data"
+        :disabled="!data || loading || busy || data.trusted"
         data-approve-skill
         @click="approve"
       >
-        <UiIcon name="shield" :size="18" />{{ busy ? tr('正在处理…') : tr('重算并加入白名单') }}
+        <UiIcon name="shield" :size="18" />{{
+          busy ? tr('正在处理…') : data?.trusted ? tr('已在可信白名单') : tr('加入可信白名单')
+        }}
       </button>
     </template>
   </UiModal>
@@ -272,27 +159,16 @@ async function page(delta) {
   gap: 20px;
   font-size: 14px;
 }
-.security-heading,
-.security-section h3,
-.security-session summary,
-.security-pagination,
-.security-redispatch {
+.security-heading {
   display: flex;
   align-items: center;
   gap: 10px;
-}
-.security-heading {
   flex-wrap: wrap;
 }
 .security-path {
   overflow-wrap: anywhere;
   flex: 1;
   font-size: 15px;
-}
-.security-section h3 {
-  margin: 0 0 12px;
-  font-size: 15px;
-  flex-wrap: wrap;
 }
 .security-pill {
   display: inline-flex;
@@ -305,82 +181,48 @@ async function page(delta) {
   color: var(--muted);
   white-space: nowrap;
 }
-.security-pill.approved {
+.security-status {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  padding: 14px;
+  border: 1px solid var(--line);
+  border-radius: 8px;
+  font-size: 15px;
+}
+.security-status.trusted {
   color: var(--success-ink);
 }
-.security-pill.mismatch,
-.security-pill.invalid,
-.security-pill.missing {
-  color: var(--danger);
-}
-.security-pill.old_version,
-.security-pill.unlisted {
+.security-status.changed,
+.security-status.unlisted {
   color: var(--warning);
+}
+.security-section h3 {
+  margin: 0 0 12px;
+  font-size: 15px;
 }
 .security-hashes {
   display: grid;
-  grid-template-columns: 120px minmax(0, 1fr);
+  grid-template-columns: 100px minmax(0, 1fr);
   gap: 10px;
   margin: 12px 0 0;
 }
-.security-hashes dt {
+.security-hashes dt,
+.security-muted {
   color: var(--muted);
 }
 .security-hashes dd {
   margin: 0;
 }
-.security-hashes code,
-.security-session-id {
+.security-hashes code {
   overflow-wrap: anywhere;
   font-size: 13px;
   line-height: 1.6;
   user-select: all;
 }
-.security-muted,
-.security-counts {
-  color: var(--muted);
+.security-muted {
   margin: 0;
   line-height: 1.65;
-}
-.security-session {
-  border: 1px solid var(--line);
-  padding: 12px;
-  border-radius: 8px;
-  margin-top: 10px;
-}
-.security-session summary {
-  cursor: pointer;
-}
-.security-session-name {
-  min-width: 0;
-  flex: 1;
-  overflow: hidden;
-  text-overflow: ellipsis;
-  white-space: nowrap;
-}
-.security-session-id {
-  display: block;
-  margin-top: 12px;
-  color: var(--muted);
-}
-.security-pagination {
-  margin-top: 12px;
-  justify-content: flex-end;
-}
-.security-redispatch {
-  align-items: center;
-  flex-wrap: wrap;
-  padding-top: 4px;
-}
-.security-result {
-  border: 1px solid var(--line);
-  border-radius: 8px;
-  padding: 12px;
-  background: var(--raised);
-  line-height: 1.65;
-}
-.security-result p {
-  margin: 0;
 }
 @media (max-width: 600px) {
   .security-heading {
@@ -393,12 +235,6 @@ async function page(delta) {
   }
   .security-hashes dd {
     margin-bottom: 8px;
-  }
-  .security-session summary {
-    flex-wrap: wrap;
-  }
-  .security-session-name {
-    flex-basis: 100%;
   }
 }
 </style>

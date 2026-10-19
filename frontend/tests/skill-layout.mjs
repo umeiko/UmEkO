@@ -197,40 +197,47 @@ export async function checkSkillLayout(context, publicBase, adminBase, state, pr
     .filter({ has: admin.locator('[data-skill-security]') });
   await security.locator('[data-current-md5]').waitFor();
   const securityUrl = adminBase + '/admin/v1/skill-security/drawio-correction/assets/config.json';
-  assert.ok((await (await context.request.get(securityUrl)).json()).counts.old_version > 0);
+  const beforeApproval = await (await context.request.get(securityUrl)).json();
+  assert.equal(beforeApproval.trusted, false);
+  assert.equal(await security.locator('[data-redispatch]').count(), 0);
   const firstApproval = admin.waitForResponse(
     (response) =>
       response.url().includes('/skill-security/') && response.request().method() === 'POST',
   );
   await security.locator('[data-approve-skill]').click();
-  assert.ok((await (await firstApproval).json()).skipped_mismatch > 0);
-  await security.locator('.security-result').waitFor();
-  await security.locator('[data-redispatch]').check();
-  const secondApproval = admin.waitForResponse(
-    (response) =>
-      response.url().includes('/skill-security/') && response.request().method() === 'POST',
-  );
-  await security.locator('[data-approve-skill]').click();
-  assert.ok((await (await secondApproval).json()).updated > 0);
-  await admin.waitForFunction(() => !document.querySelector('[data-approve-skill]').disabled);
+  assert.equal((await (await firstApproval).json()).trusted, true);
+  await admin.waitForFunction(() => document.querySelector('[data-approve-skill]').disabled);
   const safety = await (await context.request.get(securityUrl)).json();
-  assert.equal(safety.counts.old_version, 0);
-  assert.ok(safety.counts.approved > 0);
-  assert.equal(safety.events[0].actor, state.username);
+  assert.equal(safety.status, 'trusted');
+  assert.equal(safety.approved.actor, state.username);
+  assert.equal(safety.approved.sha256, safety.current.sha256);
   const sessionConfig = await (
     await context.request.get(
       publicBase + `/v1/sessions/${session.id}/skill-files/drawio-correction/assets/config.json`,
     )
   ).json();
-  assert.equal(JSON.parse(sessionConfig.content).fixture_approval, 'reviewed');
+  assert.equal(JSON.parse(sessionConfig.content).fixture_approval, undefined);
+  await security.getByRole('button', { name: '关闭', exact: true }).click();
+  await admin.locator('#sk-content').fill(changedConfiguration + '\n');
+  await admin.locator('.editor-toolbar').getByRole('button', { name: '保存', exact: true }).click();
+  await admin.locator('.editor-dirty').waitFor({ state: 'hidden' });
+  await admin.locator('#skill-security').click();
+  await security.getByText('文件已变化，需重新确认', { exact: true }).waitFor();
+  const renewedApproval = admin.waitForResponse(
+    (response) =>
+      response.url().includes('/skill-security/') && response.request().method() === 'POST',
+  );
+  await security.locator('[data-approve-skill]').click();
+  assert.equal((await (await renewedApproval).json()).trusted, true);
+  await security.getByText('当前版本已信任', { exact: true }).waitFor();
   await security.getByRole('button', { name: '关闭', exact: true }).click();
   await admin.locator('[data-language-select]').selectOption('en');
   await admin.locator('#skill-security').click();
   await security.getByRole('heading', { name: 'File security gates' }).waitFor();
   await security.locator('[data-current-md5]').waitFor();
-  await security.locator('.security-session summary').first().click();
-  assert.equal(await security.locator('.security-session[open] .security-hashes dt').count(), 4);
-  await security.locator('.security-session summary').first().click();
+  assert.equal(await security.locator('.security-hashes dt').count(), 4);
+  assert.equal(await security.locator('.security-session').count(), 0);
+  await security.getByText('Current version trusted', { exact: true }).waitFor();
   await screenshot(admin, 'skill-security-admin', prefix);
   await admin.setViewportSize({ width: 390, height: 844 });
   await admin.waitForTimeout(200);
@@ -242,7 +249,7 @@ export async function checkSkillLayout(context, publicBase, adminBase, state, pr
   await admin.setViewportSize({ width: 1440, height: 1000 });
   await context.request.post(adminBase + '/admin/logout');
   assert.ok(
-    securityRequests.length >= 5 &&
+    securityRequests.length >= 4 &&
       securityRequests.every((url) => url.startsWith(adminBase + '/admin/v1/skill-security/')),
   );
   assert.equal((await context.request.get(securityUrl)).status(), 401);

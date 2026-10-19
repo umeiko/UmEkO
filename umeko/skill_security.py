@@ -96,8 +96,12 @@ class ScriptTrust:
             raise SkillSecurityError("执行白名单必须保存在用户技能目录之外")
         self.records.mkdir(parents=True, exist_ok=True)
 
-    def issue(self, pack: str, administrator_library: Path) -> None:
-        """Only the host's administrator dispatch path calls this method."""
+    def issue(self, pack: str, administrator_library: Path, *, approved_files: dict | None = None) -> None:
+        """Issue an immutable manifest from administrator authority.
+
+        Server callers must supply approved_files from the private library
+        registry. None is reserved for direct, operator-owned CLI libraries.
+        """
         pack = slug(pack)
         record = checked(self.records, pack + ".json")
         if record.exists():
@@ -107,7 +111,11 @@ class ScriptTrust:
         if source.is_dir():
             for relative, path in _files(source):
                 if protected_name(path):
-                    files[relative] = _digests(_regular(path))
+                    if approved_files is None:
+                        files[relative] = _digests(_regular(path))
+                    elif relative in approved_files:
+                        # Server dispatch never blesses changed library bytes.
+                        files[relative] = dict(approved_files[relative])
         manifest = {"version": 1, "pack": pack, "files": files,
                     "scripts": [name for name in files if Path(name).suffix.casefold() == ".py"]}
         try:

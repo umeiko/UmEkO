@@ -1763,11 +1763,6 @@
 {
   "additionalProperties": false,
   "properties": {
-    "redispatch": {
-      "default": false,
-      "title": "Redispatch",
-      "type": "boolean"
-    },
     "sha256": {
       "pattern": "^[0-9a-f]{64}$",
       "title": "Sha256",
