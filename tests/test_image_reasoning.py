@@ -68,17 +68,19 @@ def test_prompt_reports_actual_visual_capabilities(agent_factory, main_vision, s
     agent, _, _ = agent_factory(main_vision=main_vision, separate_vision=separate_vision, sub_vision=sub_vision)
     system = agent._messages[0]["content"]
     assert "ocr_image" not in system
+    assert "原生图像输入：未开启" not in system
+    assert "OCR" not in system
     assert ("read_image" in agent._skills) == main_vision
     assert ("image_reasoning" in agent._skills) == (main_vision or separate_vision)
     assert ("image_reasoning" in agent._subagent._skills) == (sub_vision or separate_vision)
     if "image_reasoning" in agent._skills:
-        assert "当前工具列表已提供 image_reasoning" in system
-        assert "不要仅因当前模型不能直接看图就拒答" in system
+        assert "如果用户附带了图片内容，在你可以知道该图片路径的情况下" in system
+        assert "使用 image_reasoning 工具完成图像理解" in system
+        assert "如实描述工具的输出结果，或错误信息" in system
         assert "当前会话没有可用的视觉分析能力" not in system
-        assert "普通看图问题也可以调用" in agent._skills["image_reasoning"].description
+        assert "内容描述、图表解读" in agent._skills["image_reasoning"].description
     elif sub_vision:
-        assert "文件子 Agent 已提供 image_reasoning" in system
-        assert "需要看图时用 delegate_task" in system
+        assert "使用 delegate_task 委派给文件子 Agent" in system
     else:
         assert "当前会话没有可用的视觉分析能力" in system
     if "image_reasoning" in agent._skills and "image_reasoning" in agent._subagent._skills:
@@ -136,7 +138,7 @@ def test_subagent_accepts_general_visual_task_without_skill_and_respects_tool_fi
     assert visual_calls == ["解释图片布局"]
     assert agent._subagent.run("只列目录", allowed_tools={"list_dir"}) == "布局已说明"
     assert "当前会话没有可用的视觉分析能力" in requests[-1][0]["content"]
-    assert "当前工具列表已提供 image_reasoning" not in requests[-1][0]["content"]
+    assert "使用 image_reasoning 工具完成图像理解" not in requests[-1][0]["content"]
 
 
 def test_qc_keeps_skill_workflow_and_passes_checks_to_delegated_visual_tool(agent_factory, monkeypatch):

@@ -51,45 +51,6 @@ async function copy(value) {
 }
 const form = reactive({});
 const visionModels = computed(() => data.value.models.filter((m) => m.vision));
-const modelSearch = ref(''),
-  modelPickerOpen = ref(false);
-const defaultDisclosedModel = computed(
-  () => form.default_model_id || data.value.active_model_id || '',
-);
-const filteredModels = computed(() =>
-  data.value.models.filter((m) =>
-    `${m.provider} ${m.name}`.toLowerCase().includes(modelSearch.value.trim().toLowerCase()),
-  ),
-);
-const missingDisclosedModels = computed(() =>
-  (form.disclosed_model_ids || []).filter((id) => !data.value.models.some((m) => m.id === id)),
-);
-const modelDisclosureLabel = computed(() =>
-  form.disclosed_model_ids === null
-    ? tr('全部主模型')
-    : form.disclosed_model_ids?.length
-      ? tr('已选择 {p0} 个主模型', {
-          p0: new Set([...form.disclosed_model_ids, defaultDisclosedModel.value].filter(Boolean))
-            .size,
-        })
-      : tr('仅默认主模型'),
-);
-function modelIsDisclosed(id) {
-  return (
-    id === defaultDisclosedModel.value ||
-    form.disclosed_model_ids === null ||
-    (form.disclosed_model_ids || []).includes(id)
-  );
-}
-function toggleModel(id, checked) {
-  const selected =
-    form.disclosed_model_ids === null
-      ? data.value.models.map((m) => m.id)
-      : [...(form.disclosed_model_ids || [])];
-  form.disclosed_model_ids = checked
-    ? [...new Set([...selected, id])]
-    : selected.filter((value) => value !== id);
-}
 const authHelp = computed(() =>
   mode.value === 'anonymous'
     ? tr(
@@ -219,8 +180,6 @@ async function remove(a) {
   });
 }
 async function edit(a = null) {
-  modelSearch.value = '';
-  modelPickerOpen.value = false;
   editorTab.value = 'config';
   revision.value++;
   cardSequence++;
@@ -357,11 +316,6 @@ async function removeAgent(a) {
     await refresh();
     notify(tr('智能体已删除'));
   });
-}
-function closeModelPicker(event) {
-  // A native toggle may still be pending; close the DOM as well as the Vue state.
-  event.currentTarget.open = false;
-  modelPickerOpen.value = false;
 }
 function manageSkills() {
   editor.value = false;
@@ -782,80 +736,6 @@ function manageSkills() {
               <p v-if="!data.skills.length" class="muted">{{ tr('暂无默认 Skill') }}</p>
             </div>
           </div>
-          <div class="field full">
-            <div class="heading-line">
-              <label id="agent-model-disclosure-label">{{ tr('主模型披露') }}</label>
-              <HelpTip
-                :text="
-                  tr(
-                    '默认主模型始终可用。勾选允许调用方发现和选择的其他主模型；MCP list_models、REST 与 A2A 使用同一范围。全部模式包含未来新增模型，仅默认模式不允许切换其他模型。',
-                  )
-                "
-              />
-            </div>
-            <details
-              id="agent-definition-model-disclosure"
-              class="model-disclosure"
-              :open="modelPickerOpen"
-              @toggle="modelPickerOpen = $event.target.open"
-              @keydown.esc.prevent="closeModelPicker"
-              aria-labelledby="agent-model-disclosure-label"
-            >
-              <summary @click="saving && $event.preventDefault()" :aria-disabled="saving">
-                {{ modelDisclosureLabel }}
-              </summary>
-              <div class="model-disclosure-panel">
-                <div class="row">
-                  <button type="button" :disabled="saving" @click="form.disclosed_model_ids = null">
-                    {{ tr('全部主模型') }}
-                  </button>
-                  <button type="button" :disabled="saving" @click="form.disclosed_model_ids = []">
-                    {{ tr('仅默认主模型') }}
-                  </button>
-                </div>
-                <input
-                  id="agent-model-search"
-                  v-model="modelSearch"
-                  type="search"
-                  :disabled="saving"
-                  :placeholder="tr('搜索主模型')"
-                  :aria-label="tr('搜索主模型')"
-                />
-                <div class="model-disclosure-options">
-                  <label v-for="m in filteredModels" :key="m.id" class="model-disclosure-option">
-                    <input
-                      type="checkbox"
-                      :value="m.id"
-                      :checked="modelIsDisclosed(m.id)"
-                      :disabled="saving || m.id === defaultDisclosedModel"
-                      @change="toggleModel(m.id, $event.target.checked)"
-                    />
-                    <span>{{ m.provider }} / {{ m.name }}</span
-                    ><span v-if="m.id === defaultDisclosedModel" class="model-default-label">{{
-                      tr('默认')
-                    }}</span>
-                  </label>
-                  <label
-                    v-for="id in missingDisclosedModels"
-                    :key="id"
-                    class="model-disclosure-option"
-                  >
-                    <input
-                      type="checkbox"
-                      :value="id"
-                      checked
-                      :disabled="saving"
-                      @change="toggleModel(id, $event.target.checked)"
-                    />
-                    <span>{{ tr('已删除模型') }} · {{ id }}</span>
-                  </label>
-                  <p v-if="!filteredModels.length && !missingDisclosedModels.length" class="muted">
-                    {{ tr('没有匹配的模型') }}
-                  </p>
-                </div>
-              </div>
-            </details>
-          </div>
           <details class="full">
             <summary class="muted" style="cursor: pointer">{{ tr('公开资料（可选）') }}</summary>
             <div class="field-grid" style="margin-top: 18px">
@@ -1022,45 +902,5 @@ function manageSkills() {
   line-height: 1.65;
   max-height: 540px;
   overflow: auto;
-}
-.model-disclosure {
-  border: 1px solid var(--line);
-  border-radius: 8px;
-}
-.model-disclosure > summary {
-  padding: 11px 13px;
-  cursor: pointer;
-  font-size: 14px;
-}
-.model-disclosure-panel {
-  padding: 12px;
-  display: grid;
-  gap: 12px;
-  border-top: 1px solid var(--line);
-}
-.model-disclosure-options {
-  max-height: 260px;
-  overflow: auto;
-}
-.model-disclosure-option {
-  display: flex;
-  align-items: center;
-  gap: 10px;
-  padding: 10px 4px;
-  font-size: 14px;
-}
-.model-disclosure-option input {
-  flex: 0 0 auto;
-  width: 17px;
-  height: 17px;
-}
-.model-disclosure-option > span {
-  overflow-wrap: anywhere;
-  min-width: 0;
-}
-.model-default-label {
-  margin-left: auto;
-  color: var(--muted);
-  flex: 0 0 auto;
 }
 </style>
