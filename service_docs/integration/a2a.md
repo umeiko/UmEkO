@@ -69,13 +69,20 @@ async def main():
             configuration=a2a.SendMessageConfiguration(return_immediately=True))
         events = [event async for event in client.send_message(request)]
         task = next(event.task for event in events if event.HasField("task"))
-        print("请向用户展示工作台链接：", task.metadata["workspaceUrl"])
         terminal = {a2a.TaskState.TASK_STATE_COMPLETED, a2a.TaskState.TASK_STATE_FAILED,
                     a2a.TaskState.TASK_STATE_CANCELED}
         while task.status.state not in terminal:
             await asyncio.sleep(2)
             task = await client.get_task(a2a.GetTaskRequest(id=task.id, history_length=0))
-        print(task.status, task.artifacts)
+        if task.status.state == a2a.TaskState.TASK_STATE_COMPLETED:
+            for artifact in task.artifacts:
+                for part in artifact.parts:
+                    if part.WhichOneof("content") == "text":
+                        print(part.text)
+                    elif part.WhichOneof("content") == "url":
+                        print(artifact.name, part.url)
+        else:
+            print(task.status)
 
 asyncio.run(main())
 ```
@@ -84,8 +91,18 @@ asyncio.run(main())
 
 ## 流式与返回
 
-`SendStreamingMessage` 先给出初始 Task，再返回回复增量、最终产物和终态。Task 的 `metadata.workspaceUrl` / `workspaceHint` 与 `status.message` 中提供可用工作台链接和接续提示。
+`SendStreamingMessage` 先给出初始 Task，再返回回复增量、最终产物和终态。Task 的 `metadata.workspaceUrl` / `workspaceHint` 保留可用工作台链接和接续提示；完成后的 `status.message` 直接返回正文，不再附加工作台链接。最终流式状态采用同样规则。
 
 非流式长任务建议 `returnImmediately=true`，否则请求会等待执行结束，可能先遇到客户端或代理超时。`GetTask` 查询、`SubscribeToTask` 订阅活跃任务、`CancelTask` 请求取消。`ListTasks` 不支持；保存本次 Task ID。
 
 `messageId` 非空且最多 150 字符，默认用于幂等。`contextId` 只对自己已有的任务分组，不继承模型记忆。不能向已有 Task 追加输入，也没有 INPUT_REQUIRED 工作流；多轮处理使用[临时工作台](workspace.md)。
+
+## 如何直接取得结果
+
+`GetTask` 返回 `TASK_STATE_COMPLETED` 后，调用 Agent 应把结果正文和交付文件直接呈现给用户，无需再调用别的接口、也不要求用户打开工作台。`artifacts` 中 `artifactId=response` 的文本 Part 是正文，data Part 含 `text/files`；其余文件产物中的 url 可下载文件。不要把整个 Task JSON 原样展示成答案。
+
+`read_results` 是 MCP 的工具名，不是另一个 A2A 方法。需要获取临时工作台续聊后的最新结果时，由调用程序 GET `metadata.resultsUrl`，取得相同的 `{ready, text, files, ...}` JSON。`ready=true` 才有通过校验的结果；`ready=false` 应检查 status/error。不要让用户访问此 JSON 地址，也不要重复提交原任务。
+
+Agent Card 的可选扩展 `urn:umeko:a2a:task-results:v1` 提供 GET 地址模板、`resultsUrl` 字段名和权限说明。地址包含完整部署前缀及当前 Agent 路径，不用手拼。需要 `tasks:read` 和同一调用身份；OAuth token 必须面向扩展中的 `oauthResource`（当前 Agent 的 `/v1/tasks`），仅针对 `/a2a` 的令牌不能跨用。免鉴权时无需 Bearer；下载文件另需 `artifacts:read`。
+
+工作台仅在用户希望继续处理、查看执行细节或确需补资料时提供。已经成功拿到结果时，直接交付结果即可。

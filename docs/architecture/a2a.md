@@ -29,7 +29,7 @@ Card 由 `AgentCards` 从 `AgentRegistry` 配置生成。管理员在“服务�
 
 接入方式统一配置，免凭据请求在同一 Agent 内共用任务身份；带凭据请求按账号与 Agent 检查归属。IP 只供记录。详见[多智能体管理](agents.md)。
 
-支持发送、流式发送、查询、分页列表、取消和订阅活跃任务。不提供 gRPC、HTTP+JSON 绑定、推送回调或扩展 Agent Card；相关可选能力未宣称支持，调用时返回明确的协议错误。
+支持发送、流式发送、查询、取消和订阅活跃任务；`ListTasks` 不提供任务列表。不提供 gRPC、HTTP+JSON 绑定、推送回调或扩展 Agent Card；相关可选能力未宣称支持，调用时返回明确的协议错误。
 
 输入支持文本、结构化 JSON、内联文件和 URL。输入 url Part 按顺序汇总为需求正文末尾的“用户的请求还附带了这些url：<URL1>; <URL2>”，交给 Agent 判断下载和处理；协议层不抓取 URL，不自动复制旧任务产物，也不将链接登记为附件。URL 汇总内容与 text/data 共用 200000 字符预算，整条消息最多 64 个 Part。raw 附件限制与 REST / MCP 相同；返回产物 URL 的下载鉴权保持原有规则。
 
@@ -48,6 +48,10 @@ Card 由 `AgentCards` 从 `AgentRegistry` 配置生成。管理员在“服务�
 非流式发送可设 `configuration.returnImmediately=true` 立即拿到 Task；否则等待终态。流式发送依次返回初始 Task、回复增量、最终产物和终态。最终文本以 `append=false` 替换累积片段，防止重连或有界事件历史造成结果不完整。
 
 `GetTask` 可指定 `historyLength`；查询使用提交返回的本次 Task `id`，`ListTasks` 返回不支持操作。产物与序号文件下载遵循当前接入方式：需要凭据时检查服务账号权限，免鉴权时可直接读取共享身份的本次任务文件。取消和业务连接断开的行为与共享 TaskService 一致。
+
+任务完成后，`GetTask` 的 `artifacts` 包含正文与最终文件信息，`status.message` 直接返回正文；最终流式状态一致，不再附加工作台跳转。调用方应直接交付结果，工作台链接仅保留在元数据中供按需接续。
+
+Card 通过可选的 `urn:umeko:a2a:task-results:v1` 扩展披露统一结果读取入口；Task 的 `metadata.resultsUrl/resultsHint` 给出具体地址和规则。该 GET 复用共享 REST `/v1/tasks/{id}/results` 与 TaskService 的 read_results，不新增非标准 A2A RPC，不重复执行模型。适用于读取临时工作台续聊后最新通过校验的 text/files；原 Task 的回复和状态保持原语义。链接统一由 task_api 生成，保留用户前缀、Agent 与账号隔离、tasks:read 及 OAuth audience 校验。
 
 测试使用官方 ClientFactory 在真实 HTTP 服务上发现 Card、发送附件、接收流式 / 非流式结果、查询、列表和下载，并验证部署前缀与跨调用者隔离。CI 的前缀场景经过真实 NGINX，移除前缀后转到 Uvicorn；检查 Card 与产物链接包含完整用户前缀和 Agent 路径，域名根下遗漏前缀的请求返回 404。模型业务效果需要配置真实 Provider 后另行验证。
 

@@ -1055,6 +1055,17 @@
   
 </li>
       
+        <li class="md-nav__item">
+  <a href="#_3" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        如何直接取得结果
+      
+    </span>
+  </a>
+  
+</li>
+      
     </ul>
   
 </nav>
@@ -1236,6 +1247,17 @@
   
 </li>
       
+        <li class="md-nav__item">
+  <a href="#_3" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        如何直接取得结果
+      
+    </span>
+  </a>
+  
+</li>
+      
     </ul>
   
 </nav>
@@ -1308,21 +1330,33 @@
             <span class="n">configuration</span><span class="o">=</span><span class="n">a2a</span><span class="o">.</span><span class="n">SendMessageConfiguration</span><span class="p">(</span><span class="n">return_immediately</span><span class="o">=</span><span class="kc">True</span><span class="p">))</span>
         <span class="n">events</span> <span class="o">=</span> <span class="p">[</span><span class="n">event</span> <span class="k">async</span> <span class="k">for</span> <span class="n">event</span> <span class="ow">in</span> <span class="n">client</span><span class="o">.</span><span class="n">send_message</span><span class="p">(</span><span class="n">request</span><span class="p">)]</span>
         <span class="n">task</span> <span class="o">=</span> <span class="nb">next</span><span class="p">(</span><span class="n">event</span><span class="o">.</span><span class="n">task</span> <span class="k">for</span> <span class="n">event</span> <span class="ow">in</span> <span class="n">events</span> <span class="k">if</span> <span class="n">event</span><span class="o">.</span><span class="n">HasField</span><span class="p">(</span><span class="s2">"task"</span><span class="p">))</span>
-        <span class="nb">print</span><span class="p">(</span><span class="s2">"请向用户展示工作台链接："</span><span class="p">,</span> <span class="n">task</span><span class="o">.</span><span class="n">metadata</span><span class="p">[</span><span class="s2">"workspaceUrl"</span><span class="p">])</span>
         <span class="n">terminal</span> <span class="o">=</span> <span class="p">{</span><span class="n">a2a</span><span class="o">.</span><span class="n">TaskState</span><span class="o">.</span><span class="n">TASK_STATE_COMPLETED</span><span class="p">,</span> <span class="n">a2a</span><span class="o">.</span><span class="n">TaskState</span><span class="o">.</span><span class="n">TASK_STATE_FAILED</span><span class="p">,</span>
                     <span class="n">a2a</span><span class="o">.</span><span class="n">TaskState</span><span class="o">.</span><span class="n">TASK_STATE_CANCELED</span><span class="p">}</span>
         <span class="k">while</span> <span class="n">task</span><span class="o">.</span><span class="n">status</span><span class="o">.</span><span class="n">state</span> <span class="ow">not</span> <span class="ow">in</span> <span class="n">terminal</span><span class="p">:</span>
             <span class="k">await</span> <span class="n">asyncio</span><span class="o">.</span><span class="n">sleep</span><span class="p">(</span><span class="mi">2</span><span class="p">)</span>
             <span class="n">task</span> <span class="o">=</span> <span class="k">await</span> <span class="n">client</span><span class="o">.</span><span class="n">get_task</span><span class="p">(</span><span class="n">a2a</span><span class="o">.</span><span class="n">GetTaskRequest</span><span class="p">(</span><span class="nb">id</span><span class="o">=</span><span class="n">task</span><span class="o">.</span><span class="n">id</span><span class="p">,</span> <span class="n">history_length</span><span class="o">=</span><span class="mi">0</span><span class="p">))</span>
-        <span class="nb">print</span><span class="p">(</span><span class="n">task</span><span class="o">.</span><span class="n">status</span><span class="p">,</span> <span class="n">task</span><span class="o">.</span><span class="n">artifacts</span><span class="p">)</span>
+        <span class="k">if</span> <span class="n">task</span><span class="o">.</span><span class="n">status</span><span class="o">.</span><span class="n">state</span> <span class="o">==</span> <span class="n">a2a</span><span class="o">.</span><span class="n">TaskState</span><span class="o">.</span><span class="n">TASK_STATE_COMPLETED</span><span class="p">:</span>
+            <span class="k">for</span> <span class="n">artifact</span> <span class="ow">in</span> <span class="n">task</span><span class="o">.</span><span class="n">artifacts</span><span class="p">:</span>
+                <span class="k">for</span> <span class="n">part</span> <span class="ow">in</span> <span class="n">artifact</span><span class="o">.</span><span class="n">parts</span><span class="p">:</span>
+                    <span class="k">if</span> <span class="n">part</span><span class="o">.</span><span class="n">WhichOneof</span><span class="p">(</span><span class="s2">"content"</span><span class="p">)</span> <span class="o">==</span> <span class="s2">"text"</span><span class="p">:</span>
+                        <span class="nb">print</span><span class="p">(</span><span class="n">part</span><span class="o">.</span><span class="n">text</span><span class="p">)</span>
+                    <span class="k">elif</span> <span class="n">part</span><span class="o">.</span><span class="n">WhichOneof</span><span class="p">(</span><span class="s2">"content"</span><span class="p">)</span> <span class="o">==</span> <span class="s2">"url"</span><span class="p">:</span>
+                        <span class="nb">print</span><span class="p">(</span><span class="n">artifact</span><span class="o">.</span><span class="n">name</span><span class="p">,</span> <span class="n">part</span><span class="o">.</span><span class="n">url</span><span class="p">)</span>
+        <span class="k">else</span><span class="p">:</span>
+            <span class="nb">print</span><span class="p">(</span><span class="n">task</span><span class="o">.</span><span class="n">status</span><span class="p">)</span>
 
 <span class="n">asyncio</span><span class="o">.</span><span class="n">run</span><span class="p">(</span><span class="n">main</span><span class="p">())</span>
 </code></pre></div>
 <p>上传文件时在 parts 中增加 <code>a2a.Part(raw=文件字节, filename="input.png", media_type="image/png")</code>。JSON 与 SDK 字段名不同，优先按客户端版本使用实际 schema，不混用旧版嵌套文件结构。</p>
 <h2 id="_2">流式与返回<a class="headerlink" href="#_2" title="Permanent link">&para;</a></h2>
-<p><code>SendStreamingMessage</code> 先给出初始 Task，再返回回复增量、最终产物和终态。Task 的 <code>metadata.workspaceUrl</code> / <code>workspaceHint</code> 与 <code>status.message</code> 中提供可用工作台链接和接续提示。</p>
+<p><code>SendStreamingMessage</code> 先给出初始 Task，再返回回复增量、最终产物和终态。Task 的 <code>metadata.workspaceUrl</code> / <code>workspaceHint</code> 保留可用工作台链接和接续提示；完成后的 <code>status.message</code> 直接返回正文，不再附加工作台链接。最终流式状态采用同样规则。</p>
 <p>非流式长任务建议 <code>returnImmediately=true</code>，否则请求会等待执行结束，可能先遇到客户端或代理超时。<code>GetTask</code> 查询、<code>SubscribeToTask</code> 订阅活跃任务、<code>CancelTask</code> 请求取消。<code>ListTasks</code> 不支持；保存本次 Task ID。</p>
 <p><code>messageId</code> 非空且最多 150 字符，默认用于幂等。<code>contextId</code> 只对自己已有的任务分组，不继承模型记忆。不能向已有 Task 追加输入，也没有 INPUT_REQUIRED 工作流；多轮处理使用<a href="../workspace/">临时工作台</a>。</p>
+<h2 id="_3">如何直接取得结果<a class="headerlink" href="#_3" title="Permanent link">&para;</a></h2>
+<p><code>GetTask</code> 返回 <code>TASK_STATE_COMPLETED</code> 后，调用 Agent 应把结果正文和交付文件直接呈现给用户，无需再调用别的接口、也不要求用户打开工作台。<code>artifacts</code> 中 <code>artifactId=response</code> 的文本 Part 是正文，data Part 含 <code>text/files</code>；其余文件产物中的 url 可下载文件。不要把整个 Task JSON 原样展示成答案。</p>
+<p><code>read_results</code> 是 MCP 的工具名，不是另一个 A2A 方法。需要获取临时工作台续聊后的最新结果时，由调用程序 GET <code>metadata.resultsUrl</code>，取得相同的 <code>{ready, text, files, ...}</code> JSON。<code>ready=true</code> 才有通过校验的结果；<code>ready=false</code> 应检查 status/error。不要让用户访问此 JSON 地址，也不要重复提交原任务。</p>
+<p>Agent Card 的可选扩展 <code>urn:umeko:a2a:task-results:v1</code> 提供 GET 地址模板、<code>resultsUrl</code> 字段名和权限说明。地址包含完整部署前缀及当前 Agent 路径，不用手拼。需要 <code>tasks:read</code> 和同一调用身份；OAuth token 必须面向扩展中的 <code>oauthResource</code>（当前 Agent 的 <code>/v1/tasks</code>），仅针对 <code>/a2a</code> 的令牌不能跨用。免鉴权时无需 Bearer；下载文件另需 <code>artifacts:read</code>。</p>
+<p>工作台仅在用户希望继续处理、查看执行细节或确需补资料时提供。已经成功拿到结果时，直接交付结果即可。</p>
 
 
 

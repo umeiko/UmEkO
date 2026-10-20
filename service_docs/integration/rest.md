@@ -29,7 +29,7 @@ with httpx.Client(headers=headers, timeout=30) as client:
         response = client.get(base + "/v1/tasks/" + task["task_id"])
         response.raise_for_status()
         task = response.json()
-    response = client.get(base + "/v1/tasks/" + task["task_id"] + "/results")
+    response = client.get(task["results_url"])
     response.raise_for_status()
     result = response.json()
     print(result["text"] if result["ready"] else result["error"])
@@ -62,6 +62,8 @@ files = [{"name": "input.png", "content_base64":
 | `GET /v1/tasks/{id}/files/{file_id}/content` | 下载文件，目录返回 ZIP |
 
 没有任务列表接口，保存提交时取得的本次 ID。幂等重试应复用同一键和同一输入；要创建新任务使用新键。旧节点到期后，同一幂等键不会恢复节点。
+
+任务回执和查询提供 `results_url/results_hint`，由程序 GET 取得最新通过校验的结果。正文和文件应由调用方直接交付给用户，不要求用户访问 JSON 地址。结果接口需要 `tasks:read`；OAuth access token 的 resource 为当前 Agent 的 `/v1/tasks`，不能跨用仅面向 MCP/A2A 的令牌。
 
 ## 网页用户的 Session / Run API
 

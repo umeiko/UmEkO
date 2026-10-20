@@ -1,5 +1,6 @@
 import asyncio
 import base64
+import threading
 
 import httpx
 import httpx2
@@ -9,6 +10,8 @@ from a2a.client import ClientFactory, ClientConfig
 from google.protobuf.json_format import MessageToDict
 from mcp.client import Client
 from mcp.client.streamable_http import streamable_http_client
+
+from umeko.agent import UmekoAgent
 
 
 @pytest.mark.parametrize("mode", ["auto", "legacy"])
@@ -71,8 +74,23 @@ def test_a2a_official_client(machine_server, streaming):
             events = [event async for event in client.send_message(request)]
             assert events
             task_id = next(e.task.id for e in events if e.HasField("task"))
+            results_url = base + f"/v1/tasks/{task_id}/results"
+            for event in events:
+                if event.HasField("task"):
+                    assert event.task.metadata["resultsUrl"] == results_url
+                    assert "artifacts" in event.task.metadata["resultsHint"]
             task = await client.get_task(a2a.GetTaskRequest(id=task_id,history_length=0))
             assert task.status.state == a2a.TaskState.TASK_STATE_COMPLETED, task
+            assert task.metadata["resultsUrl"] == results_url
+            results = (await http.get(results_url)).json()
+            assert results["ready"] and results["text"] == task.artifacts[0].parts[0].text
+            assert results["files"] == MessageToDict(task.artifacts[0].parts[1].data)["files"]
+            assert task.status.message.parts[0].text == results["text"]
+            assert task.metadata["workspaceUrl"] not in task.status.message.parts[0].text
+            assert "直接交付结果" in task.metadata["workspaceHint"]
+            for event in events:
+                if event.HasField("status_update") and event.status_update.status.state == a2a.TaskState.TASK_STATE_COMPLETED:
+                    assert event.status_update.status.message.parts[0].text == results["text"]
             workspace = task.metadata['workspaceUrl']
             assert workspace.startswith(base.rsplit('/agent/', 1)[0] + '/TMP/')
             async with httpx.AsyncClient(trust_env=False) as browser:
@@ -88,10 +106,99 @@ def test_a2a_official_client(machine_server, streaming):
             with pytest.raises(Exception, match="任务列表"):
                 await client.list_tasks(a2a.ListTasksRequest())
         async with httpx.AsyncClient(headers={"Authorization":"Bearer "+b["token"], "A2A-Version":"1.0"},trust_env=False) as http:
+            assert (await http.get(results_url)).status_code == 404
             client = await ClientFactory(ClientConfig(httpx_client=http,streaming=False)).create_from_url(base)
             with pytest.raises(Exception):
                 await client.get_task(a2a.GetTaskRequest(id=task_id))
     asyncio.run(check())
+
+
+@pytest.mark.parametrize("auth_mode", ["required", "anonymous"])
+@pytest.mark.parametrize("machine_app", ["", "/teams/docs/umeko"], indirect=True)
+def test_a2a_results_discovery_receipt_and_workspace_continuation(machine_server, monkeypatch, auth_mode):
+    base, app, account, _ = machine_server
+    app.state.identity_store.set_auth_mode(auth_mode)
+    release = threading.Event()
+    fixture_chat = UmekoAgent.chat
+
+    def delayed_chat(agent, prompt, images=None):
+        assert release.wait(10), "Fixture was not released"
+        return fixture_chat(agent, prompt, images)
+
+    monkeypatch.setattr(UmekoAgent, "chat", delayed_chat)
+
+    async def check():
+        headers = {"A2A-Version": "1.0"}
+        if auth_mode == "required":
+            headers["Authorization"] = "Bearer " + account["token"]
+        async with httpx.AsyncClient(headers=headers, trust_env=False, timeout=15) as http:
+            card = (await http.get(base + "/.well-known/agent-card.json")).json()
+            extension, = card["capabilities"]["extensions"]
+            client = await ClientFactory(ClientConfig(httpx_client=http, streaming=False)).create_from_url(base)
+            request = a2a.SendMessageRequest(message=a2a.Message(message_id="results-discovery",
+                role=a2a.Role.ROLE_USER, parts=[a2a.Part(text="Original A2A result")]),
+                configuration=a2a.SendMessageConfiguration(return_immediately=True))
+            events = [event async for event in client.send_message(request)]
+            task = next(event.task for event in events if event.HasField("task"))
+            assert "不必跳转" in task.metadata["workspaceHint"]
+            results_url = task.metadata["resultsUrl"]
+            assert results_url == extension["params"]["urlTemplate"].replace("{task_id}", task.id)
+            pending = await http.get(results_url)
+            assert pending.status_code == 200
+            assert not pending.json()["ready"] and pending.json()["text"] is None
+            assert pending.json()["files"] == []
+            release.set()
+            for _ in range(100):
+                task = await client.get_task(a2a.GetTaskRequest(id=task.id, history_length=0))
+                if task.status.state == a2a.TaskState.TASK_STATE_COMPLETED:
+                    break
+                await asyncio.sleep(.05)
+            assert task.status.state == a2a.TaskState.TASK_STATE_COMPLETED
+            original = (await http.get(results_url)).json()
+            assert original["ready"] and "Original A2A result" in original["text"]
+            assert len(original["files"]) == 1
+
+            if auth_mode == "required":
+                # Protocol-specific OAuth audiences must not be widened by a link.
+                for resource, scope, expected in [(base + "/a2a", "tasks:read", 401),
+                                                  (base + "/v1/tasks", "tasks:create", 403),
+                                                  (base + "/v1/tasks", "tasks:read", 200)]:
+                    token = await http.post(base + "/oauth/token", data={"grant_type": "client_credentials",
+                        "client_id": account["id"], "client_secret": account["token"],
+                        "resource": resource, "scope": scope})
+                    assert token.status_code == 200, token.text
+                    response = await http.get(results_url, headers={"Authorization": "Bearer " + token.json()["access_token"]})
+                    assert response.status_code == expected, response.text
+
+            for _ in range(100):
+                if not app.state.task_service._active:
+                    break
+                await asyncio.sleep(.01)
+            async with httpx.AsyncClient(trust_env=False, timeout=15) as browser:
+                workspace = task.metadata["workspaceUrl"]
+                info = (await browser.get(workspace + "/v1/temporary")).json()
+                run = await browser.post(workspace + f"/v1/sessions/{info['session_id']}/runs",
+                                         json={"input": "Continued in temporary workspace"})
+                assert run.status_code == 202, run.text
+                for _ in range(100):
+                    state = (await browser.get(workspace + "/v1/runs/" + run.json()["id"])).json()
+                    if state["status"] in {"completed", "failed", "cancelled"}:
+                        break
+                    await asyncio.sleep(.05)
+                assert state["status"] == "completed", state
+            updated = (await http.get(results_url)).json()
+            assert updated["ready"] and "Continued in temporary workspace" in updated["text"]
+            assert updated["text"] != original["text"]
+            # Reading the latest result does not rewrite the original A2A response.
+            task = await client.get_task(a2a.GetTaskRequest(id=task.id, history_length=0))
+            assert task.metadata["resultsUrl"] == results_url
+            assert task.artifacts[0].parts[0].text == original["text"]
+            assert task.status.message.parts[0].text == original["text"]
+
+    try:
+        asyncio.run(check())
+    finally:
+        release.set()
 
 
 def test_a2a_subscribe_cancel_and_streamed_body_limits(machine_server):

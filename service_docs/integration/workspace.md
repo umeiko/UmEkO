@@ -1,11 +1,11 @@
 # 临时工作台与接续
 
-机器提交成功时即可取得临时工作台链接，排队阶段也能打开准备页。权限足够时，接入 Agent 应立即把真实链接交给用户，让其查看对话、工具记录和文件；执行结束后还可以继续同一会话。
+机器提交成功时即可取得临时工作台链接，排队阶段也能打开准备页。正常调用优先由外层 Agent 直接交付结果；仅在用户希望查看进度、接续或确需补资料时提供真实链接，让其查看对话、工具记录和文件。
 
 | 协议 | 链接字段 |
 | --- | --- |
 | REST / MCP | `workspace_url` 和 `workspace_hint` |
-| A2A | Task `metadata.workspaceUrl`、`metadata.workspaceHint`，以及 `status.message` |
+| A2A | Task `metadata.workspaceUrl`、`metadata.workspaceHint`；完成后的 `status.message` 仅放结果正文 |
 
 工作台形如 `https://agents.example.internal/workbench/TMP/<随机标识>`。它使用用户服务前缀，没有 `/agent/<slug>`，也没有管理前缀。不要自行拼接或把内部环回地址替换进真实链接。
 
@@ -20,9 +20,11 @@
 1. 执行 Agent 说明缺少什么、下载或处理为什么失败、已经完成哪些部分。
 2. 外层 Agent 将真实工作台链接和待补事项交给用户，避免继续轮询原 Task 等文件自动出现。
 3. 用户在工作台上传材料并发送新的要求；这会创建同一 Session 的新 Run。
-4. 外层 Agent 可以对原 task_id 再调用 read_results 或 REST results，取得最近一次通过校验的结果。
+4. 外层 Agent 可以对原 task_id 再调用 MCP read_results，或由程序 GET 任务回执的 results_url（A2A 为 metadata.resultsUrl），取得最近一次通过校验的结果并直接交付用户。
 
 原 Task 的执行状态和原始回复不会被续聊改写；最新结果清单、消息与文件元数据会继续记录。任务完成后续聊仍是临时节点，不转为永久用户会话。
+
+A2A 的正常完成流程直接交付 `GetTask.artifacts`，不需要用户跳转。临时工作台用于确需补材料、用户主动接续或查看细节的情况，不能用工作台链接代替已有结果。
 
 ## 程序也能继续同一会话
 

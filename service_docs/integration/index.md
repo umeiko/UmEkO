@@ -10,7 +10,7 @@ https://agents.example.internal/workbench/agent/reviewer
 | --- | --- | --- |
 | [REST](rest.md) | 业务程序、脚本、已有 HTTP 集成 | 取得 Task ID，查询状态和 results，按 file_id 下载 |
 | [MCP](mcp.md) | 支持 MCP 的外部 Agent | submit_task → get_task → read_results → download_file |
-| [A2A](a2a.md) | 需要 Agent Card 发现与协议协作的 Agent | SendMessage 或流式发送，查询/订阅 Task |
+| [A2A](a2a.md) | 需要 Agent Card 发现与协议协作的 Agent | GetTask 完成后直接交付 artifacts 正文与文件 |
 
 ## 接入前确认
 
@@ -18,7 +18,7 @@ https://agents.example.internal/workbench/agent/reviewer
 2. 确认当前服务采用凭据还是免鉴权。需要凭据时传服务 Bearer，不传 Provider 的模型 Key。
 3. 了解技能输入要求及返回格式。MCP 使用 `get_agent_info`；A2A 获取 Agent Card。
 4. 保存本次提交返回的 Task ID 和工作台链接，不用固定的 agent_id 代替任务 ID。
-5. 提交成功后立即把可用工作台链接提供给用户，说明可以查看执行过程，并在任务结束后接续。
+5. 正常完成时直接交付正文和文件；工作台链接先保存，仅在用户想查看进度、接续或确需补材料时提供。
 
 ## 输入与文件
 

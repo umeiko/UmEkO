@@ -1155,7 +1155,7 @@
 <tr>
 <td><a href="a2a/">A2A</a></td>
 <td>需要 Agent Card 发现与协议协作的 Agent</td>
-<td>SendMessage 或流式发送，查询/订阅 Task</td>
+<td>GetTask 完成后直接交付 artifacts 正文与文件</td>
 </tr>
 </tbody>
 </table>
@@ -1165,7 +1165,7 @@
 <li>确认当前服务采用凭据还是免鉴权。需要凭据时传服务 Bearer，不传 Provider 的模型 Key。</li>
 <li>了解技能输入要求及返回格式。MCP 使用 <code>get_agent_info</code>；A2A 获取 Agent Card。</li>
 <li>保存本次提交返回的 Task ID 和工作台链接，不用固定的 agent_id 代替任务 ID。</li>
-<li>提交成功后立即把可用工作台链接提供给用户，说明可以查看执行过程，并在任务结束后接续。</li>
+<li>正常完成时直接交付正文和文件；工作台链接先保存，仅在用户想查看进度、接续或确需补材料时提供。</li>
 </ol>
 <h2 id="_3">输入与文件<a class="headerlink" href="#_3" title="Permanent link">&para;</a></h2>
 <p>需求文字可以包含普通 HTTP/HTTPS 文件链接。文件字节通过协议的附件字段传输，不把 base64 或 data URL 粘贴进聊天正文。最多 10 个附件、解码后合计 20 MiB，完整 HTTP 请求还受 30 MiB 限制；文本最多 200000 字符。A2A 一条消息最多 64 个 Part。</p>

@@ -48,6 +48,8 @@ def test_results_select_final_files_and_direct_download(machine_client, monkeypa
     monkeypatch.setattr(UmekoAgent, "chat", chat)
     submitted = client.post(base, headers=headers, json={"prompt": "select finals"}).json()
     task_id = submitted["task_id"]
+    assert submitted["results_url"] == "http://127.0.0.1" + base + "/" + task_id + "/results"
+    assert "read_results" in submitted["results_hint"]
     completed = wait(client, base, task_id, headers)
     assert completed["status"] == "completed", completed
     assert completed["reply"] == "完成分析。依据和结论如下。"

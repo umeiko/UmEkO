@@ -84,15 +84,23 @@ async def main():
             if event.HasField("artifact_update"):
                 print(event.artifact_update)
         task = await client.get_task(a2a.GetTaskRequest(id=task_id, history_length=0))
-        print(task.status, task.artifacts)
+        if task.status.state == a2a.TaskState.TASK_STATE_COMPLETED:
+            # 直接交付正文与文件，不要求用户打开工作台或 resultsUrl。
+            for artifact in task.artifacts:
+                for part in artifact.parts:
+                    if part.WhichOneof("content") == "text":
+                        print(part.text)
+                    elif part.WhichOneof("content") == "url":
+                        print(artifact.name, part.url)
+        else:
+            print(task.status)
 
 asyncio.run(main())
 ```
 
 SDK `streaming=False` 使用非流式发送。任务很长时可用 `return_immediately`，拿到 ID 后轮询或订阅，避免代理请求超时。
 
-完整权限调用方收到的 Task 在 `metadata.workspaceUrl`、`metadata.workspaceHint` 中提供临时工作台地址与提示，`status.message` 同时给出可点击链接。
-调用 Agent 应在提交成功后立即展示给用户，邀请其查看进度、文件和工具记录，任务结束后在网页中继续同一会话。流式初始 Task 与查询均携带此信息；非流式可设置 `returnImmediately=true` 立即取得链接。限制与有效期见
+完整权限调用方收到的 Task 在 `metadata.workspaceUrl`、`metadata.workspaceHint` 中保留临时工作台地址与提示。执行中可用链接查看进度或补资料；任务完成后直接交付结果，不再要求用户跳转工作台。`completed` 的 `status.message` 是结果正文，不再附加工作台链接；结果本身包含的业务链接不受影响。流式初始 Task 与查询均携带元数据；非流式可设置 `returnImmediately=true` 立即取得回执。限制与有效期见
 [临时工作台](machine-tasks.md#temporary-workspace)。
 外部 Agent 也可通过临时会话 REST 接口继续原上下文，并实时同步到已打开的网页；这不会向原 A2A Task 追加消息。
 具体调用步骤见[临时工作台与续聊](temporary-workspace.md)。
@@ -105,5 +113,15 @@ SDK `streaming=False` 使用非流式发送。任务很长时可用 `return_imme
 - `SubscribeToTask`：`id`，订阅活跃任务；已结束任务用 GetTask 读取结果。
 
 流式响应为 SSE 中的 JSON-RPC 结果。回复增量使用 `TaskArtifactUpdateEvent`，最终回复以 `append=false` 替换已累积的内容；最终状态使用 `TaskStatusUpdateEvent`。响应产物的第一个 Part 保留自然语言文本，后续 data Part 提供 Agent 的结果 JSON（text/files）；最终文件由 Agent 明确选择并经平台校验，文件项的 file_id 可交给同一 Agent 的 MCP download_file 或 REST 序号下载入口。产物 URL 指向受保护 REST 下载入口，需带有效服务凭据。
+
+## 读取结果，不要求用户跳转 {#read-results}
+
+A2A 没有名为 `read_results` 的标准 JSON-RPC 方法。原生流程是用 `GetTask` 查询本次 Task，终态为 `TASK_STATE_COMPLETED` 时直接交付 `artifacts`：`artifactId=response` 的文本 Part 是正文，data Part 包含 `text/files`；其余文件产物的 url Part 是下载地址。`status.message` 同样提供完成正文。无需再请求一次结果 API，更不能只把工作台链接交给用户充当结果。
+
+若要读取临时工作台续聊后最新通过校验的结果，调用程序可选用 Task 的 `metadata.resultsUrl` 发起 GET，返回与 MCP `read_results` 相同的 JSON：`task_id/status/ready/text/files/updated_at/error/workspace_state`。`ready=false` 时检查 status/error；不要据此重复提交。该地址供程序读取，不能要求用户打开 JSON 页面。原 Task 的状态与原始回复不因续聊改写。
+
+Agent Card 在 `capabilities.extensions` 声明可选的 `urn:umeko:a2a:task-results:v1` 扩展，描述直接交付规则、`urlTemplate`、`taskMetadataField=resultsUrl`、所需权限与 OAuth resource。不支持扩展的客户端仍可使用标准 `GetTask`。
+
+结果地址始终含完整用户前缀与当前 `/agent/<slug>`，只允许当前调用身份、当前 Agent 的任务，需要 `tasks:read`。凭据模式下使用同一服务身份；如果使用 OAuth access token，需要为扩展中的 `oauthResource`（当前 Agent 的 `/v1/tasks`）申请令牌，不能复用只针对 `/a2a` 的令牌。文件下载另需 `artifacts:read`。免鉴权方式延续共享身份规则。
 
 接口只支持 JSONRPC 1.0，未提供推送通知、扩展 Card、多轮输入或其他传输绑定。完整生命周期、额度、保留时间和授权见 [机器任务](machine-tasks.md)与[A2A 架构](../architecture/a2a.md)。A2A 与 MCP 由官方 SDK 路由提供，不包含在 FastAPI 的 OpenAPI 操作清单中。

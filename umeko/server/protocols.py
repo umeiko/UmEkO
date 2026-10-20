@@ -201,14 +201,27 @@ class A2AHandler(RequestHandler):
                                                 parts=[a2a.Part(text=record["error"])]))
         task = a2a.Task(id=record["id"], context_id=record["context_id"], status=status)
         view = task_view(record, base)
+        completed = record["status"] == "completed"
+        workspace_hint = None
         if view["workspace_url"]:
+            workspace_hint = ("任务已完成，请直接交付结果，不再展示工作台链接。仅在用户要求继续处理或确需补充材料时使用 workspaceUrl。"
+                              if completed else "优先通过 GetTask 或订阅读取结果并直接交付用户，不必跳转工作台。保存 workspaceUrl；仅在用户想查看进度、继续处理或确需补充材料时提供。链接持有者可访问本会话，只交给预期使用者。")
+        if completed:
+            # A completed status message is also read directly by many clients.
+            # Deliver the answer here; keep optional handoff links in metadata.
+            task.status.message.CopyFrom(a2a.Message(message_id=record["id"] + "-status", role=a2a.Role.ROLE_AGENT,
+                parts=[a2a.Part(text=record["reply"] or "任务已完成，请读取 artifacts 中的结果。")]))
+        elif view["workspace_url"]:
             status_text = ((record["error"] + "\n\n") if record["error"] else "")
-            status_text += f"[打开临时工作台]({view['workspace_url']})\n{view['workspace_hint']}"
+            status_text += f"[打开临时工作台]({view['workspace_url']})\n{workspace_hint}"
             task.status.message.CopyFrom(a2a.Message(message_id=record["id"] + "-status", role=a2a.Role.ROLE_AGENT,
                                                      parts=[a2a.Part(text=status_text)]))
         ParseDict({"expiresAt": record["expires_at"], "source": record["source"], "agentId": record["agent_id"],
                    "workspaceExpiresAt": record.get("workspace_expires_at"), "workspaceState": record.get("workspace_state"),
-                   "workspaceUrl": view["workspace_url"], "workspaceHint": view["workspace_hint"]}, task.metadata)
+                   "resultsUrl": view["results_url"],
+                   "resultsHint": "Completed 时直接向用户交付 artifacts 中的正文和最终文件，response 产物的 data Part 含 text/files；无需再发请求或让用户打开链接。resultsUrl 仅供调用程序按需读取最新通过校验的结果（含临时工作台续聊），不要让用户自行访问。该 GET 需要 tasks:read；OAuth token 的 resource 须为当前 Agent 的 /v1/tasks。",
+                   "workspaceUrl": view["workspace_url"],
+                   "workspaceHint": workspace_hint}, task.metadata)
         if include_artifacts:
             if record["reply"]:
                 task.artifacts.append(a2a.Artifact(artifact_id="response", name="Agent response", parts=[a2a.Part(text=record["reply"])]))
@@ -216,7 +229,7 @@ class A2AHandler(RequestHandler):
                     result = db.execute("SELECT result_json FROM service_tasks WHERE id=?", (record["id"],)).fetchone()
                 if result and result["result_json"]:
                     task.artifacts[-1].parts.append(a2a.Part(data=ParseDict(json.loads(result["result_json"]), Value())))
-            for artifact in task_view(record, base)["artifacts"]:
+            for artifact in view["artifacts"]:
                 task.artifacts.append(a2a.Artifact(artifact_id=artifact["id"], name=artifact["name"],
                     parts=[a2a.Part(url=artifact["download_url"], filename=artifact["name"], media_type=artifact["media_type"])]))
         if history_length != 0:

@@ -30,7 +30,16 @@ def test_protocol_discovery_and_oauth_preserve_service_and_agent_prefixes(tmp_pa
         assert {key: discovery[key] for key in ("agent_card", "a2a", "mcp", "tasks")} == {
             "agent_card": base + "/.well-known/agent-card.json", "a2a": base + "/a2a",
             "mcp": base + "/mcp", "tasks": base + "/v1/tasks"}
-        assert client.get(route + "/.well-known/agent-card.json").json()["supportedInterfaces"][0]["url"] == base + "/a2a"
+        card = client.get(route + "/.well-known/agent-card.json").json()
+        assert card["supportedInterfaces"][0]["url"] == base + "/a2a"
+        extension, = card["capabilities"]["extensions"]
+        assert extension["uri"] == "urn:umeko:a2a:task-results:v1"
+        assert not extension.get("required", False)
+        assert extension["params"] == {
+            "method": "GET", "urlTemplate": base + "/v1/tasks/{task_id}/results",
+            "taskMetadataField": "resultsUrl", "requiredScope": "tasks:read",
+            "oauthResource": base + "/v1/tasks"}
+        assert "read_results" in extension["description"]
         unauthorized = client.post(route + "/mcp", json={})
         assert unauthorized.status_code == 401
         assert unauthorized.headers["www-authenticate"] == (

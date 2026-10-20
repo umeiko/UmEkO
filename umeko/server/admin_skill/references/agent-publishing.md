@@ -137,7 +137,11 @@ async with httpx2.AsyncClient(headers=headers) as http:
 }
 ```
 
-成功后保留返回的本次 Task ID，读取 `metadata.workspaceUrl`，用 GetTask 轮询到终态；HTTP 200 仍需检查 JSON-RPC error。图片在 JSON 中是单独 Part：`{"raw":"文件字节base64","filename":"test.png","mediaType":"image/png"}`；SDK 的 raw 传 bytes，不把 JSON 的 base64 字符串当成 bytes 直接传。
+成功后保留返回的本次 Task ID，用 GetTask 轮询到终态；HTTP 200 仍需检查 JSON-RPC error。Completed 时直接交付 artifacts 中 response 产物的文本和文件信息，status.message 同样直接返回正文，不再附加工作台链接。不要让用户跳转工作台来领取结果，也不必额外调用结果接口。工作台地址保留在 metadata.workspaceUrl，仅用于确需补材料或用户要求接续。
+
+需要读取接续后最新结果时，由调用程序 GET metadata.resultsUrl，返回与 MCP read_results 相同的 ready/text/files 等字段，不要求用户访问 JSON 页面。Agent Card 的可选 urn:umeko:a2a:task-results:v1 扩展披露地址模板和权限。该 GET 需要 tasks:read 和同一调用身份；OAuth resource 必须为当前 Agent 的 /v1/tasks，不能复用仅面向 /a2a 的令牌。
+
+图片在 JSON 中是单独 Part：`{"raw":"文件字节base64","filename":"test.png","mediaType":"image/png"}`；SDK 的 raw 传 bytes，不把 JSON 的 base64 字符串当成 bytes 直接传。
 
 如果提供的是图片或文档下载链接，可以放在 text 或独立的 `{"url":"https://files.example.invalid/input.png"}` Part 中。输入的多个 url 会按顺序合并为正文末尾的“用户的请求还附带了这些url：<URL1>; <URL2>”，交给 Agent 判断下载和处理；协议不自动下载、复制旧产物或把链接登记成附件。已有当前会话附件可按文件名说明。URL 也计入 200000 字符和 64 个 Part 上限；data URL、文件 base64 仍使用 raw。
 

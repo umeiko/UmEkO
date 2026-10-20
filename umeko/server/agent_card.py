@@ -5,6 +5,7 @@ from a2a import types as a2a
 from google.protobuf.json_format import MessageToDict, ParseDict
 
 from ..skillpacks import parse_skill_pack_text
+from .task_api import task_results_url
 
 EDITABLE_FIELDS = ("name", "description", "version", "documentationUrl", "iconUrl", "provider")
 
@@ -34,7 +35,19 @@ class AgentCards:
         value = {**metadata,
                  "skills": self.dispatched_skills(definition),
                  "supportedInterfaces": [{"url": base + "/a2a", "protocolBinding": "JSONRPC", "protocolVersion": "1.0"}],
-                 "capabilities": {"streaming": True, "pushNotifications": False},
+                 "capabilities": {"streaming": True, "pushNotifications": False, "extensions": [{
+                     "uri": "urn:umeko:a2a:task-results:v1",
+                     "description": "read_results: When GetTask is completed, deliver the response text and files "
+                                    "from artifacts directly to the user. No workspace navigation or extra HTTP read is required. "
+                                    "For the latest validated result, including temporary workspace continuations, "
+                                    "GET Task.metadata.resultsUrl. This optional REST read returns ready, text and files; "
+                                    "the caller reads it programmatically, not by asking the user to open the URL. "
+                                    "It does not create a task or invoke a model. OAuth tokens must target oauthResource.",
+                     "required": False,
+                     "params": {"method": "GET", "urlTemplate": task_results_url(base, "{task_id}"),
+                                "taskMetadataField": "resultsUrl", "requiredScope": "tasks:read",
+                                "oauthResource": base + "/v1/tasks"},
+                 }]},
                  "defaultInputModes": ["text/plain", "application/octet-stream", "application/json"],
                  "defaultOutputModes": ["text/plain", "application/octet-stream"],
                  "securitySchemes": {"serviceBearer": {"httpAuthSecurityScheme": {"scheme": "bearer", "bearerFormat": "UMEKO service credential"}}},
