@@ -181,6 +181,13 @@ def test_a2a_rejects_text_and_data_file_encodings(machine_server, monkeypatch, s
                 assert caught.value.data["retryable"] is False
                 assert caught.value.data["task_created"] is False
                 assert len(str(caught.value)) < 4000 and ENCODED[:128] not in str(caught.value)
+            request = a2a.SendMessageRequest(message=a2a.Message(
+                message_id="external-image-url", role=a2a.Role.ROLE_USER,
+                parts=[a2a.Part(url="https://files.example.invalid/input.png")]))
+            with pytest.raises(InvalidParamsError) as caught:
+                _ = [event async for event in client.send_message(request)]
+            assert "如果你是想要把url告诉umeko，请直接在input中描述即可" in str(caught.value)
+            assert "message.parts[].text" in str(caught.value)
             _assert_no_task(app)
     asyncio.run(check())
 

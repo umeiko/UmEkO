@@ -274,7 +274,9 @@ class A2AHandler(RequestHandler):
                 # Only our authenticated artifact references are accepted; no arbitrary URL fetching.
                 base = context.state["base"] + "/v1/tasks/"
                 if not part.url.startswith(base):
-                    raise InvalidParamsError("文件 URL Part 仅接受当前 UMEKO 的任务产物；其他文件请用 raw 上传，或将普通 HTTP/HTTPS 链接放入 text，由 Agent 尝试下载")
+                    raise InvalidParamsError(
+                        "文件 URL Part 仅接受当前 UMEKO 的任务产物；其他文件请用 raw 上传，或将普通 HTTP/HTTPS 链接放入 text，由 Agent 尝试下载。"
+                        "如果你是想要把url告诉umeko，请直接在input中描述即可（A2A 中填写 message.parts[].text）。")
                 pieces = part.url[len(base):].split("/")
                 if len(pieces) != 4 or pieces[1] != "artifacts" or pieces[3] != "content":
                     raise InvalidParamsError("产物 URL 无效")
