@@ -868,8 +868,24 @@ td button {
     padding: 0 16px 24px;
   }
   .admin-topbar {
-    height: 56px;
+    height: auto;
+    min-height: 88px;
+    padding: 10px 0;
+    flex-direction: column;
+    align-items: stretch;
+    gap: 8px;
     margin-bottom: 22px;
+  }
+  .admin-topbar .breadcrumb {
+    white-space: nowrap;
+  }
+  .admin-topbar > .row {
+    flex-wrap: nowrap;
+    justify-content: flex-end;
+    gap: 6px;
+  }
+  .admin-topbar .theme-switch span {
+    display: none;
   }
   .page-title .mono {
     display: none;

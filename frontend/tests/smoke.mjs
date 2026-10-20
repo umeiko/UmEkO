@@ -14,6 +14,7 @@ import { checkAgentModelSettings, checkAgentModelControls } from './agent-model-
 import { checkUserModelAccess } from './user-model-access.mjs';
 import { checkToolAccess } from './tool-access.mjs';
 import { checkSkillLayout } from './skill-layout.mjs';
+import { checkAdminAutomation, checkAdminAutomationLayout } from './admin-automation.mjs';
 const require = createRequire(import.meta.url);
 const { chromium } = require(process.env.UMEKO_PLAYWRIGHT || 'playwright');
 const root = fileURLToPath(new URL('../../', import.meta.url));
@@ -1168,6 +1169,9 @@ try {
         appearance,
       );
       await otherTab.close();
+      await checkAdminAutomation(page, context, adminBase, publicBase, state);
+      if (process.env.UMEKO_UI_FOCUS === 'admin-automation')
+        await checkAdminAutomationLayout(page, prefix, screenshot, 'admin-automation-login');
       await page.locator('#l-user').fill(state.username);
       await page.locator('#l-pass').fill(state.password);
       await page.getByRole('button', { name: '登录', exact: true }).click();
@@ -1181,6 +1185,31 @@ try {
       );
       const adminCookie = (await context.cookies()).find((c) => c.name === 'umeko_admin');
       assert.equal(adminCookie.path, adminPrefix || '/');
+      await checkAdminAutomation(page, context, adminBase, publicBase, state, { loggedIn: true });
+      if (process.env.UMEKO_UI_FOCUS === 'admin-automation') {
+        await checkAdminAutomationLayout(page, prefix, screenshot, 'admin-automation-console');
+        await page.getByRole('button', { name: '退出登录', exact: true }).click();
+        await page.locator('#l-user').waitFor();
+        await checkAdminAutomation(page, context, adminBase, publicBase, state);
+        assert.equal(
+          (
+            await context.request.put(adminBase + '/admin/v1/runtime-config', {
+              data: { max_tool_iterations: 2 },
+            })
+          ).status(),
+          401,
+        );
+        assert.deepEqual(errors, []);
+        if (adminPrefix)
+          assert.ok(
+            adminRequests.every((p) => p.startsWith(adminPrefix + '/') || p === '/favicon.ico'),
+          );
+        await context.close();
+        console.log(
+          `Passed AI administration: ${prefix || '/'} (copy, bilingual, download, schema, auth, prefixes, desktop/mobile)`,
+        );
+        continue;
+      }
       if (process.env.UMEKO_UI_FOCUS === 'agent-models') {
         await checkAgentModelSettings(page, context, adminBase, state, prefix, screenshot);
         assert.deepEqual(errors, []);

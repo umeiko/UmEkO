@@ -30,29 +30,30 @@ BINARY = {"type": "string", "format": "binary"}
 
 
 def supplement(spec: dict, admin: bool) -> None:
-    cookie = "umeko_admin" if admin else "umeko_auth"
+    # The runtime administrator contract is authoritative, including Cookie
+    # authentication; keep the downloadable schema and both sites identical.
+    if admin:
+        return
+    cookie = "umeko_auth"
     spec.setdefault("components", {}).setdefault("securitySchemes", {})[cookie] = {
         "type": "apiKey", "in": "cookie", "name": cookie,
         "description": "网页登录后保存 Cookie；管理与用户 Cookie 相互独立。",
     }
-    spec["servers"] = [{"url": "http://127.0.0.1:9000" if admin else "http://127.0.0.1:8000"}]
-    public = {("/health", "get"), ("/admin/login", "post")} if admin else {
+    spec["servers"] = [{"url": "http://127.0.0.1:8000"}]
+    public = {
         ("/health", "get"), ("/v1/auth/login", "post"), ("/v1/auth/register", "post"),
         ("/agent/{agent_name}/oauth/token", "post"), ("/agent", "get")}
-    if not admin:
-        spec["components"]["securitySchemes"]["serviceBearer"] = {
-            "type": "http", "scheme": "bearer",
-            "description": "管理员创建的服务凭据，或 /oauth/token 签发的 client_credentials 访问令牌。"}
+    spec["components"]["securitySchemes"]["serviceBearer"] = {
+        "type": "http", "scheme": "bearer",
+        "description": "管理员创建的服务凭据，或 /oauth/token 签发的 client_credentials 访问令牌。"}
     for path, operations in spec["paths"].items():
         for method, operation in operations.items():
             if method in METHODS:
                 operation["security"] = [] if (path, method) in public or "/.well-known/" in path else [{cookie: []}]
-                if not admin and path.startswith("/agent/{agent_name}/v1/tasks"):
+                if path.startswith("/agent/{agent_name}/v1/tasks"):
                     operation["security"] = [{"serviceBearer": []}, {cookie: []}]
                     note = "管理员开启免鉴权后可省略凭据；免鉴权调用共用任务身份。默认仍需要凭据。"
                     operation["description"] = (operation.get("description", "") + "\n\n" + note).strip()
-    if admin:
-        return
     raw = {
         ("/v1/auth/avatar", "put"): "原始图片字节；支持 PNG/JPEG/WebP/GIF，最多 2 MiB。",
         ("/v1/sessions/{session_id}/files", "post"): "原始附件字节；filename 在查询参数中。",
@@ -125,7 +126,8 @@ def reference(spec: dict, admin: bool) -> str:
     count = sum(method in METHODS for ops in spec["paths"].values() for method in ops)
     lines = [f"# {label}接口完整参考", "", "> 自动生成：请修改源码或生成器，不直接编辑本文件。", "",
              f"共 **{count}** 个 HTTP 操作。[下载 OpenAPI]({filename}) · [数据结构](schemas.md)", "",
-             f"路径为应用内部路由；带前缀部署时在公共 URL 前加 `{'UMEKO_ADMIN_BASE_PATH' if admin else 'UMEKO_BASE_PATH'}`。登录、原始字节体与 SSE 契约由生成器显式补充。", "",
+             f"路径为应用内部路由；带前缀部署时在公共 URL 前加 `{'UMEKO_ADMIN_BASE_PATH' if admin else 'UMEKO_BASE_PATH'}`。" +
+             ("认证与操作行为来自运行时管理契约。" if admin else "登录、原始字节体与 SSE 契约由生成器显式补充。"), "",
              "泛型 `object` / 任意 JSON 表示源码尚未声明完整字段模型，请结合各专题指南。表中响应码来自 OpenAPI，不包含中间件产生的全部错误。", "",
              "## 接口索引", "", "| 方法 | 路径 | 操作 |", "| --- | --- | --- |"]
     for path, ops in spec["paths"].items():
@@ -202,6 +204,15 @@ def generate() -> dict[Path, str]:
         for key, value in sorted(spec["components"].get("schemas", {}).items()):
             lines += ["", f"### {key}", "", "```json", json.dumps(value, ensure_ascii=False, indent=2, sort_keys=True), "```"]
     files[ROOT / "docs/api/schemas.md"] = "\n".join(lines) + "\n"
+    # The intranet handbook contains the same versioned admin contract, without
+    # requiring access to the public repository or exposing runtime credentials.
+    admin_spec = specs["admin"]
+    files[ROOT / "service_docs/admin/openapi-admin.json"] = json.dumps(admin_spec, ensure_ascii=False, sort_keys=True, indent=2) + "\n"
+    files[ROOT / "service_docs/admin/api-reference.md"] = reference(admin_spec, True)
+    admin_models = ["# 管理 API 数据结构", "", "> 自动生成；由运行版本的 OpenAPI 导出。", ""]
+    for key, value in sorted(admin_spec["components"].get("schemas", {}).items()):
+        admin_models += ["", "## " + key, "", "```json", json.dumps(value, ensure_ascii=False, indent=2, sort_keys=True), "```"]
+    files[ROOT / "service_docs/admin/schemas.md"] = "\n".join(admin_models) + "\n"
     return files
 
 

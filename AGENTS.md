@@ -78,6 +78,12 @@ npm --prefix frontend run test:smoke
 - 涉及此链路的变更至少验证新会话、原记录下的旧会话恢复、首次门禁升级的旧副本差异、辅助模块/config 篡改和 LF/CRLF 差异；使用隔离库及临时数据，不操作真实会话。执行通过不等于脚本已沙箱化。
 - 整库可信代码管理与单文件门禁共用 `SkillApprovals`，批量操作逐文件核对预览版本。移出可信区在数据库同一事务内删除批准、写撤销及审计；执行器检查撤销序号，拦截此前下发版本，重新批准不复活旧授权。保留未带序号旧记录的兼容性，直到显式撤销；不改写旧会话文件或中断已启动脚本。列表/搜索/分页/跨页全选与批量 API 同样只使用管理前缀。
 
+## 管理 API 与外部管理 Skill
+
+管理 GUI 的服务端功能应同时通过管理 API 提供。操作摘要、行为、认证约定集中在 `umeko/server/admin_contract.py`，新增管理路由需同步维护；在线 `/admin/v1/openapi.json`、开发文档和内网手册使用同一契约。运行 `python scripts/generate_api_docs.py` 和 `--check`，再按手册约定构建 `umeko/server/static/guide/`。
+
+外部管理 Skill 位于 `umeko/server/admin_skill/`，通过 `/admin/automation` 清单和固定文件下载入口发布，不进入普通用户下发技能库，不在服务端执行。管理登录页及控制台的复制按钮只能使用当前浏览器 origin 和注入的管理前缀，不使用用户 `UMEKO_PUBLIC_URL`、Provider 地址或猜测路径。公开说明不得携带凭据；所有管理操作与在线规范继续要求管理员 Cookie。认证、接口字段或操作行为变化时同步维护 Skill 与客户端，并验证 `tests/test_admin_automation.py` 及浏览器 `UMEKO_UI_FOCUS=admin-automation` 的根路径/独立前缀、下载复制和退出 401。
+
 ## 数据与改动范围
 
 保留无关的工作区改动。不要提交 `.env`、本地凭据、数据库或运行数据；测试不得操作真实 `server_data/`、`output/`、技能库或实际 Provider。

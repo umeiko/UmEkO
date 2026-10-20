@@ -18,6 +18,32 @@
 
 以下所有 `/admin/v1/...` 都要求管理员角色。完整输入模型与路由见[管理完整参考](reference-admin.md)。
 
+## AI 管理与在线接口规范 {#admin-automation}
+
+管理登录页和控制台顶部提供“复制 AI 管理提示词”，并可下载管理 Skill。提示词使用浏览器实际访问的管理域名与服务端注入的 `UMEKO_ADMIN_BASE_PATH`，不读取用户服务的 `UMEKO_PUBLIC_URL` 或上游 Provider 地址，也不包含密码、Cookie、模型密钥。没有新增端口，所有管理请求仍经过现有管理员身份校验。
+
+| 方法 | 管理基址后的路径 | 用途 |
+| --- | --- | --- |
+| GET | `/admin/automation` | 公开文件清单、版本、大小和 SHA-256 |
+| GET | `/admin/automation/skill/SKILL.md` | 标准 `umeko-server-admin` Skill 主指引 |
+| GET | `/admin/automation/skill/references/api.md` | 操作步骤与接口行为说明 |
+| GET | `/admin/automation/skill/scripts/admin_api.py` | Python 3.10+ 标准库客户端 |
+| GET | `/admin/v1/openapi.json` | 当前运行版本的完整管理规范，需管理员 Cookie |
+
+同事的 AI 下载后保留 `SKILL.md`、`references/`、`scripts/` 层级；可按客户端规则安装，或直接阅读执行。凭据在同事的本地环境中配置：`UMEKO_ADMIN_URL`、`UMEKO_ADMIN_USERNAME`、`UMEKO_ADMIN_PASSWORD`；有企业 CA 时再设置 `UMEKO_ADMIN_CA_FILE`。这不是自动获得管理员权限的机制，普通用户登录和机器任务凭据不能代替管理员身份。
+
+```sh
+python scripts/admin_api.py GET /admin/v1/me
+python scripts/admin_api.py GET /admin/v1/openapi.json --output admin-openapi.json
+python scripts/admin_api.py PUT /admin/v1/models/<模型ID> --json-file change.json
+```
+
+例如 `change.json` 为 `{"max_concurrent_requests":2}`。`UMEKO_ADMIN_URL` 已含完整管理前缀，命令只传内部 `/admin/...` 路径。客户端在一次运行中登录、调用并退出，不持久化 Cookie，不自动重试变更；默认遮蔽返回值中的凭据。创建或轮换服务凭据时使用 `--secrets-output <指定的新文件>` 保存只返回一次的原文，勿粘贴进 AI 对话。
+
+管理页面的服务端功能均可通过这些 API 调用，包括用户、权限、模型并发、智能体、服务账号、任务与会话监控、技能源文件、下发状态和可信版本。浏览器主题/语言属于本地偏好，监听端口、TLS、路径前缀属于启动配置，不提供热修改 API。技能写入不会自动获得信任；批准和撤销仍需预览版本及明确 SHA-256。
+
+在线规范为每个操作提供摘要、行为说明、请求约束和认证要求；生成的[完整参考](reference-admin.md)与服务内手册使用同一份契约。`toggle` 会反转状态、凭据轮换只返回一次、导入和删除可能产生较大影响；AI 应先读取、按明确任务修改、回读确认，超时后查询状态，不能盲目重放。
+
 ## 会话查看
 
 在用户列表点击“查看会话”，再点击会话标题或“查看内容”，可只读查看该用户的聊天消息、附件名称、工具调用参数与结果，以及保存的上下文摘要和技能挂载。“返回用户列表”回到用户管理；关闭详情则留在当前用户的会话列表。

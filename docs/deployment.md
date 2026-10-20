@@ -76,6 +76,14 @@ uv run python -m umeko.server --env .env --host 127.0.0.1 --port 8000
 
 首次上线及后续更新，还需完成[受控技能的部署与升级验收](#skill-security-upgrade)：网页和模型能用，不等于会话脚本已通过白名单与摘要检查。
 
+### 通过 AI / API 管理
+
+管理登录页与控制台顶部可以复制 AI 接入提示词，供同事的 AI 下载标准管理 Skill 并使用现有管理员账号调用 API。它与管理页面共用默认 9000 端口、`UMEKO_ADMIN_BASE_PATH` 和 Cookie 鉴权，不新增管理端口或超级凭据。管理域名应指向管理端口；不要把它配置为用户服务的 `UMEKO_PUBLIC_URL`。
+
+代理需要转发管理前缀下的 `/admin/automation`、`/admin/automation/skill/` 全部文件，以及 `/admin/login`、`/admin/logout`、`/admin/v1/`。Skill 说明可公开下载，当前运行规范 `/admin/v1/openapi.json` 与所有管理数据仍要求管理员身份。使用正常的整前缀转发规则即可，无需为每个 Skill 文件单独配规则。
+
+发布时保留 `umeko/server/admin_skill/` 的三个文件；客户端不依赖服务器本地脚本路径。升级后可重新复制提示词、下载当前 Skill，再以在线 OpenAPI 为准操作。使用内部 HTTPS 的同事可在本地配置 `UMEKO_ADMIN_CA_FILE`，不必关闭证书校验。参见[管理 API](api/admin.md#admin-automation)及服务内手册的“管理员指南 → AI 与 API 管理”。
+
 ### 启动方式与监听地址
 
 | 入口 | 默认地址 | 适用场景 |

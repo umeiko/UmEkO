@@ -209,7 +209,7 @@ def create_admin_app(settings: Settings, service: AgentService, store: Store, pu
     app = FastAPI(
         title="Umeko Admin",
         root_path=base_path,
-        docs_url=None, redoc_url=None, openapi_url=None,  # 不暴露任何 API 文档
+        docs_url=None, redoc_url=None, openapi_url=None,  # 接口规范由受鉴权的管理路由提供
     )
     add_guide(app)
 
@@ -1033,4 +1033,6 @@ def create_admin_app(settings: Settings, service: AgentService, store: Store, pu
         return {"output": result}
 
     app.mount("/static", StaticFiles(directory=STATIC_DIR), name="static")
+    from .admin_automation import add_admin_automation
+    add_admin_automation(app, base_path)
     return app

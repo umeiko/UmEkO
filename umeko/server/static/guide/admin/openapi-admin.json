@@ -1,0 +1,4417 @@
+{
+  "components": {
+    "schemas": {
+      "HTTPValidationError": {
+        "properties": {
+          "detail": {
+            "items": {
+              "$ref": "#/components/schemas/ValidationError"
+            },
+            "title": "Detail",
+            "type": "array"
+          }
+        },
+        "title": "HTTPValidationError",
+        "type": "object"
+      },
+      "ValidationError": {
+        "properties": {
+          "ctx": {
+            "title": "Context",
+            "type": "object"
+          },
+          "input": {
+            "title": "Input"
+          },
+          "loc": {
+            "items": {
+              "anyOf": [
+                {
+                  "type": "string"
+                },
+                {
+                  "type": "integer"
+                }
+              ]
+            },
+            "title": "Location",
+            "type": "array"
+          },
+          "msg": {
+            "title": "Message",
+            "type": "string"
+          },
+          "type": {
+            "title": "Error Type",
+            "type": "string"
+          }
+        },
+        "required": [
+          "loc",
+          "msg",
+          "type"
+        ],
+        "title": "ValidationError",
+        "type": "object"
+      },
+      "_ActiveModelIn": {
+        "properties": {
+          "model_id": {
+            "title": "Model Id",
+            "type": "string"
+          }
+        },
+        "required": [
+          "model_id"
+        ],
+        "title": "_ActiveModelIn",
+        "type": "object"
+      },
+      "_AgentIn": {
+        "additionalProperties": false,
+        "properties": {
+          "default_model_id": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Default Model Id"
+          },
+          "default_vision_model_id": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Default Vision Model Id"
+          },
+          "description": {
+            "maxLength": 10000,
+            "minLength": 1,
+            "title": "Description",
+            "type": "string"
+          },
+          "disclosed_model_ids": {
+            "anyOf": [
+              {
+                "items": {
+                  "type": "string"
+                },
+                "type": "array"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Disclosed Model Ids"
+          },
+          "documentationUrl": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Documentationurl"
+          },
+          "enabled": {
+            "default": true,
+            "title": "Enabled",
+            "type": "boolean"
+          },
+          "iconUrl": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Iconurl"
+          },
+          "name": {
+            "maxLength": 200,
+            "minLength": 1,
+            "title": "Name",
+            "type": "string"
+          },
+          "provider": {
+            "anyOf": [
+              {
+                "additionalProperties": true,
+                "type": "object"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Provider"
+          },
+          "skill_names": {
+            "items": {
+              "type": "string"
+            },
+            "title": "Skill Names",
+            "type": "array"
+          },
+          "slug": {
+            "maxLength": 63,
+            "minLength": 1,
+            "title": "Slug",
+            "type": "string"
+          },
+          "system_prompt": {
+            "default": "",
+            "maxLength": 100000,
+            "title": "System Prompt",
+            "type": "string"
+          },
+          "version": {
+            "default": "0.1.2",
+            "title": "Version",
+            "type": "string"
+          }
+        },
+        "required": [
+          "slug",
+          "name",
+          "description"
+        ],
+        "title": "_AgentIn",
+        "type": "object"
+      },
+      "_DefaultSkillIn": {
+        "properties": {
+          "content": {
+            "maxLength": 200000,
+            "minLength": 1,
+            "title": "Content",
+            "type": "string"
+          }
+        },
+        "required": [
+          "content"
+        ],
+        "title": "_DefaultSkillIn",
+        "type": "object"
+      },
+      "_ImportIn": {
+        "properties": {
+          "document": {
+            "additionalProperties": true,
+            "title": "Document",
+            "type": "object"
+          }
+        },
+        "required": [
+          "document"
+        ],
+        "title": "_ImportIn",
+        "type": "object"
+      },
+      "_Login": {
+        "properties": {
+          "password": {
+            "title": "Password",
+            "type": "string"
+          },
+          "username": {
+            "title": "Username",
+            "type": "string"
+          }
+        },
+        "required": [
+          "username",
+          "password"
+        ],
+        "title": "_Login",
+        "type": "object"
+      },
+      "_ModelIn": {
+        "properties": {
+          "max_concurrent_requests": {
+            "default": 0,
+            "minimum": 0.0,
+            "title": "Max Concurrent Requests",
+            "type": "integer"
+          },
+          "name": {
+            "title": "Name",
+            "type": "string"
+          },
+          "user_enabled": {
+            "default": true,
+            "title": "User Enabled",
+            "type": "boolean"
+          },
+          "vision": {
+            "default": false,
+            "title": "Vision",
+            "type": "boolean"
+          }
+        },
+        "required": [
+          "name"
+        ],
+        "title": "_ModelIn",
+        "type": "object"
+      },
+      "_ModelPatch": {
+        "properties": {
+          "max_concurrent_requests": {
+            "anyOf": [
+              {
+                "minimum": 0.0,
+                "type": "integer"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Max Concurrent Requests"
+          },
+          "name": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Name"
+          },
+          "user_enabled": {
+            "anyOf": [
+              {
+                "type": "boolean"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "User Enabled"
+          },
+          "vision": {
+            "anyOf": [
+              {
+                "type": "boolean"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Vision"
+          }
+        },
+        "title": "_ModelPatch",
+        "type": "object"
+      },
+      "_PasswordSet": {
+        "properties": {
+          "password": {
+            "title": "Password",
+            "type": "string"
+          }
+        },
+        "required": [
+          "password"
+        ],
+        "title": "_PasswordSet",
+        "type": "object"
+      },
+      "_ProviderIn": {
+        "properties": {
+          "api_key": {
+            "title": "Api Key",
+            "type": "string"
+          },
+          "base_url": {
+            "title": "Base Url",
+            "type": "string"
+          },
+          "name": {
+            "title": "Name",
+            "type": "string"
+          },
+          "proxy": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Proxy"
+          }
+        },
+        "required": [
+          "name",
+          "base_url",
+          "api_key"
+        ],
+        "title": "_ProviderIn",
+        "type": "object"
+      },
+      "_ProviderPatch": {
+        "properties": {
+          "api_key": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Api Key"
+          },
+          "base_url": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Base Url"
+          },
+          "name": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Name"
+          },
+          "proxy": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Proxy"
+          }
+        },
+        "title": "_ProviderPatch",
+        "type": "object"
+      },
+      "_RoleSet": {
+        "properties": {
+          "role": {
+            "title": "Role",
+            "type": "string"
+          }
+        },
+        "required": [
+          "role"
+        ],
+        "title": "_RoleSet",
+        "type": "object"
+      },
+      "_RuntimeConfigIn": {
+        "properties": {
+          "max_tool_iterations": {
+            "anyOf": [
+              {
+                "type": "integer"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Max Tool Iterations"
+          }
+        },
+        "title": "_RuntimeConfigIn",
+        "type": "object"
+      },
+      "_ScriptTestIn": {
+        "properties": {
+          "args": {
+            "default": "{}",
+            "title": "Args",
+            "type": "string"
+          },
+          "timeout": {
+            "default": 10,
+            "title": "Timeout",
+            "type": "integer"
+          }
+        },
+        "title": "_ScriptTestIn",
+        "type": "object"
+      },
+      "_ServiceAccessIn": {
+        "properties": {
+          "auth_mode": {
+            "enum": [
+              "required",
+              "anonymous"
+            ],
+            "title": "Auth Mode",
+            "type": "string"
+          }
+        },
+        "required": [
+          "auth_mode"
+        ],
+        "title": "_ServiceAccessIn",
+        "type": "object"
+      },
+      "_ServiceAccountIn": {
+        "properties": {
+          "expires_days": {
+            "default": 90,
+            "maximum": 3650.0,
+            "minimum": 1.0,
+            "title": "Expires Days",
+            "type": "integer"
+          },
+          "name": {
+            "maxLength": 80,
+            "minLength": 1,
+            "title": "Name",
+            "type": "string"
+          },
+          "scopes": {
+            "items": {
+              "type": "string"
+            },
+            "title": "Scopes",
+            "type": "array"
+          }
+        },
+        "required": [
+          "name"
+        ],
+        "title": "_ServiceAccountIn",
+        "type": "object"
+      },
+      "_ServiceAccountPatch": {
+        "properties": {
+          "enabled": {
+            "anyOf": [
+              {
+                "type": "boolean"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Enabled"
+          },
+          "expires_days": {
+            "default": 90,
+            "maximum": 3650.0,
+            "minimum": 1.0,
+            "title": "Expires Days",
+            "type": "integer"
+          },
+          "rotate": {
+            "default": false,
+            "title": "Rotate",
+            "type": "boolean"
+          }
+        },
+        "title": "_ServiceAccountPatch",
+        "type": "object"
+      },
+      "_SkillApprovalIn": {
+        "additionalProperties": false,
+        "properties": {
+          "sha256": {
+            "pattern": "^[0-9a-f]{64}$",
+            "title": "Sha256",
+            "type": "string"
+          }
+        },
+        "required": [
+          "sha256"
+        ],
+        "title": "_SkillApprovalIn",
+        "type": "object"
+      },
+      "_SkillTrustBatchIn": {
+        "additionalProperties": false,
+        "properties": {
+          "action": {
+            "enum": [
+              "approve",
+              "revoke"
+            ],
+            "title": "Action",
+            "type": "string"
+          },
+          "items": {
+            "items": {
+              "$ref": "#/components/schemas/_SkillTrustItem"
+            },
+            "maxItems": 200,
+            "minItems": 1,
+            "title": "Items",
+            "type": "array"
+          }
+        },
+        "required": [
+          "action",
+          "items"
+        ],
+        "title": "_SkillTrustBatchIn",
+        "type": "object"
+      },
+      "_SkillTrustItem": {
+        "additionalProperties": false,
+        "properties": {
+          "member": {
+            "maxLength": 500,
+            "minLength": 1,
+            "title": "Member",
+            "type": "string"
+          },
+          "pack": {
+            "maxLength": 120,
+            "minLength": 1,
+            "title": "Pack",
+            "type": "string"
+          },
+          "sha256": {
+            "pattern": "^[0-9a-f]{64}$",
+            "title": "Sha256",
+            "type": "string"
+          }
+        },
+        "required": [
+          "sha256",
+          "pack",
+          "member"
+        ],
+        "title": "_SkillTrustItem",
+        "type": "object"
+      },
+      "_ToolDispatchIn": {
+        "additionalProperties": false,
+        "properties": {
+          "enabled": {
+            "title": "Enabled",
+            "type": "boolean"
+          }
+        },
+        "required": [
+          "enabled"
+        ],
+        "title": "_ToolDispatchIn",
+        "type": "object"
+      },
+      "_UserCreate": {
+        "properties": {
+          "password": {
+            "title": "Password",
+            "type": "string"
+          },
+          "role": {
+            "default": "user",
+            "title": "Role",
+            "type": "string"
+          },
+          "username": {
+            "title": "Username",
+            "type": "string"
+          }
+        },
+        "required": [
+          "username",
+          "password"
+        ],
+        "title": "_UserCreate",
+        "type": "object"
+      },
+      "_UserModelAccessIn": {
+        "additionalProperties": false,
+        "properties": {
+          "allowed_model_ids": {
+            "anyOf": [
+              {
+                "items": {
+                  "type": "string"
+                },
+                "type": "array"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Allowed Model Ids"
+          },
+          "allowed_provider_ids": {
+            "anyOf": [
+              {
+                "items": {
+                  "type": "string"
+                },
+                "type": "array"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Allowed Provider Ids"
+          }
+        },
+        "required": [
+          "allowed_provider_ids",
+          "allowed_model_ids"
+        ],
+        "title": "_UserModelAccessIn",
+        "type": "object"
+      },
+      "_UserToolAccessIn": {
+        "additionalProperties": false,
+        "properties": {
+          "allowed_tool_names": {
+            "anyOf": [
+              {
+                "items": {
+                  "type": "string"
+                },
+                "type": "array"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Allowed Tool Names"
+          }
+        },
+        "required": [
+          "allowed_tool_names"
+        ],
+        "title": "_UserToolAccessIn",
+        "type": "object"
+      }
+    },
+    "securitySchemes": {
+      "umeko_admin": {
+        "description": "POST /admin/login 后保存的管理员 Cookie；用户 Cookie 和机器服务 Token 均不能替代。",
+        "in": "cookie",
+        "name": "umeko_admin",
+        "type": "apiKey"
+      }
+    }
+  },
+  "info": {
+    "title": "Umeko Admin",
+    "version": "0.1.2"
+  },
+  "openapi": "3.1.0",
+  "paths": {
+    "/admin/login": {
+      "post": {
+        "description": "验证管理员账号密码，设置 umeko_admin Cookie，有效期最长 7 天；登录响应不返回模型密钥。",
+        "operationId": "login_admin_login_post",
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/_Login"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "additionalProperties": true,
+                  "title": "Response Login Admin Login Post",
+                  "type": "object"
+                }
+              }
+            },
+            "description": "Successful Response"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            },
+            "description": "Validation Error"
+          }
+        },
+        "security": [],
+        "summary": "管理员登录",
+        "x-umeko-automatic-retry": false,
+        "x-umeko-mutating": true
+      }
+    },
+    "/admin/logout": {
+      "post": {
+        "description": "撤销当前 Cookie 对应的服务端登录令牌，并按相同管理前缀删除 Cookie。",
+        "operationId": "logout_admin_logout_post",
+        "responses": {
+          "204": {
+            "description": "Successful Response"
+          }
+        },
+        "security": [],
+        "summary": "退出管理员登录",
+        "x-umeko-automatic-retry": false,
+        "x-umeko-mutating": true
+      }
+    },
+    "/admin/v1/active-model": {
+      "put": {
+        "description": "设置后重载配置并驱逐在线会话缓存，可能影响活跃任务。",
+        "operationId": "activate_model_admin_v1_active_model_put",
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/_ActiveModelIn"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "additionalProperties": true,
+                  "title": "Response Activate Model Admin V1 Active Model Put",
+                  "type": "object"
+                }
+              }
+            },
+            "description": "Successful Response"
+          },
+          "401": {
+            "description": "未登录、会话失效或不是管理员。"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            },
+            "description": "Validation Error"
+          }
+        },
+        "security": [
+          {
+            "umeko_admin": []
+          }
+        ],
+        "summary": "设置平台默认主模型",
+        "x-umeko-automatic-retry": false,
+        "x-umeko-mutating": true
+      }
+    },
+    "/admin/v1/agents": {
+      "get": {
+        "description": "返回智能体、可选模型和技能目录；endpoints 指向用户服务，不是管理服务。",
+        "operationId": "agents_admin_v1_agents_get",
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "additionalProperties": true,
+                  "title": "Response Agents Admin V1 Agents Get",
+                  "type": "object"
+                }
+              }
+            },
+            "description": "Successful Response"
+          },
+          "401": {
+            "description": "未登录、会话失效或不是管理员。"
+          }
+        },
+        "security": [
+          {
+            "umeko_admin": []
+          }
+        ],
+        "summary": "智能体目录与配置选项",
+        "tags": [
+          "agents"
+        ],
+        "x-umeko-automatic-retry": false,
+        "x-umeko-mutating": false
+      },
+      "post": {
+        "description": "设置介绍、工作指引、默认主模型/视觉模型与技能范围；成功返回带 id 和 endpoints 的完整记录。",
+        "operationId": "create_agent_admin_v1_agents_post",
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/_AgentIn"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "201": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "additionalProperties": true,
+                  "title": "Response Create Agent Admin V1 Agents Post",
+                  "type": "object"
+                }
+              }
+            },
+            "description": "Successful Response"
+          },
+          "401": {
+            "description": "未登录、会话失效或不是管理员。"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            },
+            "description": "Validation Error"
+          }
+        },
+        "security": [
+          {
+            "umeko_admin": []
+          }
+        ],
+        "summary": "创建智能体",
+        "tags": [
+          "agents"
+        ],
+        "x-umeko-automatic-retry": false,
+        "x-umeko-mutating": true
+      }
+    },
+    "/admin/v1/agents/{agent_id}": {
+      "delete": {
+        "description": "永久删除定义；有保留任务时可能返回 409，应先停用并等待生命周期清理。",
+        "operationId": "delete_agent_admin_v1_agents__agent_id__delete",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "agent_id",
+            "required": true,
+            "schema": {
+              "title": "Agent Id",
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "204": {
+            "description": "Successful Response"
+          },
+          "401": {
+            "description": "未登录、会话失效或不是管理员。"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            },
+            "description": "Validation Error"
+          }
+        },
+        "security": [
+          {
+            "umeko_admin": []
+          }
+        ],
+        "summary": "删除智能体",
+        "tags": [
+          "agents"
+        ],
+        "x-umeko-automatic-retry": false,
+        "x-umeko-mutating": true
+      },
+      "get": {
+        "description": "读取配置、默认模型、技能与公开入口；工作指引属于管理员数据。",
+        "operationId": "get_agent_admin_v1_agents__agent_id__get",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "agent_id",
+            "required": true,
+            "schema": {
+              "title": "Agent Id",
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "additionalProperties": true,
+                  "title": "Response Get Agent Admin V1 Agents  Agent Id  Get",
+                  "type": "object"
+                }
+              }
+            },
+            "description": "Successful Response"
+          },
+          "401": {
+            "description": "未登录、会话失效或不是管理员。"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            },
+            "description": "Validation Error"
+          }
+        },
+        "security": [
+          {
+            "umeko_admin": []
+          }
+        ],
+        "summary": "读取智能体",
+        "tags": [
+          "agents"
+        ],
+        "x-umeko-automatic-retry": false,
+        "x-umeko-mutating": false
+      },
+      "put": {
+        "description": "按完整表单更新；先读取原记录，仅改目标字段再提交。访问路径 slug 不可改，修改对新任务生效。",
+        "operationId": "update_agent_admin_v1_agents__agent_id__put",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "agent_id",
+            "required": true,
+            "schema": {
+              "title": "Agent Id",
+              "type": "string"
+            }
+          }
+        ],
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/_AgentIn"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "additionalProperties": true,
+                  "title": "Response Update Agent Admin V1 Agents  Agent Id  Put",
+                  "type": "object"
+                }
+              }
+            },
+            "description": "Successful Response"
+          },
+          "401": {
+            "description": "未登录、会话失效或不是管理员。"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            },
+            "description": "Validation Error"
+          }
+        },
+        "security": [
+          {
+            "umeko_admin": []
+          }
+        ],
+        "summary": "更新智能体",
+        "tags": [
+          "agents"
+        ],
+        "x-umeko-automatic-retry": false,
+        "x-umeko-mutating": true
+      }
+    },
+    "/admin/v1/agents/{agent_id}/card": {
+      "get": {
+        "description": "返回当前已保存配置生成的公开名片，私有工作指引不放入 Card。",
+        "operationId": "managed_agent_card_admin_v1_agents__agent_id__card_get",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "agent_id",
+            "required": true,
+            "schema": {
+              "title": "Agent Id",
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "additionalProperties": true,
+                  "title": "Response Managed Agent Card Admin V1 Agents  Agent Id  Card Get",
+                  "type": "object"
+                }
+              }
+            },
+            "description": "Successful Response"
+          },
+          "401": {
+            "description": "未登录、会话失效或不是管理员。"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            },
+            "description": "Validation Error"
+          }
+        },
+        "security": [
+          {
+            "umeko_admin": []
+          }
+        ],
+        "summary": "预览 Agent Card",
+        "tags": [
+          "agents"
+        ],
+        "x-umeko-automatic-retry": false,
+        "x-umeko-mutating": false
+      }
+    },
+    "/admin/v1/agents/{agent_id}/mcp": {
+      "get": {
+        "description": "读取 SDK 实际注册的工具、参数、资源和提示词，不执行工具。",
+        "operationId": "managed_mcp_disclosure_admin_v1_agents__agent_id__mcp_get",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "agent_id",
+            "required": true,
+            "schema": {
+              "title": "Agent Id",
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "additionalProperties": true,
+                  "title": "Response Managed Mcp Disclosure Admin V1 Agents  Agent Id  Mcp Get",
+                  "type": "object"
+                }
+              }
+            },
+            "description": "Successful Response"
+          },
+          "401": {
+            "description": "未登录、会话失效或不是管理员。"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            },
+            "description": "Validation Error"
+          }
+        },
+        "security": [
+          {
+            "umeko_admin": []
+          }
+        ],
+        "summary": "查看 MCP 接口披露",
+        "tags": [
+          "agents"
+        ],
+        "x-umeko-automatic-retry": false,
+        "x-umeko-mutating": false
+      }
+    },
+    "/admin/v1/default-skills": {
+      "get": {
+        "description": "读取数据库下发状态与管理员库的 imported/enabled/stale 信息。",
+        "operationId": "list_default_skills_admin_v1_default_skills_get",
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "additionalProperties": true,
+                  "title": "Response List Default Skills Admin V1 Default Skills Get",
+                  "type": "object"
+                }
+              }
+            },
+            "description": "Successful Response"
+          },
+          "401": {
+            "description": "未登录、会话失效或不是管理员。"
+          }
+        },
+        "security": [
+          {
+            "umeko_admin": []
+          }
+        ],
+        "summary": "技能下发列表",
+        "x-umeko-automatic-retry": false,
+        "x-umeko-mutating": false
+      }
+    },
+    "/admin/v1/default-skills/import/{name}": {
+      "post": {
+        "description": "name 为包名.md，读取管理员库 SKILL.md 并写入默认下发配置，新会话生效。",
+        "operationId": "import_default_skill_admin_v1_default_skills_import__name__post",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "name",
+            "required": true,
+            "schema": {
+              "title": "Name",
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "201": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "additionalProperties": true,
+                  "title": "Response Import Default Skill Admin V1 Default Skills Import  Name  Post",
+                  "type": "object"
+                }
+              }
+            },
+            "description": "Successful Response"
+          },
+          "401": {
+            "description": "未登录、会话失效或不是管理员。"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            },
+            "description": "Validation Error"
+          }
+        },
+        "security": [
+          {
+            "umeko_admin": []
+          }
+        ],
+        "summary": "从技能库导入下发入口",
+        "x-umeko-automatic-retry": false,
+        "x-umeko-mutating": true
+      }
+    },
+    "/admin/v1/default-skills/{name}": {
+      "delete": {
+        "description": "移除默认下发记录，不自动删除管理员库源文件和旧会话副本。",
+        "operationId": "delete_default_skill_admin_v1_default_skills__name__delete",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "name",
+            "required": true,
+            "schema": {
+              "title": "Name",
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "204": {
+            "description": "Successful Response"
+          },
+          "401": {
+            "description": "未登录、会话失效或不是管理员。"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            },
+            "description": "Validation Error"
+          }
+        },
+        "security": [
+          {
+            "umeko_admin": []
+          }
+        ],
+        "summary": "删除技能下发入口",
+        "x-umeko-automatic-retry": false,
+        "x-umeko-mutating": true
+      },
+      "get": {
+        "description": "读取数据库中的技能主指引，可能与管理员库源文件不同。",
+        "operationId": "get_default_skill_admin_v1_default_skills__name__get",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "name",
+            "required": true,
+            "schema": {
+              "title": "Name",
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "additionalProperties": true,
+                  "title": "Response Get Default Skill Admin V1 Default Skills  Name  Get",
+                  "type": "object"
+                }
+              }
+            },
+            "description": "Successful Response"
+          },
+          "401": {
+            "description": "未登录、会话失效或不是管理员。"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            },
+            "description": "Validation Error"
+          }
+        },
+        "security": [
+          {
+            "umeko_admin": []
+          }
+        ],
+        "summary": "读取已下发技能入口",
+        "x-umeko-automatic-retry": false,
+        "x-umeko-mutating": false
+      },
+      "put": {
+        "description": "以 content 保存合法 SKILL.md 文本；不自动审批脚本或改写旧会话副本。",
+        "operationId": "upload_default_skill_admin_v1_default_skills__name__put",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "name",
+            "required": true,
+            "schema": {
+              "title": "Name",
+              "type": "string"
+            }
+          }
+        ],
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/_DefaultSkillIn"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "201": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "additionalProperties": true,
+                  "title": "Response Upload Default Skill Admin V1 Default Skills  Name  Put",
+                  "type": "object"
+                }
+              }
+            },
+            "description": "Successful Response"
+          },
+          "401": {
+            "description": "未登录、会话失效或不是管理员。"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            },
+            "description": "Validation Error"
+          }
+        },
+        "security": [
+          {
+            "umeko_admin": []
+          }
+        ],
+        "summary": "保存技能下发入口",
+        "x-umeko-automatic-retry": false,
+        "x-umeko-mutating": true
+      }
+    },
+    "/admin/v1/default-skills/{name}/toggle": {
+      "post": {
+        "description": "每次调用都会反转状态，不是幂等设置。先 GET 当前状态，仅在目标不同的时候调用一次，再回读。",
+        "operationId": "toggle_default_skill_admin_v1_default_skills__name__toggle_post",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "name",
+            "required": true,
+            "schema": {
+              "title": "Name",
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "additionalProperties": true,
+                  "title": "Response Toggle Default Skill Admin V1 Default Skills  Name  Toggle Post",
+                  "type": "object"
+                }
+              }
+            },
+            "description": "Successful Response"
+          },
+          "401": {
+            "description": "未登录、会话失效或不是管理员。"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            },
+            "description": "Validation Error"
+          }
+        },
+        "security": [
+          {
+            "umeko_admin": []
+          }
+        ],
+        "summary": "切换技能下发开关",
+        "x-umeko-automatic-retry": false,
+        "x-umeko-mutating": true
+      }
+    },
+    "/admin/v1/me": {
+      "get": {
+        "description": "读取当前登录管理员的身份。普通用户和未登录请求均返回 401。",
+        "operationId": "me_admin_v1_me_get",
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "additionalProperties": true,
+                  "title": "Response Me Admin V1 Me Get",
+                  "type": "object"
+                }
+              }
+            },
+            "description": "Successful Response"
+          },
+          "401": {
+            "description": "未登录、会话失效或不是管理员。"
+          }
+        },
+        "security": [
+          {
+            "umeko_admin": []
+          }
+        ],
+        "summary": "当前管理员",
+        "x-umeko-automatic-retry": false,
+        "x-umeko-mutating": false
+      }
+    },
+    "/admin/v1/models/{model_id}": {
+      "delete": {
+        "description": "删除模型配置；使用此默认模型的智能体需要重新配置。",
+        "operationId": "delete_model_admin_v1_models__model_id__delete",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "model_id",
+            "required": true,
+            "schema": {
+              "title": "Model Id",
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "204": {
+            "description": "Successful Response"
+          },
+          "401": {
+            "description": "未登录、会话失效或不是管理员。"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            },
+            "description": "Validation Error"
+          }
+        },
+        "security": [
+          {
+            "umeko_admin": []
+          }
+        ],
+        "summary": "删除模型",
+        "x-umeko-automatic-retry": false,
+        "x-umeko-mutating": true
+      },
+      "put": {
+        "description": "只提交变更字段。并发按模型 ID 共享，降低上限不打断已开始的调用；user_enabled 控制全局用户下发。",
+        "operationId": "update_model_admin_v1_models__model_id__put",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "model_id",
+            "required": true,
+            "schema": {
+              "title": "Model Id",
+              "type": "string"
+            }
+          }
+        ],
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/_ModelPatch"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "204": {
+            "description": "Successful Response"
+          },
+          "401": {
+            "description": "未登录、会话失效或不是管理员。"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            },
+            "description": "Validation Error"
+          }
+        },
+        "security": [
+          {
+            "umeko_admin": []
+          }
+        ],
+        "summary": "修改模型能力与并发",
+        "x-umeko-automatic-retry": false,
+        "x-umeko-mutating": true
+      }
+    },
+    "/admin/v1/openapi.json": {
+      "get": {
+        "description": "读取当前运行版本的完整 OpenAPI，包括参数、请求模型、认证与操作影响；需要管理员登录。",
+        "operationId": "admin_schema_admin_v1_openapi_json_get",
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "additionalProperties": true,
+                  "title": "Response Admin Schema Admin V1 Openapi Json Get",
+                  "type": "object"
+                }
+              }
+            },
+            "description": "Successful Response"
+          },
+          "401": {
+            "description": "未登录、会话失效或不是管理员。"
+          }
+        },
+        "security": [
+          {
+            "umeko_admin": []
+          }
+        ],
+        "summary": "管理接口规范",
+        "tags": [
+          "admin automation"
+        ],
+        "x-umeko-automatic-retry": false,
+        "x-umeko-mutating": false
+      }
+    },
+    "/admin/v1/providers": {
+      "get": {
+        "description": "管理员可读取完整 Provider api_key，结果须按敏感数据处理，不直接贴入 AI 对话。",
+        "operationId": "list_providers_admin_v1_providers_get",
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "additionalProperties": true,
+                  "title": "Response List Providers Admin V1 Providers Get",
+                  "type": "object"
+                }
+              }
+            },
+            "description": "Successful Response"
+          },
+          "401": {
+            "description": "未登录、会话失效或不是管理员。"
+          }
+        },
+        "security": [
+          {
+            "umeko_admin": []
+          }
+        ],
+        "summary": "供应商及模型目录",
+        "x-umeko-automatic-retry": false,
+        "x-umeko-mutating": false
+      },
+      "post": {
+        "description": "配置上游地址、密钥和可选代理；base_url 是上游模型地址，与网页前缀无关。",
+        "operationId": "create_provider_admin_v1_providers_post",
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/_ProviderIn"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "201": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "additionalProperties": true,
+                  "title": "Response Create Provider Admin V1 Providers Post",
+                  "type": "object"
+                }
+              }
+            },
+            "description": "Successful Response"
+          },
+          "401": {
+            "description": "未登录、会话失效或不是管理员。"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            },
+            "description": "Validation Error"
+          }
+        },
+        "security": [
+          {
+            "umeko_admin": []
+          }
+        ],
+        "summary": "创建模型供应商",
+        "x-umeko-automatic-retry": false,
+        "x-umeko-mutating": true
+      }
+    },
+    "/admin/v1/providers/import": {
+      "post": {
+        "description": "document 包装导入内容；指定 active 时激活并重载。不是简单追加，不应盲目重试。",
+        "operationId": "import_providers_admin_v1_providers_import_post",
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/_ImportIn"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "additionalProperties": true,
+                  "title": "Response Import Providers Admin V1 Providers Import Post",
+                  "type": "object"
+                }
+              }
+            },
+            "description": "Successful Response"
+          },
+          "401": {
+            "description": "未登录、会话失效或不是管理员。"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            },
+            "description": "Validation Error"
+          }
+        },
+        "security": [
+          {
+            "umeko_admin": []
+          }
+        ],
+        "summary": "批量导入供应商与模型",
+        "x-umeko-automatic-retry": false,
+        "x-umeko-mutating": true
+      }
+    },
+    "/admin/v1/providers/{provider_id}": {
+      "delete": {
+        "description": "删除供应商及其模型，先核对当前默认模型和依赖它的智能体。",
+        "operationId": "delete_provider_admin_v1_providers__provider_id__delete",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "provider_id",
+            "required": true,
+            "schema": {
+              "title": "Provider Id",
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "204": {
+            "description": "Successful Response"
+          },
+          "401": {
+            "description": "未登录、会话失效或不是管理员。"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            },
+            "description": "Validation Error"
+          }
+        },
+        "security": [
+          {
+            "umeko_admin": []
+          }
+        ],
+        "summary": "删除模型供应商",
+        "x-umeko-automatic-retry": false,
+        "x-umeko-mutating": true
+      },
+      "put": {
+        "description": "只提交变更字段；api_key='********' 表示保留现有密钥。null 字段不更新。",
+        "operationId": "update_provider_admin_v1_providers__provider_id__put",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "provider_id",
+            "required": true,
+            "schema": {
+              "title": "Provider Id",
+              "type": "string"
+            }
+          }
+        ],
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/_ProviderPatch"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "204": {
+            "description": "Successful Response"
+          },
+          "401": {
+            "description": "未登录、会话失效或不是管理员。"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            },
+            "description": "Validation Error"
+          }
+        },
+        "security": [
+          {
+            "umeko_admin": []
+          }
+        ],
+        "summary": "修改模型供应商",
+        "x-umeko-automatic-retry": false,
+        "x-umeko-mutating": true
+      }
+    },
+    "/admin/v1/providers/{provider_id}/models": {
+      "post": {
+        "description": "设置上游模型名称、视觉标记、用户下发及每模型并发；0 表示无限制。",
+        "operationId": "add_model_admin_v1_providers__provider_id__models_post",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "provider_id",
+            "required": true,
+            "schema": {
+              "title": "Provider Id",
+              "type": "string"
+            }
+          }
+        ],
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/_ModelIn"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "201": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "additionalProperties": true,
+                  "title": "Response Add Model Admin V1 Providers  Provider Id  Models Post",
+                  "type": "object"
+                }
+              }
+            },
+            "description": "Successful Response"
+          },
+          "401": {
+            "description": "未登录、会话失效或不是管理员。"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            },
+            "description": "Validation Error"
+          }
+        },
+        "security": [
+          {
+            "umeko_admin": []
+          }
+        ],
+        "summary": "新增模型",
+        "x-umeko-automatic-retry": false,
+        "x-umeko-mutating": true
+      }
+    },
+    "/admin/v1/resources": {
+      "get": {
+        "description": "读取主机、进程、任务队列、模型队列和历史采样；不发起模型调用。",
+        "operationId": "resources_admin_v1_resources_get",
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "additionalProperties": true,
+                  "title": "Response Resources Admin V1 Resources Get",
+                  "type": "object"
+                }
+              }
+            },
+            "description": "Successful Response"
+          },
+          "401": {
+            "description": "未登录、会话失效或不是管理员。"
+          }
+        },
+        "security": [
+          {
+            "umeko_admin": []
+          }
+        ],
+        "summary": "资源监控",
+        "tags": [
+          "monitoring"
+        ],
+        "x-umeko-automatic-retry": false,
+        "x-umeko-mutating": false
+      }
+    },
+    "/admin/v1/runtime-config": {
+      "get": {
+        "description": "返回持久化覆盖值；max_tool_iterations=null 表示没有覆盖。",
+        "operationId": "get_runtime_config_admin_v1_runtime_config_get",
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "additionalProperties": true,
+                  "title": "Response Get Runtime Config Admin V1 Runtime Config Get",
+                  "type": "object"
+                }
+              }
+            },
+            "description": "Successful Response"
+          },
+          "401": {
+            "description": "未登录、会话失效或不是管理员。"
+          }
+        },
+        "security": [
+          {
+            "umeko_admin": []
+          }
+        ],
+        "summary": "读取工具回合上限",
+        "x-umeko-automatic-retry": false,
+        "x-umeko-mutating": false
+      },
+      "put": {
+        "description": "0 为无限，null 清除覆盖，正整数为上限；修改会重载配置并驱逐在线会话缓存。",
+        "operationId": "set_runtime_config_admin_v1_runtime_config_put",
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/_RuntimeConfigIn"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "additionalProperties": true,
+                  "title": "Response Set Runtime Config Admin V1 Runtime Config Put",
+                  "type": "object"
+                }
+              }
+            },
+            "description": "Successful Response"
+          },
+          "401": {
+            "description": "未登录、会话失效或不是管理员。"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            },
+            "description": "Validation Error"
+          }
+        },
+        "security": [
+          {
+            "umeko_admin": []
+          }
+        ],
+        "summary": "设置工具回合上限",
+        "x-umeko-automatic-retry": false,
+        "x-umeko-mutating": true
+      }
+    },
+    "/admin/v1/service-access": {
+      "get": {
+        "description": "读取凭据鉴权或共享匿名模式。此设置不改变管理员 API 鉴权。",
+        "operationId": "service_access_admin_v1_service_access_get",
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "additionalProperties": true,
+                  "title": "Response Service Access Admin V1 Service Access Get",
+                  "type": "object"
+                }
+              }
+            },
+            "description": "Successful Response"
+          },
+          "401": {
+            "description": "未登录、会话失效或不是管理员。"
+          }
+        },
+        "security": [
+          {
+            "umeko_admin": []
+          }
+        ],
+        "summary": "读取机器接入方式",
+        "tags": [
+          "service access"
+        ],
+        "x-umeko-automatic-retry": false,
+        "x-umeko-mutating": false
+      },
+      "put": {
+        "description": "required 为凭据鉴权，anonymous 为共享免鉴权；匿名调用不按 IP 隔离身份。管理 API 始终需要管理员。",
+        "operationId": "update_service_access_admin_v1_service_access_put",
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/_ServiceAccessIn"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "additionalProperties": true,
+                  "title": "Response Update Service Access Admin V1 Service Access Put",
+                  "type": "object"
+                }
+              }
+            },
+            "description": "Successful Response"
+          },
+          "401": {
+            "description": "未登录、会话失效或不是管理员。"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            },
+            "description": "Validation Error"
+          }
+        },
+        "security": [
+          {
+            "umeko_admin": []
+          }
+        ],
+        "summary": "设置机器接入方式",
+        "tags": [
+          "service access"
+        ],
+        "x-umeko-automatic-retry": false,
+        "x-umeko-mutating": true
+      }
+    },
+    "/admin/v1/service-accounts": {
+      "get": {
+        "description": "返回账号、权限选项与接入方式；不返回已有账号的原始凭据。",
+        "operationId": "service_accounts_admin_v1_service_accounts_get",
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "additionalProperties": true,
+                  "title": "Response Service Accounts Admin V1 Service Accounts Get",
+                  "type": "object"
+                }
+              }
+            },
+            "description": "Successful Response"
+          },
+          "401": {
+            "description": "未登录、会话失效或不是管理员。"
+          }
+        },
+        "security": [
+          {
+            "umeko_admin": []
+          }
+        ],
+        "summary": "服务账号列表",
+        "tags": [
+          "service access"
+        ],
+        "x-umeko-automatic-retry": false,
+        "x-umeko-mutating": false
+      },
+      "post": {
+        "description": "原始 token 仅本次返回；请保存到调用者指定的受限位置。它是机器任务凭据，不能调用管理 API。",
+        "operationId": "create_service_account_admin_v1_service_accounts_post",
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/_ServiceAccountIn"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "201": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "additionalProperties": true,
+                  "title": "Response Create Service Account Admin V1 Service Accounts Post",
+                  "type": "object"
+                }
+              }
+            },
+            "description": "Successful Response"
+          },
+          "401": {
+            "description": "未登录、会话失效或不是管理员。"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            },
+            "description": "Validation Error"
+          }
+        },
+        "security": [
+          {
+            "umeko_admin": []
+          }
+        ],
+        "summary": "创建服务账号",
+        "tags": [
+          "service access"
+        ],
+        "x-umeko-automatic-retry": false,
+        "x-umeko-mutating": true
+      }
+    },
+    "/admin/v1/service-accounts/{account_id}": {
+      "delete": {
+        "description": "永久清理此账号的凭据、任务、事件、会话与文件；有活跃任务时返回 409。",
+        "operationId": "delete_service_account_admin_v1_service_accounts__account_id__delete",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "account_id",
+            "required": true,
+            "schema": {
+              "title": "Account Id",
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "204": {
+            "description": "Successful Response"
+          },
+          "401": {
+            "description": "未登录、会话失效或不是管理员。"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            },
+            "description": "Validation Error"
+          }
+        },
+        "security": [
+          {
+            "umeko_admin": []
+          }
+        ],
+        "summary": "删除服务账号及历史",
+        "tags": [
+          "service access"
+        ],
+        "x-umeko-automatic-retry": false,
+        "x-umeko-mutating": true
+      },
+      "patch": {
+        "description": "enabled 控制启停；rotate=true 生成新凭据并撤销旧令牌。不要在超时后盲目重复轮换。停用不自动取消任务。",
+        "operationId": "update_service_account_admin_v1_service_accounts__account_id__patch",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "account_id",
+            "required": true,
+            "schema": {
+              "title": "Account Id",
+              "type": "string"
+            }
+          }
+        ],
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/_ServiceAccountPatch"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "additionalProperties": true,
+                  "title": "Response Update Service Account Admin V1 Service Accounts  Account Id  Patch",
+                  "type": "object"
+                }
+              }
+            },
+            "description": "Successful Response"
+          },
+          "401": {
+            "description": "未登录、会话失效或不是管理员。"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            },
+            "description": "Validation Error"
+          }
+        },
+        "security": [
+          {
+            "umeko_admin": []
+          }
+        ],
+        "summary": "更新或轮换服务凭据",
+        "tags": [
+          "service access"
+        ],
+        "x-umeko-automatic-retry": false,
+        "x-umeko-mutating": true
+      }
+    },
+    "/admin/v1/sessions/{session_id}": {
+      "delete": {
+        "description": "永久删除历史与会话目录；与仅驱逐缓存不同。",
+        "operationId": "delete_session_admin_v1_sessions__session_id__delete",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "session_id",
+            "required": true,
+            "schema": {
+              "title": "Session Id",
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "204": {
+            "description": "Successful Response"
+          },
+          "401": {
+            "description": "未登录、会话失效或不是管理员。"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            },
+            "description": "Validation Error"
+          }
+        },
+        "security": [
+          {
+            "umeko_admin": []
+          }
+        ],
+        "summary": "删除会话与文件",
+        "x-umeko-automatic-retry": false,
+        "x-umeko-mutating": true
+      },
+      "get": {
+        "description": "只读返回消息、工具、上下文摘要及挂载信息，不触发模型调用。",
+        "operationId": "inspect_session_admin_v1_sessions__session_id__get",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "session_id",
+            "required": true,
+            "schema": {
+              "title": "Session Id",
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "additionalProperties": true,
+                  "title": "Response Inspect Session Admin V1 Sessions  Session Id  Get",
+                  "type": "object"
+                }
+              }
+            },
+            "description": "Successful Response"
+          },
+          "401": {
+            "description": "未登录、会话失效或不是管理员。"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            },
+            "description": "Validation Error"
+          }
+        },
+        "security": [
+          {
+            "umeko_admin": []
+          }
+        ],
+        "summary": "会话内容详情",
+        "tags": [
+          "sessions"
+        ],
+        "x-umeko-automatic-retry": false,
+        "x-umeko-mutating": false
+      }
+    },
+    "/admin/v1/sessions/{session_id}/evict": {
+      "post": {
+        "description": "卸载内存态，保留历史；可能影响当前运行，调用前核对目标与活跃状态。",
+        "operationId": "evict_session_admin_v1_sessions__session_id__evict_post",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "session_id",
+            "required": true,
+            "schema": {
+              "title": "Session Id",
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "additionalProperties": true,
+                  "title": "Response Evict Session Admin V1 Sessions  Session Id  Evict Post",
+                  "type": "object"
+                }
+              }
+            },
+            "description": "Successful Response"
+          },
+          "401": {
+            "description": "未登录、会话失效或不是管理员。"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            },
+            "description": "Validation Error"
+          }
+        },
+        "security": [
+          {
+            "umeko_admin": []
+          }
+        ],
+        "summary": "驱逐会话缓存",
+        "x-umeko-automatic-retry": false,
+        "x-umeko-mutating": true
+      }
+    },
+    "/admin/v1/skill-library": {
+      "get": {
+        "description": "列出包、脚本、成员及下发状态；包含孤立成员目录，字段中的名称不是服务器任意绝对路径。",
+        "operationId": "skill_library_tree_admin_v1_skill_library_get",
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "additionalProperties": true,
+                  "title": "Response Skill Library Tree Admin V1 Skill Library Get",
+                  "type": "object"
+                }
+              }
+            },
+            "description": "Successful Response"
+          },
+          "401": {
+            "description": "未登录、会话失效或不是管理员。"
+          }
+        },
+        "security": [
+          {
+            "umeko_admin": []
+          }
+        ],
+        "summary": "管理员技能文件树",
+        "x-umeko-automatic-retry": false,
+        "x-umeko-mutating": false
+      }
+    },
+    "/admin/v1/skill-members/{pack}/{member_name}": {
+      "delete": {
+        "description": "删除指定包内成员；Python 文件需用 skill-scripts 入口。",
+        "operationId": "delete_skill_member_admin_v1_skill_members__pack___member_name__delete",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "pack",
+            "required": true,
+            "schema": {
+              "title": "Pack",
+              "type": "string"
+            }
+          },
+          {
+            "in": "path",
+            "name": "member_name",
+            "required": true,
+            "schema": {
+              "title": "Member Name",
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "204": {
+            "description": "Successful Response"
+          },
+          "401": {
+            "description": "未登录、会话失效或不是管理员。"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            },
+            "description": "Validation Error"
+          }
+        },
+        "security": [
+          {
+            "umeko_admin": []
+          }
+        ],
+        "summary": "删除技能附属文件",
+        "x-umeko-automatic-retry": false,
+        "x-umeko-mutating": true
+      },
+      "put": {
+        "description": "保存 Markdown、JSON、YAML、TXT、CSV 等成员；Python 使用 skill-scripts。config.json 修改后需要审核新摘要。",
+        "operationId": "put_skill_member_admin_v1_skill_members__pack___member_name__put",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "pack",
+            "required": true,
+            "schema": {
+              "title": "Pack",
+              "type": "string"
+            }
+          },
+          {
+            "in": "path",
+            "name": "member_name",
+            "required": true,
+            "schema": {
+              "title": "Member Name",
+              "type": "string"
+            }
+          }
+        ],
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/_DefaultSkillIn"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "201": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "additionalProperties": true,
+                  "title": "Response Put Skill Member Admin V1 Skill Members  Pack   Member Name  Put",
+                  "type": "object"
+                }
+              }
+            },
+            "description": "Successful Response"
+          },
+          "401": {
+            "description": "未登录、会话失效或不是管理员。"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            },
+            "description": "Validation Error"
+          }
+        },
+        "security": [
+          {
+            "umeko_admin": []
+          }
+        ],
+        "summary": "保存技能附属文本",
+        "x-umeko-automatic-retry": false,
+        "x-umeko-mutating": true
+      }
+    },
+    "/admin/v1/skill-scripts-template": {
+      "get": {
+        "description": "返回当前确定性脚本的输入输出契约模板，不创建或执行脚本。",
+        "operationId": "skill_script_template_admin_v1_skill_scripts_template_get",
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "additionalProperties": true,
+                  "title": "Response Skill Script Template Admin V1 Skill Scripts Template Get",
+                  "type": "object"
+                }
+              }
+            },
+            "description": "Successful Response"
+          },
+          "401": {
+            "description": "未登录、会话失效或不是管理员。"
+          }
+        },
+        "security": [
+          {
+            "umeko_admin": []
+          }
+        ],
+        "summary": "读取脚本模板",
+        "x-umeko-automatic-retry": false,
+        "x-umeko-mutating": false
+      }
+    },
+    "/admin/v1/skill-scripts/{pack}": {
+      "get": {
+        "description": "列出包内 Python 文件和大小；辅助模块不一定是可执行入口。",
+        "operationId": "list_skill_scripts_admin_v1_skill_scripts__pack__get",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "pack",
+            "required": true,
+            "schema": {
+              "title": "Pack",
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "additionalProperties": true,
+                  "title": "Response List Skill Scripts Admin V1 Skill Scripts  Pack  Get",
+                  "type": "object"
+                }
+              }
+            },
+            "description": "Successful Response"
+          },
+          "401": {
+            "description": "未登录、会话失效或不是管理员。"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            },
+            "description": "Validation Error"
+          }
+        },
+        "security": [
+          {
+            "umeko_admin": []
+          }
+        ],
+        "summary": "列出技能代码",
+        "x-umeko-automatic-retry": false,
+        "x-umeko-mutating": false
+      }
+    },
+    "/admin/v1/skill-scripts/{pack}/{script_name}": {
+      "delete": {
+        "description": "删除选定管理员库文件，不隐式删除信任审计和旧会话副本。",
+        "operationId": "delete_skill_script_admin_v1_skill_scripts__pack___script_name__delete",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "pack",
+            "required": true,
+            "schema": {
+              "title": "Pack",
+              "type": "string"
+            }
+          },
+          {
+            "in": "path",
+            "name": "script_name",
+            "required": true,
+            "schema": {
+              "title": "Script Name",
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "204": {
+            "description": "Successful Response"
+          },
+          "401": {
+            "description": "未登录、会话失效或不是管理员。"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            },
+            "description": "Validation Error"
+          }
+        },
+        "security": [
+          {
+            "umeko_admin": []
+          }
+        ],
+        "summary": "删除技能代码",
+        "x-umeko-automatic-retry": false,
+        "x-umeko-mutating": true
+      },
+      "get": {
+        "description": "读取管理员库中的脚本或附属文本，包括 references 与 config.json；不是读取普通用户会话副本。",
+        "operationId": "get_skill_script_admin_v1_skill_scripts__pack___script_name__get",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "pack",
+            "required": true,
+            "schema": {
+              "title": "Pack",
+              "type": "string"
+            }
+          },
+          {
+            "in": "path",
+            "name": "script_name",
+            "required": true,
+            "schema": {
+              "title": "Script Name",
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "additionalProperties": true,
+                  "title": "Response Get Skill Script Admin V1 Skill Scripts  Pack   Script Name  Get",
+                  "type": "object"
+                }
+              }
+            },
+            "description": "Successful Response"
+          },
+          "401": {
+            "description": "未登录、会话失效或不是管理员。"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            },
+            "description": "Validation Error"
+          }
+        },
+        "security": [
+          {
+            "umeko_admin": []
+          }
+        ],
+        "summary": "读取技能脚本或成员文本",
+        "x-umeko-automatic-retry": false,
+        "x-umeko-mutating": false
+      },
+      "put": {
+        "description": "content 必须为合法 Python；写入管理员库，仅保存不会赋予信任。目录路径相对当前包。",
+        "operationId": "put_skill_script_admin_v1_skill_scripts__pack___script_name__put",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "pack",
+            "required": true,
+            "schema": {
+              "title": "Pack",
+              "type": "string"
+            }
+          },
+          {
+            "in": "path",
+            "name": "script_name",
+            "required": true,
+            "schema": {
+              "title": "Script Name",
+              "type": "string"
+            }
+          }
+        ],
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/_DefaultSkillIn"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "201": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "additionalProperties": true,
+                  "title": "Response Put Skill Script Admin V1 Skill Scripts  Pack   Script Name  Put",
+                  "type": "object"
+                }
+              }
+            },
+            "description": "Successful Response"
+          },
+          "401": {
+            "description": "未登录、会话失效或不是管理员。"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            },
+            "description": "Validation Error"
+          }
+        },
+        "security": [
+          {
+            "umeko_admin": []
+          }
+        ],
+        "summary": "保存技能代码",
+        "x-umeko-automatic-retry": false,
+        "x-umeko-mutating": true
+      }
+    },
+    "/admin/v1/skill-scripts/{pack}/{script_name}/test": {
+      "post": {
+        "description": "args 为 JSON 对象字符串，timeout 限制在 1–30 秒；整包受保护代码/配置必须获准。临时工作目录不是安全沙箱。",
+        "operationId": "test_skill_script_admin_v1_skill_scripts__pack___script_name__test_post",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "pack",
+            "required": true,
+            "schema": {
+              "title": "Pack",
+              "type": "string"
+            }
+          },
+          {
+            "in": "path",
+            "name": "script_name",
+            "required": true,
+            "schema": {
+              "title": "Script Name",
+              "type": "string"
+            }
+          }
+        ],
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/_ScriptTestIn"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "additionalProperties": true,
+                  "title": "Response Test Skill Script Admin V1 Skill Scripts  Pack   Script Name  Test Post",
+                  "type": "object"
+                }
+              }
+            },
+            "description": "Successful Response"
+          },
+          "401": {
+            "description": "未登录、会话失效或不是管理员。"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            },
+            "description": "Validation Error"
+          }
+        },
+        "security": [
+          {
+            "umeko_admin": []
+          }
+        ],
+        "summary": "测试已批准的技能脚本",
+        "x-umeko-automatic-retry": false,
+        "x-umeko-mutating": true
+      }
+    },
+    "/admin/v1/skill-security/batch": {
+      "post": {
+        "description": "每批 1–200 项，各项核对 SHA-256；部分失败不回滚其他成功项，必须逐项检查 results。",
+        "operationId": "skill_security_batch_admin_v1_skill_security_batch_post",
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/_SkillTrustBatchIn"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "additionalProperties": true,
+                  "title": "Response Skill Security Batch Admin V1 Skill Security Batch Post",
+                  "type": "object"
+                }
+              }
+            },
+            "description": "Successful Response"
+          },
+          "401": {
+            "description": "未登录、会话失效或不是管理员。"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            },
+            "description": "Validation Error"
+          }
+        },
+        "security": [
+          {
+            "umeko_admin": []
+          }
+        ],
+        "summary": "批量批准或撤销可信版本",
+        "x-umeko-automatic-retry": false,
+        "x-umeko-mutating": true
+      }
+    },
+    "/admin/v1/skill-security/catalog": {
+      "get": {
+        "description": "搜索、筛选、分页查看当前版本和信任状态；不扫描或重新下发旧会话。",
+        "operationId": "skill_security_catalog_admin_v1_skill_security_catalog_get",
+        "parameters": [
+          {
+            "in": "query",
+            "name": "q",
+            "required": false,
+            "schema": {
+              "default": "",
+              "maxLength": 200,
+              "title": "Q",
+              "type": "string"
+            }
+          },
+          {
+            "in": "query",
+            "name": "pack",
+            "required": false,
+            "schema": {
+              "default": "",
+              "maxLength": 120,
+              "title": "Pack",
+              "type": "string"
+            }
+          },
+          {
+            "in": "query",
+            "name": "status",
+            "required": false,
+            "schema": {
+              "default": "",
+              "enum": [
+                "",
+                "trusted",
+                "unlisted",
+                "changed",
+                "revoked",
+                "missing",
+                "invalid"
+              ],
+              "title": "Status",
+              "type": "string"
+            }
+          },
+          {
+            "in": "query",
+            "name": "kind",
+            "required": false,
+            "schema": {
+              "default": "",
+              "enum": [
+                "",
+                "python",
+                "config"
+              ],
+              "title": "Kind",
+              "type": "string"
+            }
+          },
+          {
+            "in": "query",
+            "name": "offset",
+            "required": false,
+            "schema": {
+              "default": 0,
+              "minimum": 0,
+              "title": "Offset",
+              "type": "integer"
+            }
+          },
+          {
+            "in": "query",
+            "name": "limit",
+            "required": false,
+            "schema": {
+              "default": 50,
+              "maximum": 200,
+              "minimum": 1,
+              "title": "Limit",
+              "type": "integer"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "additionalProperties": true,
+                  "title": "Response Skill Security Catalog Admin V1 Skill Security Catalog Get",
+                  "type": "object"
+                }
+              }
+            },
+            "description": "Successful Response"
+          },
+          "401": {
+            "description": "未登录、会话失效或不是管理员。"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            },
+            "description": "Validation Error"
+          }
+        },
+        "security": [
+          {
+            "umeko_admin": []
+          }
+        ],
+        "summary": "查询可信代码目录",
+        "x-umeko-automatic-retry": false,
+        "x-umeko-mutating": false
+      }
+    },
+    "/admin/v1/skill-security/selection": {
+      "get": {
+        "description": "返回所有筛选结果的明确文件版本，仅用于构建后续逐文件操作清单，不自动批准。",
+        "operationId": "skill_security_selection_admin_v1_skill_security_selection_get",
+        "parameters": [
+          {
+            "in": "query",
+            "name": "q",
+            "required": false,
+            "schema": {
+              "default": "",
+              "maxLength": 200,
+              "title": "Q",
+              "type": "string"
+            }
+          },
+          {
+            "in": "query",
+            "name": "pack",
+            "required": false,
+            "schema": {
+              "default": "",
+              "maxLength": 120,
+              "title": "Pack",
+              "type": "string"
+            }
+          },
+          {
+            "in": "query",
+            "name": "status",
+            "required": false,
+            "schema": {
+              "default": "",
+              "enum": [
+                "",
+                "trusted",
+                "unlisted",
+                "changed",
+                "revoked",
+                "missing",
+                "invalid"
+              ],
+              "title": "Status",
+              "type": "string"
+            }
+          },
+          {
+            "in": "query",
+            "name": "kind",
+            "required": false,
+            "schema": {
+              "default": "",
+              "enum": [
+                "",
+                "python",
+                "config"
+              ],
+              "title": "Kind",
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "additionalProperties": true,
+                  "title": "Response Skill Security Selection Admin V1 Skill Security Selection Get",
+                  "type": "object"
+                }
+              }
+            },
+            "description": "Successful Response"
+          },
+          "401": {
+            "description": "未登录、会话失效或不是管理员。"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            },
+            "description": "Validation Error"
+          }
+        },
+        "security": [
+          {
+            "umeko_admin": []
+          }
+        ],
+        "summary": "取得跨页选择快照",
+        "x-umeko-automatic-retry": false,
+        "x-umeko-mutating": false
+      }
+    },
+    "/admin/v1/skill-security/{pack}/{member}": {
+      "delete": {
+        "description": "提交 approved.sha256，事务内撤销并审计；拦截旧授权后续执行，不中断已启动脚本。",
+        "operationId": "revoke_skill_file_admin_v1_skill_security__pack___member__delete",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "pack",
+            "required": true,
+            "schema": {
+              "title": "Pack",
+              "type": "string"
+            }
+          },
+          {
+            "in": "path",
+            "name": "member",
+            "required": true,
+            "schema": {
+              "title": "Member",
+              "type": "string"
+            }
+          }
+        ],
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/_SkillApprovalIn"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "additionalProperties": true,
+                  "title": "Response Revoke Skill File Admin V1 Skill Security  Pack   Member  Delete",
+                  "type": "object"
+                }
+              }
+            },
+            "description": "Successful Response"
+          },
+          "401": {
+            "description": "未登录、会话失效或不是管理员。"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            },
+            "description": "Validation Error"
+          }
+        },
+        "security": [
+          {
+            "umeko_admin": []
+          }
+        ],
+        "summary": "撤销文件可信版本",
+        "x-umeko-automatic-retry": false,
+        "x-umeko-mutating": true
+      },
+      "get": {
+        "description": "查看当前双摘要、批准与撤销记录；批准 current.sha256，撤销 approved.sha256。",
+        "operationId": "skill_security_status_admin_v1_skill_security__pack___member__get",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "pack",
+            "required": true,
+            "schema": {
+              "title": "Pack",
+              "type": "string"
+            }
+          },
+          {
+            "in": "path",
+            "name": "member",
+            "required": true,
+            "schema": {
+              "title": "Member",
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "additionalProperties": true,
+                  "title": "Response Skill Security Status Admin V1 Skill Security  Pack   Member  Get",
+                  "type": "object"
+                }
+              }
+            },
+            "description": "Successful Response"
+          },
+          "401": {
+            "description": "未登录、会话失效或不是管理员。"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            },
+            "description": "Validation Error"
+          }
+        },
+        "security": [
+          {
+            "umeko_admin": []
+          }
+        ],
+        "summary": "读取单文件安全门禁",
+        "x-umeko-automatic-retry": false,
+        "x-umeko-mutating": false
+      },
+      "post": {
+        "description": "提交预览 current.sha256；源字节已变返回 409。仅批准选定管理员库文件，不执行、不重签旧会话。",
+        "operationId": "approve_skill_file_admin_v1_skill_security__pack___member__post",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "pack",
+            "required": true,
+            "schema": {
+              "title": "Pack",
+              "type": "string"
+            }
+          },
+          {
+            "in": "path",
+            "name": "member",
+            "required": true,
+            "schema": {
+              "title": "Member",
+              "type": "string"
+            }
+          }
+        ],
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/_SkillApprovalIn"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "additionalProperties": true,
+                  "title": "Response Approve Skill File Admin V1 Skill Security  Pack   Member  Post",
+                  "type": "object"
+                }
+              }
+            },
+            "description": "Successful Response"
+          },
+          "401": {
+            "description": "未登录、会话失效或不是管理员。"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            },
+            "description": "Validation Error"
+          }
+        },
+        "security": [
+          {
+            "umeko_admin": []
+          }
+        ],
+        "summary": "批准当前文件版本",
+        "x-umeko-automatic-retry": false,
+        "x-umeko-mutating": true
+      }
+    },
+    "/admin/v1/skill-source/{name}": {
+      "delete": {
+        "description": "只删除主入口；配套成员和下发记录需要按用户要求分别处理。",
+        "operationId": "delete_skill_source_admin_v1_skill_source__name__delete",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "name",
+            "required": true,
+            "schema": {
+              "title": "Name",
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "204": {
+            "description": "Successful Response"
+          },
+          "401": {
+            "description": "未登录、会话失效或不是管理员。"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            },
+            "description": "Validation Error"
+          }
+        },
+        "security": [
+          {
+            "umeko_admin": []
+          }
+        ],
+        "summary": "删除技能库主指引",
+        "x-umeko-automatic-retry": false,
+        "x-umeko-mutating": true
+      },
+      "get": {
+        "description": "name 为包名.md，映射到管理员库包目录的 SKILL.md。",
+        "operationId": "get_skill_source_admin_v1_skill_source__name__get",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "name",
+            "required": true,
+            "schema": {
+              "title": "Name",
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "additionalProperties": true,
+                  "title": "Response Get Skill Source Admin V1 Skill Source  Name  Get",
+                  "type": "object"
+                }
+              }
+            },
+            "description": "Successful Response"
+          },
+          "401": {
+            "description": "未登录、会话失效或不是管理员。"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            },
+            "description": "Validation Error"
+          }
+        },
+        "security": [
+          {
+            "umeko_admin": []
+          }
+        ],
+        "summary": "读取技能库主指引",
+        "x-umeko-automatic-retry": false,
+        "x-umeko-mutating": false
+      },
+      "put": {
+        "description": "content 需包含合法技能 frontmatter；保存管理员库入口，与 default-skills 下发记录分开。",
+        "operationId": "put_skill_source_admin_v1_skill_source__name__put",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "name",
+            "required": true,
+            "schema": {
+              "title": "Name",
+              "type": "string"
+            }
+          }
+        ],
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/_DefaultSkillIn"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "201": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "additionalProperties": true,
+                  "title": "Response Put Skill Source Admin V1 Skill Source  Name  Put",
+                  "type": "object"
+                }
+              }
+            },
+            "description": "Successful Response"
+          },
+          "401": {
+            "description": "未登录、会话失效或不是管理员。"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            },
+            "description": "Validation Error"
+          }
+        },
+        "security": [
+          {
+            "umeko_admin": []
+          }
+        ],
+        "summary": "保存技能库主指引",
+        "x-umeko-automatic-retry": false,
+        "x-umeko-mutating": true
+      }
+    },
+    "/admin/v1/tasks": {
+      "get": {
+        "description": "读取机器调用记录；结合任务详情排查输入、输出和工具过程。",
+        "operationId": "monitored_tasks_admin_v1_tasks_get",
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "items": {
+                    "additionalProperties": true,
+                    "type": "object"
+                  },
+                  "title": "Response Monitored Tasks Admin V1 Tasks Get",
+                  "type": "array"
+                }
+              }
+            },
+            "description": "Successful Response"
+          },
+          "401": {
+            "description": "未登录、会话失效或不是管理员。"
+          }
+        },
+        "security": [
+          {
+            "umeko_admin": []
+          }
+        ],
+        "summary": "机器任务列表",
+        "tags": [
+          "monitoring"
+        ],
+        "x-umeko-automatic-retry": false,
+        "x-umeko-mutating": false
+      }
+    },
+    "/admin/v1/tasks/{task_id}": {
+      "get": {
+        "description": "返回任务、消息、工具、上下文与事件；仅读取记录，不唤醒执行模型。",
+        "operationId": "inspect_machine_task_admin_v1_tasks__task_id__get",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "task_id",
+            "required": true,
+            "schema": {
+              "title": "Task Id",
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "additionalProperties": true,
+                  "title": "Response Inspect Machine Task Admin V1 Tasks  Task Id  Get",
+                  "type": "object"
+                }
+              }
+            },
+            "description": "Successful Response"
+          },
+          "401": {
+            "description": "未登录、会话失效或不是管理员。"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            },
+            "description": "Validation Error"
+          }
+        },
+        "security": [
+          {
+            "umeko_admin": []
+          }
+        ],
+        "summary": "机器任务详情",
+        "tags": [
+          "monitoring"
+        ],
+        "x-umeko-automatic-retry": false,
+        "x-umeko-mutating": false
+      }
+    },
+    "/admin/v1/tasks/{task_id}/cancel": {
+      "post": {
+        "description": "协作式请求取消；调用后继续查询终态，不能把请求成功等同于子进程已退出。",
+        "operationId": "stop_machine_task_admin_v1_tasks__task_id__cancel_post",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "task_id",
+            "required": true,
+            "schema": {
+              "title": "Task Id",
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "additionalProperties": true,
+                  "title": "Response Stop Machine Task Admin V1 Tasks  Task Id  Cancel Post",
+                  "type": "object"
+                }
+              }
+            },
+            "description": "Successful Response"
+          },
+          "401": {
+            "description": "未登录、会话失效或不是管理员。"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            },
+            "description": "Validation Error"
+          }
+        },
+        "security": [
+          {
+            "umeko_admin": []
+          }
+        ],
+        "summary": "取消机器任务",
+        "tags": [
+          "monitoring"
+        ],
+        "x-umeko-automatic-retry": false,
+        "x-umeko-mutating": true
+      }
+    },
+    "/admin/v1/tasks/{task_id}/files": {
+      "get": {
+        "description": "读取名称、目录、大小与时间等元数据；节点清理后可能返回快照，不提供文件内容备份。",
+        "operationId": "inspect_task_files_admin_v1_tasks__task_id__files_get",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "task_id",
+            "required": true,
+            "schema": {
+              "title": "Task Id",
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "additionalProperties": true,
+                  "title": "Response Inspect Task Files Admin V1 Tasks  Task Id  Files Get",
+                  "type": "object"
+                }
+              }
+            },
+            "description": "Successful Response"
+          },
+          "401": {
+            "description": "未登录、会话失效或不是管理员。"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            },
+            "description": "Validation Error"
+          }
+        },
+        "security": [
+          {
+            "umeko_admin": []
+          }
+        ],
+        "summary": "任务会话文件树",
+        "tags": [
+          "monitoring"
+        ],
+        "x-umeko-automatic-retry": false,
+        "x-umeko-mutating": false
+      }
+    },
+    "/admin/v1/tools": {
+      "get": {
+        "description": "列出工具、分类与全局开关；不执行工具。",
+        "operationId": "tools_admin_v1_tools_get",
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "additionalProperties": true,
+                  "title": "Response Tools Admin V1 Tools Get",
+                  "type": "object"
+                }
+              }
+            },
+            "description": "Successful Response"
+          },
+          "401": {
+            "description": "未登录、会话失效或不是管理员。"
+          }
+        },
+        "security": [
+          {
+            "umeko_admin": []
+          }
+        ],
+        "summary": "工具下发目录",
+        "x-umeko-automatic-retry": false,
+        "x-umeko-mutating": false
+      }
+    },
+    "/admin/v1/tools/{name}": {
+      "put": {
+        "description": "以 enabled 显式设置开关；个人授权可独立开放全局关闭的工具。submit_results 不在此开关范围。",
+        "operationId": "set_tool_dispatch_admin_v1_tools__name__put",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "name",
+            "required": true,
+            "schema": {
+              "title": "Name",
+              "type": "string"
+            }
+          }
+        ],
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/_ToolDispatchIn"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "additionalProperties": true,
+                  "title": "Response Set Tool Dispatch Admin V1 Tools  Name  Put",
+                  "type": "object"
+                }
+              }
+            },
+            "description": "Successful Response"
+          },
+          "401": {
+            "description": "未登录、会话失效或不是管理员。"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            },
+            "description": "Validation Error"
+          }
+        },
+        "security": [
+          {
+            "umeko_admin": []
+          }
+        ],
+        "summary": "设置工具全局下发",
+        "x-umeko-automatic-retry": false,
+        "x-umeko-mutating": true
+      }
+    },
+    "/admin/v1/users": {
+      "get": {
+        "description": "列出可管理的用户身份，不返回登录密码。",
+        "operationId": "users_admin_v1_users_get",
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "items": {
+                    "additionalProperties": true,
+                    "type": "object"
+                  },
+                  "title": "Response Users Admin V1 Users Get",
+                  "type": "array"
+                }
+              }
+            },
+            "description": "Successful Response"
+          },
+          "401": {
+            "description": "未登录、会话失效或不是管理员。"
+          }
+        },
+        "security": [
+          {
+            "umeko_admin": []
+          }
+        ],
+        "summary": "用户列表",
+        "x-umeko-automatic-retry": false,
+        "x-umeko-mutating": false
+      },
+      "post": {
+        "description": "创建 user 或 admin 角色账号；用户名必须唯一。",
+        "operationId": "create_user_admin_v1_users_post",
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/_UserCreate"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "201": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "additionalProperties": true,
+                  "title": "Response Create User Admin V1 Users Post",
+                  "type": "object"
+                }
+              }
+            },
+            "description": "Successful Response"
+          },
+          "401": {
+            "description": "未登录、会话失效或不是管理员。"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            },
+            "description": "Validation Error"
+          }
+        },
+        "security": [
+          {
+            "umeko_admin": []
+          }
+        ],
+        "summary": "创建用户",
+        "x-umeko-automatic-retry": false,
+        "x-umeko-mutating": true
+      }
+    },
+    "/admin/v1/users/{user_id}": {
+      "delete": {
+        "description": "永久删除该用户及相关会话数据；不能删除最后一个管理员。",
+        "operationId": "delete_user_admin_v1_users__user_id__delete",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "user_id",
+            "required": true,
+            "schema": {
+              "title": "User Id",
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "204": {
+            "description": "Successful Response"
+          },
+          "401": {
+            "description": "未登录、会话失效或不是管理员。"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            },
+            "description": "Validation Error"
+          }
+        },
+        "security": [
+          {
+            "umeko_admin": []
+          }
+        ],
+        "summary": "删除用户与所属数据",
+        "x-umeko-automatic-retry": false,
+        "x-umeko-mutating": true
+      }
+    },
+    "/admin/v1/users/{user_id}/model-access": {
+      "get": {
+        "description": "返回供应商范围、模型范围和不含 Provider 凭据的可选目录。",
+        "operationId": "user_model_access_admin_v1_users__user_id__model_access_get",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "user_id",
+            "required": true,
+            "schema": {
+              "title": "User Id",
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "additionalProperties": true,
+                  "title": "Response User Model Access Admin V1 Users  User Id  Model Access Get",
+                  "type": "object"
+                }
+              }
+            },
+            "description": "Successful Response"
+          },
+          "401": {
+            "description": "未登录、会话失效或不是管理员。"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            },
+            "description": "Validation Error"
+          }
+        },
+        "security": [
+          {
+            "umeko_admin": []
+          }
+        ],
+        "summary": "读取用户模型权限",
+        "x-umeko-automatic-retry": false,
+        "x-umeko-mutating": false
+      },
+      "put": {
+        "description": "两个字段均需提交。null 表示跟随全部/默认范围，[] 表示关闭；供应商与模型范围取交集。",
+        "operationId": "set_user_model_access_admin_v1_users__user_id__model_access_put",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "user_id",
+            "required": true,
+            "schema": {
+              "title": "User Id",
+              "type": "string"
+            }
+          }
+        ],
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/_UserModelAccessIn"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "additionalProperties": true,
+                  "title": "Response Set User Model Access Admin V1 Users  User Id  Model Access Put",
+                  "type": "object"
+                }
+              }
+            },
+            "description": "Successful Response"
+          },
+          "401": {
+            "description": "未登录、会话失效或不是管理员。"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            },
+            "description": "Validation Error"
+          }
+        },
+        "security": [
+          {
+            "umeko_admin": []
+          }
+        ],
+        "summary": "设置用户模型权限",
+        "x-umeko-automatic-retry": false,
+        "x-umeko-mutating": true
+      }
+    },
+    "/admin/v1/users/{user_id}/password": {
+      "put": {
+        "description": "为指定用户设置密码；不把密码放进聊天记录、命令参数或日志。",
+        "operationId": "set_password_admin_v1_users__user_id__password_put",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "user_id",
+            "required": true,
+            "schema": {
+              "title": "User Id",
+              "type": "string"
+            }
+          }
+        ],
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/_PasswordSet"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "204": {
+            "description": "Successful Response"
+          },
+          "401": {
+            "description": "未登录、会话失效或不是管理员。"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            },
+            "description": "Validation Error"
+          }
+        },
+        "security": [
+          {
+            "umeko_admin": []
+          }
+        ],
+        "summary": "重置用户密码",
+        "x-umeko-automatic-retry": false,
+        "x-umeko-mutating": true
+      }
+    },
+    "/admin/v1/users/{user_id}/role": {
+      "put": {
+        "description": "设置 user/admin；服务保留至少一个管理员，失去管理员角色的登录会话不能继续管理。",
+        "operationId": "set_role_admin_v1_users__user_id__role_put",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "user_id",
+            "required": true,
+            "schema": {
+              "title": "User Id",
+              "type": "string"
+            }
+          }
+        ],
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/_RoleSet"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "204": {
+            "description": "Successful Response"
+          },
+          "401": {
+            "description": "未登录、会话失效或不是管理员。"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            },
+            "description": "Validation Error"
+          }
+        },
+        "security": [
+          {
+            "umeko_admin": []
+          }
+        ],
+        "summary": "修改用户角色",
+        "x-umeko-automatic-retry": false,
+        "x-umeko-mutating": true
+      }
+    },
+    "/admin/v1/users/{user_id}/sessions": {
+      "get": {
+        "description": "读取持久化会话及当前内存状态。",
+        "operationId": "user_sessions_admin_v1_users__user_id__sessions_get",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "user_id",
+            "required": true,
+            "schema": {
+              "title": "User Id",
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "items": {
+                    "additionalProperties": true,
+                    "type": "object"
+                  },
+                  "title": "Response User Sessions Admin V1 Users  User Id  Sessions Get",
+                  "type": "array"
+                }
+              }
+            },
+            "description": "Successful Response"
+          },
+          "401": {
+            "description": "未登录、会话失效或不是管理员。"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            },
+            "description": "Validation Error"
+          }
+        },
+        "security": [
+          {
+            "umeko_admin": []
+          }
+        ],
+        "summary": "用户会话列表",
+        "x-umeko-automatic-retry": false,
+        "x-umeko-mutating": false
+      }
+    },
+    "/admin/v1/users/{user_id}/tool-access": {
+      "get": {
+        "description": "读取个人授权；null 跟随全局下发，[] 不开放可配置工具。",
+        "operationId": "user_tool_access_admin_v1_users__user_id__tool_access_get",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "user_id",
+            "required": true,
+            "schema": {
+              "title": "User Id",
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "additionalProperties": true,
+                  "title": "Response User Tool Access Admin V1 Users  User Id  Tool Access Get",
+                  "type": "object"
+                }
+              }
+            },
+            "description": "Successful Response"
+          },
+          "401": {
+            "description": "未登录、会话失效或不是管理员。"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            },
+            "description": "Validation Error"
+          }
+        },
+        "security": [
+          {
+            "umeko_admin": []
+          }
+        ],
+        "summary": "读取用户工具权限",
+        "x-umeko-automatic-retry": false,
+        "x-umeko-mutating": false
+      },
+      "put": {
+        "description": "allowed_tool_names 是完整个人清单，null 跟随全局。保存后下一轮使用新权限。",
+        "operationId": "set_user_tool_access_admin_v1_users__user_id__tool_access_put",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "user_id",
+            "required": true,
+            "schema": {
+              "title": "User Id",
+              "type": "string"
+            }
+          }
+        ],
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/_UserToolAccessIn"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "additionalProperties": true,
+                  "title": "Response Set User Tool Access Admin V1 Users  User Id  Tool Access Put",
+                  "type": "object"
+                }
+              }
+            },
+            "description": "Successful Response"
+          },
+          "401": {
+            "description": "未登录、会话失效或不是管理员。"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            },
+            "description": "Validation Error"
+          }
+        },
+        "security": [
+          {
+            "umeko_admin": []
+          }
+        ],
+        "summary": "设置用户工具权限",
+        "x-umeko-automatic-retry": false,
+        "x-umeko-mutating": true
+      }
+    },
+    "/health": {
+      "get": {
+        "description": "读取管理服务健康状态，不表示模型调用可用。",
+        "operationId": "health_health_get",
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "additionalProperties": true,
+                  "title": "Response Health Health Get",
+                  "type": "object"
+                }
+              }
+            },
+            "description": "Successful Response"
+          }
+        },
+        "security": [],
+        "summary": "服务状态",
+        "x-umeko-automatic-retry": false,
+        "x-umeko-mutating": false
+      }
+    }
+  },
+  "servers": [
+    {
+      "url": "/"
+    }
+  ]
+}

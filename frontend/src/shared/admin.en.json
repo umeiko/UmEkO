@@ -609,5 +609,17 @@
   "无法读取技能安全目录": "Unable to read the skill security catalog",
   "批次包含重复文件": "The batch contains duplicate files",
   "操作中断，尚有 {count} 项结果未确认，请刷新后核对。": "Operation interrupted. Results for {count} files are unconfirmed; refresh to check.",
-  "已确认结果：成功 {succeeded}，失败 {failed}": "Confirmed results: {succeeded} succeeded, {failed} failed"
+  "已确认结果：成功 {succeeded}，失败 {failed}": "Confirmed results: {succeeded} succeeded, {failed} failed",
+  "复制 AI 管理提示词": "Copy AI admin prompt",
+  "AI 管理": "AI admin",
+  "下载管理 Skill": "Download admin Skill",
+  "AI 管理接入提示词已复制": "AI admin prompt copied",
+  "请通过 UMEKO 管理 API 帮我管理此服务器，仅执行我明确提出的管理任务。": "Help me manage this server through the UMEKO admin API. Only perform management tasks I explicitly request.",
+  "管理服务基址：{url}": "Admin service base URL: {url}",
+  "先下载并阅读管理 Skill：{url}": "First download and read the admin Skill: {url}",
+  "完整 Skill 文件清单与版本：{url}；按清单下载引用文档和 Python 调用脚本，保留目录结构。": "Skill manifest and version: {url}. Download its references and Python client, keeping the directory structure.",
+  "管理员登录后读取当前接口规范：{url}": "After administrator sign-in, read the current API specification: {url}",
+  "登录使用本地环境变量 UMEKO_ADMIN_URL、UMEKO_ADMIN_USERNAME、UMEKO_ADMIN_PASSWORD，或我已有的管理员 Cookie 会话。不要要求我把密码或密钥粘贴进对话；用户登录和机器任务 Token 不能代替管理员身份。": "Use local UMEKO_ADMIN_URL, UMEKO_ADMIN_USERNAME and UMEKO_ADMIN_PASSWORD environment variables, or my existing administrator Cookie session. Do not ask me to paste passwords or keys into chat. User sign-in and machine-task tokens cannot replace administrator authentication.",
+  "收到具体管理要求前，只验证身份并读取概览；按需读取状态、修改指定配置并回读确认，不自动扩大权限、批准代码或清理数据。": "Until I give a specific management task, only verify identity and read an overview. Read relevant state, update the requested configuration and verify it. Do not independently expand access, approve code or delete data.",
+  "基址已含管理前缀；接口路径仍使用 /admin/...，不要重复拼接，也不要使用用户服务或 Provider 地址。": "The base URL already includes the admin deployment prefix. Use internal /admin/... paths without adding the prefix again; do not use user-service or Provider URLs."
 }

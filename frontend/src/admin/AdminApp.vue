@@ -9,6 +9,7 @@ import LanguageSwitch from '../shared/LanguageSwitch.vue';
 import UiModal from '../shared/UiModal.vue';
 import HelpTip from '../shared/HelpTip.vue';
 import GuideLink from '../shared/GuideLink.vue';
+import AdminAutomation from './AdminAutomation.vue';
 import { admin, api, notify, run, settleConfirm, settleFields } from './state.js';
 import AccessView from './views/AccessView.vue';
 import ProvidersView from './views/ProvidersView.vue';
@@ -104,6 +105,7 @@ function select(id) {
         <button class="primary" :disabled="busy">{{ busy ? tr('正在登录…') : tr('登录') }}</button>
       </form>
       <GuideLink />
+      <AdminAutomation />
     </section>
   </div>
   <div v-else class="admin-layout">
@@ -152,6 +154,7 @@ function select(id) {
         </div>
         <div class="row">
           <GuideLink />
+          <AdminAutomation compact />
           <span class="admin-connection"
             ><span class="connection-dot"></span>{{ tr('管理服务已连接') }}</span
           ><LanguageSwitch /><ThemeSwitch localized />

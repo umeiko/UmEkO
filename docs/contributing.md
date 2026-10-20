@@ -47,6 +47,10 @@ python scripts/build_service_docs.py --check
 
 它生成用户 / 管理 OpenAPI、完整接口参考和数据结构。FastAPI 不能自动推断 Cookie 中间件、原始 Request body 和 SSE，生成器显式补充这些约定。新增这类接口时，同步补充生成器和专题指南。
 
+管理 API 的中文操作摘要、变更行为和 Cookie 要求统一在 `umeko/server/admin_contract.py` 维护，在线 `/admin/v1/openapi.json`、仓库参考与内网手册共享此契约。新增管理路由必须添加对应操作说明，禁止只新增 GUI 按钮而遗漏 API 行为文档。生成器也更新 `service_docs/admin/` 的接口参考、数据模型和规范快照；随后重新构建服务内手册。
+
+对外管理 Skill 位于 `umeko/server/admin_skill/`，由公开下载清单发布，仅允许清单中的三个文件。修改认证、字段或危险操作行为时同步更新主指引、参考与客户端；它不属于普通用户下发技能库。复制提示词的地址来自管理服务注入前缀与浏览器 origin，不能引用用户服务或 Provider 地址。接入检查见 `tests/test_admin_automation.py`；浏览器可用 `UMEKO_UI_FOCUS=admin-automation` 验证复制、下载、根路径与独立多级管理前缀、登录退出和移动布局。
+
 `--check` 比较已提交文档与当前代码，CI 会拒绝过期定义。生成环境的 FastAPI / Pydantic 版本与文档依赖保持一致，避免同一代码产生不同快照。
 
 ## 自动发布

@@ -18,6 +18,7 @@ a = Analysis(
     binaries=[],
     datas=[
         ("umeko/server/static", "umeko/server/static"),
+        ("umeko/server/admin_skill", "umeko/server/admin_skill"),
         ("umeko/builtin_skills", "umeko/builtin_skills"),
     ] + protocol_metadata,
     hiddenimports=[
