@@ -56,6 +56,7 @@ nav:
   - 软件架构: architecture.md
   - 管理员指南:
       - 配置顺序与导航: admin/index.md
+      - 推荐：本地 Agent 管理: admin/local-agent.md
       - 模型与供应商: admin/models.md
       - 智能体与服务接入: admin/agents.md
       - 技能与可信代码: admin/skills.md
