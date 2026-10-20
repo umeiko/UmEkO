@@ -172,6 +172,10 @@ def test_a2a_rejects_text_and_data_file_encodings(machine_server, monkeypatch, s
                 [a2a.Part(text="check"), a2a.Part(data=ParseDict({"raw": ENCODED}, Value()))],
                 [a2a.Part(text=ENCODED[i:i+64]) for i in range(0, 8192, 64)],
                 [a2a.Part(text="x" * 110_000), a2a.Part(text="x" * 110_000)],
+                [a2a.Part(url="data:image/png;base64," + PNG)],
+                [a2a.Part(url="https://files.example.invalid/?signature=" + "x" * 200_001)],
+                [a2a.Part(text="文" * 199_980), a2a.Part(url="https://files.example.invalid/input.png")],
+                [a2a.Part(url="")],
             ]
             for i, parts in enumerate(parts_cases):
                 request = a2a.SendMessageRequest(message=a2a.Message(
@@ -181,14 +185,52 @@ def test_a2a_rejects_text_and_data_file_encodings(machine_server, monkeypatch, s
                 assert caught.value.data["retryable"] is False
                 assert caught.value.data["task_created"] is False
                 assert len(str(caught.value)) < 4000 and ENCODED[:128] not in str(caught.value)
-            request = a2a.SendMessageRequest(message=a2a.Message(
-                message_id="external-image-url", role=a2a.Role.ROLE_USER,
-                parts=[a2a.Part(url="https://files.example.invalid/input.png")]))
-            with pytest.raises(InvalidParamsError) as caught:
-                _ = [event async for event in client.send_message(request)]
-            assert "如果你是想要把url告诉umeko，请直接在input中描述即可" in str(caught.value)
-            assert "message.parts[].text" in str(caught.value)
             _assert_no_task(app)
+    asyncio.run(check())
+
+
+@pytest.mark.parametrize("streaming", [False, True])
+@pytest.mark.parametrize("machine_app", ["", "/teams/docs/workbench"], indirect=True)
+def test_a2a_url_parts_reach_agent_as_prompt_without_importing_artifacts(machine_server, monkeypatch, streaming):
+    base, app, caller, _ = machine_server
+    received = []
+    chat = UmekoAgent.chat  # The fixture supplies controlled, model-free replies.
+    def capture(agent, prompt, images=None):
+        received.append(prompt)
+        return chat(agent, prompt, images)
+    def no_artifact_import(*args, **kwargs):
+        raise AssertionError("URL Parts must not read task artifacts")
+    monkeypatch.setattr(UmekoAgent, "chat", capture)
+    monkeypatch.setattr(app.state.task_service, "artifact", no_artifact_import)
+    async def check():
+        headers = {"Authorization": "Bearer " + caller["token"], "A2A-Version": "1.0"}
+        async with httpx.AsyncClient(headers=headers, trust_env=False, timeout=15) as http:
+            client = await ClientFactory(ClientConfig(httpx_client=http, streaming=streaming)).create_from_url(base)
+            links = ["https://files.example.invalid/input.png?signature=" + ENCODED,
+                     "https://files.example.invalid/input.pdf",
+                     base + "/v1/tasks/not-owned/artifacts/not-owned/content"]
+            cases = [
+                ([a2a.Part(text="请处理这些链接和附件"), a2a.Part(url=links[0]),
+                  a2a.Part(data=ParseDict({"note": "资料"}, Value())), a2a.Part(url=links[1]),
+                  a2a.Part(raw=b"synthetic attachment", filename="notes.txt"), a2a.Part(url=links[2])],
+                 "请处理这些链接和附件\n" + json.dumps({"note": "资料"}, ensure_ascii=False), links, ["notes.txt"]),
+                ([a2a.Part(url=f"https://files.example.invalid/image-{i}.png") for i in range(12)],
+                 "", [f"https://files.example.invalid/image-{i}.png" for i in range(12)], []),
+            ]
+            for index, (parts, text, urls, filenames) in enumerate(cases):
+                request = a2a.SendMessageRequest(message=a2a.Message(
+                    message_id=f"url-parts-{index}", role=a2a.Role.ROLE_USER, parts=parts))
+                events = [event async for event in client.send_message(request)]
+                task_id = next(event.task.id for event in events if event.HasField("task"))
+                task = await client.get_task(a2a.GetTaskRequest(id=task_id, history_length=0))
+                assert task.status.state == a2a.TaskState.TASK_STATE_COMPLETED, task
+                with app.state.store.connect() as db:
+                    payload = json.loads(db.execute("SELECT input_json FROM service_tasks WHERE id=?", (task_id,)).fetchone()[0])
+                expected = (text + "\n" if text else "") + "用户的请求还附带了这些url：" + "; ".join(urls)
+                assert payload["prompt"] == expected
+                assert [file["name"] for file in payload["files"]] == filenames
+                assert all(url in received[-1] for url in urls)
+                assert task.metadata["workspaceUrl"].startswith(base.rsplit("/agent/", 1)[0] + "/TMP/")
     asyncio.run(check())
 
 

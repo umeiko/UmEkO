@@ -27,7 +27,23 @@ Agent Card 是智能体的公开名片，包含介绍、服务地址、协议能
 }
 ```
 
-`raw` 在线上 JSON 中是 base64，在官方 SDK 中直接传 bytes。不要把整个附件 JSON 或 base64 放入 text/data。协议 `url` Part 只接受同一服务有权读取的任务产物；普通下载链接放进 `text`，由 Agent 按需使用下载工具处理。
+`raw` 在线上 JSON 中是 base64，在官方 SDK 中直接传 bytes。不要把整个附件 JSON 或 base64 放入 text/data。
+
+## 用 URL 提供图片或文档
+
+如果材料在一个可下载的网址上，可以直接把链接写进 `text`，也可以使用 `url` Part：
+
+```json
+[
+  {"text": "请分析这两张图片"},
+  {"url": "https://files.example.invalid/image-1.png"},
+  {"url": "https://files.example.invalid/image-2.png"}
+]
+```
+
+服务将输入中的链接按顺序附到 Agent 的需求正文末尾：`用户的请求还附带了这些url：<URL1>; <URL2>`。可以只提供 url Part；链接也占用需求的 200000 字符预算和消息的 64 个 Part 预算。文件字节或 data URL 仍请使用 raw。
+
+协议接收层只转交链接，Agent 按需要尝试下载；链接不会自动成为工作区附件，也不会自动从旧任务复制产物。已在当前会话内的附件，可以在需求中直接说明文件名。下载仍遵循服务配置的网络与证书限制，失败时由 Agent 说明情况、提供可用临时工作台链接并提示补充材料。返回产物的 url 继续用于授权下载。
 
 ## 官方 Python 客户端
 

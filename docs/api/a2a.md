@@ -32,9 +32,25 @@ Agent Card：`BASE_URL/.well-known/agent-card.json`；协议入口：`BASE_URL/a
 }
 ```
 
-`raw` 在 JSON 中为 base64，SDK 对象中为 bytes。也可发送普通 `data` 对象，但不能用 text/data 包裹文件编码或附件 JSON。正文中的文件编码、长编码块和过量 Part 会在建任务前被拒绝，返回 `InvalidParams` 与 `retryable=false`，正确附件用法见错误 data；不要原样或拆段重试。规则见[输入门禁](machine-tasks.md#input-validation)。URL 文件仅接受本服务、同一账号有权读取的任务产物；其他文件用 raw 上传。模型由管理员配置，`metadata.umeko.model_id` 不再接受。
+`raw` 在 JSON 中为 base64，SDK 对象中为 bytes。也可发送普通 `data` 对象，但不能用 text/data 包裹文件编码或附件 JSON。正文中的文件编码、长编码块和过量 Part 会在建任务前被拒绝，返回 `InvalidParams` 与 `retryable=false`，正确附件用法见错误 data；不要原样或拆段重试。规则见[输入门禁](machine-tasks.md#input-validation)。模型由管理员配置，`metadata.umeko.model_id` 不再接受。
 
-上述 URL 文件限制针对协议的 `url` Part；普通 HTTP/HTTPS 下载链接可以直接放进 `text` 需求正文，让 Agent 使用下载工具处理。下载或处理失败交给 Agent 判断，关键材料确实不可用时及时提交情况说明、请调用方提供工作台链接；平台不会因为一次工具失败强制结束任务。
+## 通过 URL 提供材料
+
+普通 HTTP/HTTPS 图片或文档链接可以直接写在 `text` 中，也可以放在 `url` Part：
+
+```json
+[
+  {"text": "请检查这些图片并说明结论"},
+  {"url": "https://files.example.invalid/image-1.png"},
+  {"url": "https://files.example.invalid/image-2.png"}
+]
+```
+
+输入中的多个 `url` 按出现顺序汇总到需求正文末尾：`用户的请求还附带了这些url：<URL1>; <URL2>`。链接和汇总文字一起计入 200000 字符上限；每条消息最多 64 个 Part。只有链接、没有 text 的请求也可提交。data URL 和文件 base64 仍应通过 raw 上传，不能通过 url 绕过输入检查。
+
+协议接收层只传递链接，不自动下载、不复制旧任务产物，也不把链接登记为已上传附件。是否下载、如何处理由 Agent 判断，仍遵守下载工具的网络、证书和文件范围限制。已在当前会话内的附件可在需求中按文件名指明。返回产物中的 `url` 仍是下载地址，下载鉴权保持原有规则。
+
+下载或处理失败交给 Agent 判断；关键材料确实不可用时，及时说明缺失材料并提供可用临时工作台链接，请用户补充。平台不会因为一次工具失败强制结束任务。
 
 主模型和默认视觉模型的配置方法见[智能体管理](agents.md)。文件序号列表和文件/文件夹下载可通过同一 Agent 的 [REST 接口](machine-tasks.md) 或 [MCP 工具](mcp.md) 完成，仍使用该 Task 的 `id`。
 

@@ -35,13 +35,13 @@ A2A 的等待、查询和流式操作需要 `tasks:read`，发送还需要 `task
 
 REST、MCP、A2A 在创建业务任务、会话和暂存附件之前共用输入门禁。`prompt` / A2A 文本 Part 只放需求；文件通过 REST/MCP 的 `files[].content_base64`，或 A2A 1.0 的 `parts[].raw` 传输。A2A SDK 的 `raw` 使用 bytes，JSON 线上的值才是 base64；不要把整个附件对象序列化后塞进 `text` 或 `data`。
 
-需求正文可包含普通 HTTP/HTTPS 文件链接，包括含较长签名参数的下载链接，不按文件编码拦截，也不在提交时探测是否能下载。Agent 可按需使用 `download_url`；下载和处理失败交由 Agent 根据必要程度、可行修正及已有材料判断。确认缺少关键材料而无法继续时，及时用 `submit_results` 说明原因、缺失项与补齐步骤并结束本轮，请外层 Agent 提供临时工作台链接。可选资料失败时可以继续其余工作；平台不因一次下载或处理错误强制终止任务。下载工具现有的访问范围和 TLS 安全约束继续适用。
+需求正文可包含普通 HTTP/HTTPS 文件链接，包括含较长签名参数的下载链接，不按文件编码拦截，也不在提交时探测是否能下载。A2A 也可使用 url Part，协议将多个链接按顺序汇总到需求正文末尾，不自动下载或登记为附件。Agent 可按需使用 `download_url`；下载和处理失败交由 Agent 根据必要程度、可行修正及已有材料判断。确认缺少关键材料而无法继续时，及时用 `submit_results` 说明原因、缺失项与补齐步骤并结束本轮，请外层 Agent 提供临时工作台链接。可选资料失败时可以继续其余工作；平台不因一次下载或处理错误强制终止任务。下载工具现有的访问范围和 TLS 安全约束继续适用。
 
 以下输入会直接拒绝，不进入模型、队列或会话历史：
 
 - 正文中的实际 base64 data URL、包含文件编码的附件 JSON、具有常见图片/压缩包/PDF 文件头的编码。
 - 连续或只用空白、转义换行分隔的长编码块，累计达到 4096 字符；较短的 base64 讨论示例和普通代码、文本仍可使用。识别是确定性的格式规则，不代替文件内容审查，也不保证识别任意变形的编码。
-- 需求文本超过 200000 字符；A2A 所有 text/data Part 合计受同一上限限制，整条消息最多 64 个 Part。
+- 需求文本超过 200000 字符；A2A 所有 text/data Part 与 url 汇总内容合计受同一上限限制，整条消息最多 64 个 Part。
 - 文件名/编码不合法、附件超过 10 个或解码后总大小超过 20 MiB。整条 HTTP 请求另有 30 MiB 限制，超过时返回 413。
 
 门禁错误含稳定的 `code`、`field`、`retryable=false`、`task_created=false`、`next_action` 和正确附件用法 `file_transport`，不回显输入文件字节。REST 返回 HTTP 400 的 `detail`，请求 Schema 校验错误保持 HTTP 422 并同样省略原始输入；MCP 返回 `isError=true`，`structuredContent.error` 与文本错误内容一致；A2A 返回 `InvalidParams`，在错误 data 的 `ErrorInfo.metadata` 中携带这些字段，官方 SDK 可通过异常的 `data` 读取。

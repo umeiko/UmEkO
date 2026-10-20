@@ -257,43 +257,35 @@ class A2AHandler(RequestHandler):
         if len(message.parts) > MAX_MESSAGE_PARTS:
             exc = TaskInputError("TOO_MANY_PARTS", "消息最多包含 64 个 Part；请合并需求文本并通过文件 Part 上传附件。", "message.parts")
             raise InvalidParamsError(str(exc), data=exc.detail())
-        prompt, files, text_length, file_bytes = [], [], 0, 0
+        prompt, files, urls, text_length, url_length, file_bytes = [], [], [], 0, 0, 0
+        url_label = "用户的请求还附带了这些url："
         for part in message.parts:
             kind = part.WhichOneof("content")
             if kind in {"text", "data"}:
                 text = part.text if kind == "text" else json.dumps(MessageToDict(part.data), ensure_ascii=False)
                 text_length += len(text) + bool(prompt)
-                if text_length > MAX_PROMPT_CHARS:
-                    exc = TaskInputError("PROMPT_TOO_LARGE", "所有文本和 data Part 合计最多 200000 字符；文件内容请通过 raw Part 上传。", "message.parts")
-                    raise InvalidParamsError(str(exc), data=exc.detail())
                 prompt.append(text)
             elif kind == "raw":
                 file_bytes += len(part.raw)
                 files.append({"name": part.filename or "attachment.bin", "content_base64": base64.b64encode(part.raw).decode()})
             elif kind == "url":
-                # Only our authenticated artifact references are accepted; no arbitrary URL fetching.
-                base = context.state["base"] + "/v1/tasks/"
-                if not part.url.startswith(base):
-                    raise InvalidParamsError(
-                        "文件 URL Part 仅接受当前 UMEKO 的任务产物；其他文件请用 raw 上传，或将普通 HTTP/HTTPS 链接放入 text，由 Agent 尝试下载。"
-                        "如果你是想要把url告诉umeko，请直接在input中描述即可（A2A 中填写 message.parts[].text）。")
-                pieces = part.url[len(base):].split("/")
-                if len(pieces) != 4 or pieces[1] != "artifacts" or pieces[3] != "content":
-                    raise InvalidParamsError("产物 URL 无效")
-                try:
-                    path, _ = self.tasks.artifact(context.state["principal"], pieces[0], pieces[2])
-                    if path.stat().st_size > 20 * 1024 * 1024:
-                        raise ValueError("文件超过 20 MiB")
-                    content = path.read_bytes()
-                    file_bytes += len(content)
-                    files.append({"name": part.filename or path.name, "content_base64": base64.b64encode(content).decode()})
-                except (KeyError, PermissionError, ValueError) as exc:
-                    raise InvalidParamsError(str(exc)) from exc
+                if not part.url.strip():
+                    exc = TaskInputError("INVALID_URL", "url Part 须包含非空链接；也可直接在 text 中描述链接。", "message.parts")
+                    raise InvalidParamsError(str(exc), data=exc.detail())
+                # Pass links to the Agent as user input; the protocol neither
+                # fetches URLs nor copies other tasks' artifacts into this task.
+                url_length += len(part.url) + (2 if urls else len(url_label))
+                urls.append(part.url)
             else:
                 raise InvalidParamsError("不支持的消息 Part")
+            if text_length + url_length + bool(prompt and urls) > MAX_PROMPT_CHARS:
+                exc = TaskInputError("PROMPT_TOO_LARGE", "所有 text、data 和 url Part 合计最多 200000 字符；文件内容请通过 raw Part 上传。", "message.parts")
+                raise InvalidParamsError(str(exc), data=exc.detail())
             if len(files) > 10 or file_bytes > 20 * 1024 * 1024:
                 exc = TaskInputError("INVALID_FILES", "最多上传 10 个文件，总大小不超过 20 MiB。", "message.parts")
                 raise InvalidParamsError(str(exc), data=exc.detail())
+        if urls:
+            prompt.append(url_label + "; ".join(urls))
         options = MessageToDict(params.metadata).get("umeko", {})
         if not isinstance(options, dict):
             raise InvalidParamsError("metadata.umeko 须为对象")

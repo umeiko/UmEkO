@@ -139,6 +139,8 @@ async with httpx2.AsyncClient(headers=headers) as http:
 
 成功后保留返回的本次 Task ID，读取 `metadata.workspaceUrl`，用 GetTask 轮询到终态；HTTP 200 仍需检查 JSON-RPC error。图片在 JSON 中是单独 Part：`{"raw":"文件字节base64","filename":"test.png","mediaType":"image/png"}`；SDK 的 raw 传 bytes，不把 JSON 的 base64 字符串当成 bytes 直接传。
 
+如果提供的是图片或文档下载链接，可以放在 text 或独立的 `{"url":"https://files.example.invalid/input.png"}` Part 中。输入的多个 url 会按顺序合并为正文末尾的“用户的请求还附带了这些url：<URL1>; <URL2>”，交给 Agent 判断下载和处理；协议不自动下载、复制旧产物或把链接登记成附件。已有当前会话附件可按文件名说明。URL 也计入 200000 字符和 64 个 Part 上限；data URL、文件 base64 仍使用 raw。
+
 官方 `a2a-sdk` 1.2.x 使用 `ClientFactory(ClientConfig(httpx_client=http, streaming=False)).create_from_url(base)`、`a2a.SendMessageRequest` 和 `a2a.GetTaskRequest`。官方类型的终态为 TASK_STATE_COMPLETED / FAILED / CANCELED。通过 Agent Card 发现端点；不要猜顶级 /a2a，也不要向已有 Task 强行追加输入。
 
 ## 5. 结果、排错与清理

@@ -30,7 +30,7 @@ class TaskInputError(ValueError):
                 "hint": "不要原样重试、拆段重试或把文件改塞进其他文本字段。修正附件结构后再提交；不能正确上传时，向用户说明需要补充附件。",
                 "file_transport": {
                     "mcp_rest": "prompt 写需求，可含普通 HTTP/HTTPS 下载链接；文件字节放 files: [{name: 'input.png', content_base64: '<base64 bytes>'}]。",
-                    "a2a": "A2A 1.0 message.parts 分开传 {text: '需求'} 和 {raw: '<base64 bytes>', filename: 'input.png', mediaType: 'image/png'}；SDK 的 raw 使用 bytes。",
+                    "a2a": "A2A 1.0 message.parts 中，需求用 {text: '需求'}，HTTP/HTTPS 链接可写在 text 或 {url: 'https://files.example.invalid/input.png'} 中；url 转为需求文本交给 Agent。文件字节用 {raw: '<base64 bytes>', filename: 'input.png', mediaType: 'image/png'}，SDK 的 raw 使用 bytes。",
                 }}
 
 
