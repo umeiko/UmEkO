@@ -251,7 +251,17 @@ def test_a2a_immediate_workspace_receipt(machine_server):
             workspace = task.metadata["workspaceUrl"]
             assert workspace.startswith(base.rsplit("/agent/", 1)[0] + "/TMP/")
             assert workspace in task.status.message.parts[0].text
-            assert "立即" in task.status.message.parts[0].text
+            assert task.metadata["workspaceHint"]
+            assert task.metadata["workspaceHint"] in task.status.message.parts[0].text
+            # The queued receipt exposes machine result access without requiring
+            # a particular handoff phrase or making the user open the workspace.
+            results_url = task.metadata["resultsUrl"]
+            assert results_url == base + f"/v1/tasks/{task.id}/results"
+            response = await http.get(results_url)
+            assert response.status_code == 200
+            result = response.json()
+            assert result["task_id"] == task.id and result["status"] == "queued"
+            assert result["ready"] is False and result["text"] is None and result["files"] == []
             with app.state.store.connect() as db:
                 stored = db.execute("SELECT input_json FROM service_tasks WHERE id=?", (task.id,)).fetchone()[0]
             assert json.loads(stored)["prompt"] == prompt
