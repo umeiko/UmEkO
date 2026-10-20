@@ -46,7 +46,7 @@ GET BASE_URL/v1/sessions
 
 用户服务同时提供运行时 `/openapi.json`、`/docs`、`/redoc`；管理服务在管理员登录后提供 `/admin/v1/openapi.json`，不开放默认 `/docs` 调试页。管理定义的操作说明与认证来自同一运行时契约；本网站及服务内手册的参考从隔离的应用实例生成，不读取真实配置。用户静态定义另补充原始文件体、multipart 和 SSE 契约。MCP 与 A2A JSON-RPC 由 SDK 路由提供，未计入 OpenAPI 操作数量。
 
-管理登录页和控制台可[复制 AI 管理提示词](admin.md#admin-automation)，让同事下载标准 Skill 并使用当前规范管理服务器；操作仍需管理员身份。
+管理登录页和控制台的[使用AI来配置](admin.md#admin-automation)会打开指导弹窗，可复制提示词或下载完整 Skill.zip，让同事的本地 Agent 按当前规范管理服务器；操作仍需管理员身份。
 
 ## 通用约定与错误
 

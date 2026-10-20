@@ -9,7 +9,9 @@ export async function copyText(text) {
   const input = document.createElement('textarea');
   input.value = text;
   input.style.cssText = 'position:fixed;left:-9999px;top:0';
-  document.body.append(input);
+  // A modal makes the background inert, including a fallback textarea in body.
+  const host = focused?.closest('dialog[open]') || document.body;
+  host.append(input);
   input.select();
   let copied;
   try {

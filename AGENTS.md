@@ -84,6 +84,8 @@ npm --prefix frontend run test:smoke
 
 外部管理 Skill 位于 `umeko/server/admin_skill/`，通过 `/admin/automation` 清单和固定文件下载入口发布，不进入普通用户下发技能库，不在服务端执行。管理登录页及控制台的复制按钮只能使用当前浏览器 origin 和注入的管理前缀，不使用用户 `UMEKO_PUBLIC_URL`、Provider 地址或猜测路径。公开说明不得携带凭据；所有管理操作与在线规范继续要求管理员 Cookie。认证、接口字段或操作行为变化时同步维护 Skill 与客户端，并验证 `tests/test_admin_automation.py` 及浏览器 `UMEKO_UI_FOCUS=admin-automation` 的根路径/独立前缀、下载复制和退出 401。
 
+“使用AI来配置”入口使用指导弹窗，完整下载为 `/admin/automation/skill.zip`。包内完整 API 参考与 schema 随生成器同步；修改 Skill 或其参考后用 `scripts/build_admin_skill.py` 和 `--check` 通过原生 7-Zip 构建与逐字节校验，提交 `umeko/server/admin_skill.zip`。下载只返回成品，不能在请求中打包或夹带运行配置；固定清单、ZIP 与 wheel/exe 数据项保持一致。
+
 ## 数据与改动范围
 
 保留无关的工作区改动。不要提交 `.env`、本地凭据、数据库或运行数据；测试不得操作真实 `server_data/`、`output/`、技能库或实际 Provider。

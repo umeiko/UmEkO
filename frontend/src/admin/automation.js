@@ -6,6 +6,7 @@ export function adminAutomationUrls() {
     base: absolute('/').replace(/\/$/, ''),
     manifest: absolute('/admin/automation'),
     skill: absolute('/admin/automation/skill/SKILL.md'),
+    archive: absolute('/admin/automation/skill.zip'),
     schema: absolute('/admin/v1/openapi.json'),
   };
 }
@@ -15,11 +16,17 @@ export function adminAutomationPrompt(tr) {
   return [
     tr('请通过 UMEKO 管理 API 帮我管理此服务器，仅执行我明确提出的管理任务。'),
     tr('管理服务基址：{url}', { url: urls.base }),
+    tr('完整管理 Skill ZIP：{url}；下载并解压，保留 umeko-server-admin 目录结构。', {
+      url: urls.archive,
+    }),
     tr('先下载并阅读管理 Skill：{url}', { url: urls.skill }),
-    tr('完整 Skill 文件清单与版本：{url}；按清单下载引用文档和 Python 调用脚本，保留目录结构。', {
+    tr('文件清单、版本与 SHA-256：{url}；无法下载 ZIP 时可按清单逐个获取文件。', {
       url: urls.manifest,
     }),
     tr('管理员登录后读取当前接口规范：{url}', { url: urls.schema }),
+    tr(
+      '包内含平台介绍、配置指引和完整 API 文档；发布智能体时请按发布与冒烟测试指引，检查发现信息和实际任务结果。',
+    ),
     tr(
       '登录使用本地环境变量 UMEKO_ADMIN_URL、UMEKO_ADMIN_USERNAME、UMEKO_ADMIN_PASSWORD，或我已有的管理员 Cookie 会话。不要要求我把密码或密钥粘贴进对话；用户登录和机器任务 Token 不能代替管理员身份。',
     ),

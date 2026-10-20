@@ -9,7 +9,7 @@ description: 通过 UMEKO 管理 API 配置模型、智能体、技能、权限�
 
 ## 接入
 
-1. 从用户提供的管理入口取得 `/admin/automation` 清单。可只下载本文件阅读，也可按清单把 `SKILL.md`、`references/api.md`、`scripts/admin_api.py` 保存到同名本地技能目录，保留层级。清单给出版本与各文件 SHA-256；安装路径按所用 AI 客户端的技能约定选择。
+1. 从管理入口下载 `/admin/automation/skill.zip`，解压后保留 `umeko-server-admin/` 目录。也可从 `/admin/automation` 清单逐个下载文件；清单给出版本、ZIP 和各文件 SHA-256。安装路径按所用 AI 客户端的技能约定选择。
 2. 使用本地环境变量 `UMEKO_ADMIN_URL`、`UMEKO_ADMIN_USERNAME`、`UMEKO_ADMIN_PASSWORD`，或调用者已有的管理员 Cookie 会话。不要要求用户把密码、模型密钥或完整 Cookie 粘贴到对话中。凭据缺失时说明需要在本地配置，不猜默认密码。
 3. 先 `GET /admin/v1/me` 验证身份，再读取受鉴权的 `GET /admin/v1/openapi.json`。以运行中服务的 schema 为参数依据；版本不一致时重新读取规范，不能靠历史印象猜字段。
 4. 执行用户明确授权的管理任务。尚未收到具体变更任务时，仅验证连接与读取概览。已有明确授权无需重复请求确认；目标、删除范围或授权范围含糊时先澄清。
@@ -44,3 +44,10 @@ python scripts/admin_api.py PUT /admin/v1/models/<model_id> --json-file change.j
 401：检查管理员身份或重新登录。400/422：按 schema 和字段错误修正。404：检查管理地址、前缀和实际 ID。409：重新读取冲突状态。超时/断连：先查询状态判断变更是否成功；创建、切换开关、轮换凭据、导入和代码执行不得盲目重复。提供具体错误，输出中不包含秘密。
 
 全量操作、请求结构与特殊行为见 [接口参考](references/api.md) 和运行中服务的 OpenAPI。部署监听地址、TLS 和路径前缀属于启动配置，不通过此 Skill 修改；服务也不会自动执行下载到同事电脑上的脚本。
+
+## 按任务阅读
+
+- 了解平台、服务边界和节点生命周期：[平台介绍](references/platform.md)。
+- 初次连接、配置模型、技能或权限：[配置指引](references/configuration.md)。
+- 新建/更新智能体、发布入口、MCP/A2A/REST 验收：[发布与冒烟测试](references/agent-publishing.md)。
+- 查某个端点、字段或约束：[完整 API 参考](references/api-reference.md)、[数据结构](references/schemas.md)、[OpenAPI 快照](references/openapi-admin.json)。实际操作优先读取在线规范；按需检索，不把所有文档一次塞进上下文。

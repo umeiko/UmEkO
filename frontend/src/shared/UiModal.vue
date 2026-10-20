@@ -3,13 +3,20 @@ import { ref, watch, onMounted } from 'vue';
 import UiIcon from './UiIcon.vue';
 import { useAdminI18n } from './adminI18n.js';
 const { tr } = useAdminI18n();
-const props = defineProps({ modelValue: Boolean, title: String, wide: Boolean, busy: Boolean });
+const props = defineProps({
+  modelValue: Boolean,
+  title: String,
+  wide: Boolean,
+  busy: Boolean,
+  initialFocus: String,
+});
 const emit = defineEmits(['update:modelValue', 'closed']);
 const dialog = ref();
 function sync() {
   if (!dialog.value) return;
   if (props.modelValue && !dialog.value.open) {
     const field =
+      (props.initialFocus && dialog.value.querySelector(props.initialFocus)) ||
       dialog.value.querySelector('input:not([type="checkbox"]),textarea,select') ||
       dialog.value.querySelector('.modal-header > button');
     field?.setAttribute('autofocus', '');

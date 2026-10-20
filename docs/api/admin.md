@@ -20,17 +20,18 @@
 
 ## AI 管理与在线接口规范 {#admin-automation}
 
-管理登录页和控制台顶部提供“复制 AI 管理提示词”，并可下载管理 Skill。提示词使用浏览器实际访问的管理域名与服务端注入的 `UMEKO_ADMIN_BASE_PATH`，不读取用户服务的 `UMEKO_PUBLIC_URL` 或上游 Provider 地址，也不包含密码、Cookie、模型密钥。没有新增端口，所有管理请求仍经过现有管理员身份校验。
+管理登录页和控制台顶部提供“使用AI来配置”。点击后打开指导弹窗，说明如何把提示词交给本地 Agent，并提供预览、复制提示词和完整 Skill.zip 下载。提示词使用浏览器实际访问的管理域名与服务端注入的 `UMEKO_ADMIN_BASE_PATH`，不读取用户服务的 `UMEKO_PUBLIC_URL` 或上游 Provider 地址，也不包含密码、Cookie、模型密钥。没有新增端口，所有管理请求仍经过现有管理员身份校验。
 
 | 方法 | 管理基址后的路径 | 用途 |
 | --- | --- | --- |
 | GET | `/admin/automation` | 公开文件清单、版本、大小和 SHA-256 |
+| GET | `/admin/automation/skill.zip` | 完整管理 Skill ZIP，含平台、配置、发布与冒烟测试、完整 API 文档与客户端 |
 | GET | `/admin/automation/skill/SKILL.md` | 标准 `umeko-server-admin` Skill 主指引 |
 | GET | `/admin/automation/skill/references/api.md` | 操作步骤与接口行为说明 |
 | GET | `/admin/automation/skill/scripts/admin_api.py` | Python 3.10+ 标准库客户端 |
 | GET | `/admin/v1/openapi.json` | 当前运行版本的完整管理规范，需管理员 Cookie |
 
-同事的 AI 下载后保留 `SKILL.md`、`references/`、`scripts/` 层级；可按客户端规则安装，或直接阅读执行。凭据在同事的本地环境中配置：`UMEKO_ADMIN_URL`、`UMEKO_ADMIN_USERNAME`、`UMEKO_ADMIN_PASSWORD`；有企业 CA 时再设置 `UMEKO_ADMIN_CA_FILE`。这不是自动获得管理员权限的机制，普通用户登录和机器任务凭据不能代替管理员身份。
+同事的 AI 下载并解压后保留 `umeko-server-admin/SKILL.md`、`references/`、`scripts/` 层级；可按客户端规则安装，或直接阅读执行。ZIP 的摘要、文件清单与逐文件摘要在 `/admin/automation` 返回，完整 API 参考与 OpenAPI 快照从同一契约生成。凭据在同事的本地环境中配置：`UMEKO_ADMIN_URL`、`UMEKO_ADMIN_USERNAME`、`UMEKO_ADMIN_PASSWORD`；有企业 CA 时再设置 `UMEKO_ADMIN_CA_FILE`。这不是自动获得管理员权限的机制，普通用户登录和机器任务凭据不能代替管理员身份。
 
 ```sh
 python scripts/admin_api.py GET /admin/v1/me

@@ -213,6 +213,8 @@ def generate() -> dict[Path, str]:
     for key, value in sorted(admin_spec["components"].get("schemas", {}).items()):
         admin_models += ["", "## " + key, "", "```json", json.dumps(value, ensure_ascii=False, indent=2, sort_keys=True), "```"]
     files[ROOT / "service_docs/admin/schemas.md"] = "\n".join(admin_models) + "\n"
+    for filename in ("api-reference.md", "openapi-admin.json", "schemas.md"):
+        files[ROOT / "umeko/server/admin_skill/references" / filename] = files[ROOT / "service_docs/admin" / filename]
     return files
 
 

@@ -1,13 +1,13 @@
 # 用 AI 和 API 管理服务器
 
-管理员可以在管理登录页或控制台顶部点击 **复制 AI 管理提示词**，把接入说明交给自己的 AI。提示词包含当前管理服务的真实外部地址、Skill 下载地址和接口规范地址，不包含密码、Cookie 或模型密钥。旁边的下载按钮可单独取得 `SKILL.md`。
+管理员可以在管理登录页或控制台顶部点击 **使用AI来配置**。弹窗说明如何将提示词交给本地 Agent，提供提示词预览、**复制提示词**和 **下载 Skill.zip**。提示词包含当前管理服务的真实外部地址、Skill 下载地址和接口规范地址，不包含密码、Cookie 或模型密钥。
 
-![管理登录页底部的 AI 接入提示词与 Skill 下载入口](../assets/screenshots/admin-ai-login.png)
+![使用AI来配置弹窗中的操作步骤、提示词和完整 Skill 下载入口](../assets/screenshots/admin-ai-login.png)
 
 ## 从复制到实际操作
 
-1. 打开公司提供的管理入口，复制提示词，粘贴给有 HTTP 请求或本地脚本能力的 AI。
-2. AI 下载管理 Skill，按文件清单保留目录层级；客户端支持技能安装时，可安装为 `umeko-server-admin`。
+1. 打开公司提供的管理入口，点击“使用AI来配置”，把弹窗内的提示词交给能访问本服务、具备 HTTP 请求或本地脚本能力的 AI。
+2. AI 下载并解压完整 Skill.zip，保留目录层级；也可自己点击下载，把解压后的目录安装到支持技能的本地 Agent。无法下载 ZIP 时仍可按文件清单逐个取得文件。
 3. 在同事自己的电脑或 AI 运行环境中配置管理员身份。AI 用账号登录管理 API，取得本次登录 Cookie，再读取当前版本的接口规范。
 4. 给出具体任务，例如“把资料处理模型的并发限制设为 2，并回读确认”或“查看失败任务的工具记录”。AI 只处理明确授权的目标。
 5. AI 读取状态、按接口修改并回读。涉及删除、开放权限、批准代码等操作时，先明确范围与影响；已有明确授权不需要重复确认。
@@ -21,11 +21,20 @@
 ```text
 umeko-server-admin/
   SKILL.md
-  references/api.md
   scripts/admin_api.py
+  references/
+    platform.md
+    configuration.md
+    agent-publishing.md
+    api.md
+    api-reference.md
+    schemas.md
+    openapi-admin.json
 ```
 
-`SKILL.md` 说明接入、权限和操作原则；参考文件解释模型、用户、任务、技能下发与可信代码等行为；Python 脚本提供 Cookie 登录、通用 JSON 请求、错误处理与输出脱敏。它不依赖特定 AI 厂商，Python 3.10+ 即可运行，无第三方包。
+`SKILL.md` 说明接入与按需阅读顺序。ZIP 包含平台介绍、逐步配置指引、智能体发布、REST/MCP/A2A 冒烟测试、完整管理 API 参考和数据结构、OpenAPI 快照。Python 脚本提供 Cookie 登录、通用 JSON 请求、错误处理与输出脱敏，Python 3.10+ 即可运行，无第三方包；业务协议测试按指南安装相应客户端。
+
+发布检查先验证 Card、MCP 工具披露等不调用模型的步骤；用户要求实际验收时，再提交符合该智能体输入要求的合成任务，检查终态、业务结果与产物。文档区分本机、测试代理与真实外部入口，不把提交成功当作完成。
 
 这是供外部管理者下载的 Skill，不会自动加入普通用户的技能库，也不在服务器上代替管理员执行脚本。不会修改旧会话副本或自动批准代码。
 
@@ -38,6 +47,7 @@ umeko-server-admin/
 | 地址 | 用途与鉴权 |
 | --- | --- |
 | `<管理基址>/admin/automation` | 公开的 Skill 文件清单、版本、大小和 SHA-256 |
+| `<管理基址>/admin/automation/skill.zip` | 完整 `umeko-server-admin.zip`，含说明、脚本和全部参考 |
 | `<管理基址>/admin/automation/skill/SKILL.md` | 公开的 Skill 主指引；仅说明，不含凭据 |
 | `<管理基址>/admin/automation/skill/references/api.md` | 操作行为参考 |
 | `<管理基址>/admin/automation/skill/scripts/admin_api.py` | 可下载到同事本地的调用脚本 |
@@ -47,6 +57,8 @@ umeko-server-admin/
 | `<管理基址>/admin/logout` | 撤销当前管理登录会话 |
 
 地址使用 `UMEKO_ADMIN_BASE_PATH`，不读取用户服务的 `UMEKO_PUBLIC_URL` 或 Provider 的 `base_url`。复制按钮使用浏览器实际访问的 origin 和服务端注入的管理前缀，适配反向代理外部域名，不从当前页面路径猜前缀。
+
+ZIP 随版本预先构建，服务只返回文件，下载不需要在生产机器临时打包，也不要求同事安装 Python 后才能下载。原始文件清单还包括全部参考文档，可按 SHA-256 校验。
 
 ## 本地调用脚本
 

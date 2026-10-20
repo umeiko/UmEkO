@@ -7,3 +7,4 @@ service_docs/** text=auto eol=lf
 umeko/server/static/guide/** text=auto eol=lf
 # Generated templates and vendor assets can contain significant whitespace.
 umeko/server/static/guide/** -whitespace
+umeko/server/admin_skill/** text eol=lf

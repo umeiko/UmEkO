@@ -18,7 +18,8 @@ import uvicorn
 
 from umeko.config import ModelConfig, Settings
 from umeko.server.admin import create_admin_app
-from umeko.server.admin_automation import SKILL_ROOT
+from umeko.server.admin_automation import SKILL_ROOT, SKILL_FILES
+from umeko.archives import archive_members, extract_archive
 from umeko.server.app import create_app
 
 SPEC = importlib.util.spec_from_file_location("admin_skill_client", SKILL_ROOT / "scripts/admin_api.py")
@@ -40,11 +41,25 @@ def admin_pair(tmp_path, request):
     service.run_manager.shutdown()
 
 
-def test_download_is_public_but_management_schema_and_operations_require_admin(admin_pair):
+def test_download_is_public_but_management_schema_and_operations_require_admin(admin_pair, tmp_path):
     user, app, service, account, ordinary, prefix = admin_pair
     with TestClient(app) as client:
         manifest = client.get(prefix + "/admin/automation").json()
         assert manifest["name"] == "umeko-server-admin"
+        assert {item["path"] for item in manifest["files"]} == set(SKILL_FILES)
+        archive = client.get(manifest["archive"]["url"])
+        assert manifest["archive"]["url"] == prefix + "/admin/automation/skill.zip"
+        assert archive.status_code == 200 and archive.headers["content-type"] == "application/zip"
+        assert 'filename="umeko-server-admin.zip"' in archive.headers["content-disposition"]
+        assert hashlib.sha256(archive.content).hexdigest() == manifest["archive"]["sha256"]
+        assert len(archive.content) == manifest["archive"]["size"]
+        downloaded = tmp_path / "downloaded.zip"
+        downloaded.write_bytes(archive.content)
+        assert {item.name.replace("\\", "/") for item in archive_members(downloaded) if not item.directory} == {
+            "umeko-server-admin/" + name for name in SKILL_FILES}
+        extracted = extract_archive(downloaded)
+        for name in SKILL_FILES:
+            assert (extracted / name).read_bytes() == (SKILL_ROOT / name).read_bytes()
         for item in manifest["files"]:
             assert item["url"] == prefix + "/admin/automation/skill/" + item["path"]
             result = client.get(item["url"])
@@ -78,7 +93,7 @@ def test_download_is_public_but_management_schema_and_operations_require_admin(a
         assert client.get(prefix + "/admin/v1/openapi.json").status_code == 401
     # Neither admin discovery nor its downloadable client is a user-plane API.
     with TestClient(user) as client:
-        for route in ("/admin/automation", "/admin/automation/skill/SKILL.md", "/admin/v1/openapi.json"):
+        for route in ("/admin/automation", "/admin/automation/skill/SKILL.md", "/admin/automation/skill.zip", "/admin/v1/openapi.json"):
             assert client.get("/teams/workbench" + route).status_code == 404
 
 

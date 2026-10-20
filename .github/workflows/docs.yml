@@ -8,6 +8,7 @@ on:
       - "service_docs/**"
       - "mkdocs.service.yml"
       - "scripts/build_service_docs.py"
+      - "scripts/build_admin_skill.py"
       - "umeko/**"
       - "scripts/generate_api_docs.py"
       - "requirements-docs.txt"
@@ -21,6 +22,7 @@ on:
       - "service_docs/**"
       - "mkdocs.service.yml"
       - "scripts/build_service_docs.py"
+      - "scripts/build_admin_skill.py"
       - "umeko/**"
       - "scripts/generate_api_docs.py"
       - "requirements-docs.txt"
@@ -50,6 +52,12 @@ jobs:
         run: python -m pip install -r requirements-docs.txt ".[server]"
       - name: Check generated API reference
         run: python scripts/generate_api_docs.py --check
+      - name: Install native archive backend
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y 7zip
+      - name: Check downloadable admin Skill
+        run: python scripts/build_admin_skill.py --check
       - name: Build documentation
         run: python -m mkdocs build --strict
       - name: Check bundled service handbook
