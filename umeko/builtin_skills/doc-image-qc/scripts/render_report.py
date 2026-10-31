@@ -30,12 +30,17 @@ import html
 import json
 import re
 import sys
+import warnings
 import zipfile
 from pathlib import Path
 from urllib.parse import quote
 
+from PIL import Image, UnidentifiedImageError
+
+DEFAULT_IMAGE_LIMITS = {"max_bytes": 5 * 1024 * 1024, "max_edge": 4096, "max_pixels": 16_000_000}
+
 SKILL_SCRIPT = {
-    "description": "将已完成质检的结构化 JSON 渲染成 HTML、JSON 与包含原图的 ZIP；本脚本不做图像推理。",
+    "description": "实测原图片规格并补充 C4，将已完成视觉质检的 JSON 渲染成 HTML、JSON 与包含原图的 ZIP；不做图像推理或改写原图。",
     "usage": "先按技能指引生成质检 JSON，再传入其会话相对路径。没有配套文档时 doc_dir 留空；图像路径可来自 workspace/、attachments/ 或 generate/。",
     "input_schema": {"type": "object", "required": ["data_path"], "additionalProperties": False, "properties": {
         "data_path": {"type": "string", "minLength": 1, "pattern": r"\S", "description": "质检 JSON 的会话相对路径，结构见 doc-image-qc 主文档；包含 document、items 和逐图 checks"},
@@ -504,16 +509,16 @@ def _item_html(item, definitions, missing_images):
                 '<div class="check"><span class="cbadge {st_cls}">{cid} {st}</span>'
                 '<span class="v {v_cls}"><b>{name}</b>　{text}</span></div>'.format(
                     st_cls=st_cls, cid=cid, st=st, v_cls=v_cls, name=name, text=text))
-    else:
-        # 兼容旧三字段：无逐项状态，不做关键词猜测，中性渲染
-        for key, label in (("consistency", "图文一致"), ("quality", "图片质量"),
-                           ("compliance", "合规检查")):
-            text = item.get(key)
-            if not text:
-                continue
-            checks.append(
-                '<div class="check"><span class="cbadge NA">{}</span>'
-                '<span class="v">{}</span></div>'.format(label, _esc(text)))
+    # Measuring C4 must not hide legacy visual findings that have no checks[].
+    represented = {check.get("id") for check in check_items or []}
+    for key, label, cid in (("consistency", "图文一致", "C1"), ("quality", "图片质量", "C2"),
+                            ("compliance", "合规检查", "C3")):
+        text = item.get(key)
+        if not text or cid in represented:
+            continue
+        checks.append(
+            '<div class="check"><span class="cbadge NA">{}</span>'
+            '<span class="v">{}</span></div>'.format(label, _esc(text)))
     detail = item.get("detail")
     detail_html = '<div class="detail">{}</div>'.format(_esc(detail)) if detail else ""
     # 筛选 data 属性：图级状态 + 覆盖的检查项 id 列表
@@ -598,13 +603,65 @@ def _session_path(path, session_root, *, allow_root=False):
     return target
 
 
+def _image_limits(data):
+    overrides = data.get("image_limits", {})
+    if not isinstance(overrides, dict) or set(overrides) - set(DEFAULT_IMAGE_LIMITS):
+        raise ValueError("image_limits 只接受 max_bytes、max_edge、max_pixels")
+    limits = {**DEFAULT_IMAGE_LIMITS, **overrides}
+    if any(type(value) is not int or value < 1 for value in limits.values()):
+        raise ValueError("图片规格阈值必须是正整数")
+    return limits
+
+
+def _image_spec(path, limits):
+    """Measure the original file, without decoding pixels or modifying the source."""
+    size = path.stat().st_size
+    metadata = {"size_bytes": size}
+    facts = [f"原文件 {size:,} B（{size / (1024 * 1024):.2f} MiB）"]
+    excess = []
+    if size > limits["max_bytes"]:
+        excess.append(f"文件体积超过建议上限 {limits['max_bytes']:,} B")
+    try:
+        if size > 64 * 1024 * 1024:
+            raise ValueError("源文件超过 64 MiB，尺寸未读取")
+        # Header inspection only: never load pixels, enumerate frames or disable
+        # Pillow's protection against oversized images.
+        with warnings.catch_warnings():
+            warnings.simplefilter("error", Image.DecompressionBombWarning)
+            with Image.open(path, formats=["PNG", "JPEG", "WEBP", "GIF", "BMP", "TIFF"]) as image:
+                width, height = image.size
+                metadata.update(width=width, height=height, format=image.format)
+        pixels = width * height
+        metadata["pixels"] = pixels
+        facts.append(f"原图 {width} × {height} px，共 {pixels:,} 像素，{metadata['format']}")
+        if max(width, height) > limits["max_edge"]:
+            excess.append(f"最长边超过建议上限 {limits['max_edge']:,} px")
+        if pixels > limits["max_pixels"]:
+            excess.append(f"总像素超过建议上限 {limits['max_pixels']:,}")
+    except (Image.DecompressionBombError, Image.DecompressionBombWarning):
+        metadata["dimensions_error"] = "原图尺寸触及安全读取限制，宽高未验证"
+        excess.append("原图尺寸触及安全读取限制，建议提供较小原图或局部截图")
+    except (UnidentifiedImageError, OSError, SyntaxError, ValueError, TypeError, OverflowError):
+        metadata["dimensions_error"] = "图片头部无法安全读取，宽高和格式未验证"
+    if "dimensions_error" in metadata:
+        facts.append(metadata["dimensions_error"])
+    status = "WARN" if excess else "NA" if "dimensions_error" in metadata else "PASS"
+    note = "；".join(facts + excess)
+    return metadata, {"id": "C4", "name": "图片规格", "status": status, "note": note}
+
+
 def _prepare_images(data, doc_dir, session_root):
     """解析两种图片基址，规范为会话相对路径，避免同名文件冲突和越界打包。"""
     assets = {}
     missing = {}
     items = []
+    limits = _image_limits(data)
     for original in data.get("items", []):
         item = dict(original)
+        item.pop("image_metadata", None)
+        previous = item.get("checks") if isinstance(item.get("checks"), list) else []
+        item["checks"] = [check for check in previous if check.get("id") != "C4"] + [
+            {"id": "C4", "name": "图片规格", "status": "NA", "note": "未取得可读取的原图，文件体积与尺寸未验证"}]
         src = str(item.get("image", "")).strip()
         if not src or _is_remote(src):
             items.append(item)
@@ -628,12 +685,18 @@ def _prepare_images(data, doc_dir, session_root):
                 item.setdefault("source_image", src)
             if resolved.is_file():
                 assets[canonical] = resolved
+                item["image_metadata"], measured = _image_spec(resolved, limits)
+                # Never keep model guesses or measurements of a resized preview.
+                previous = item.get("checks") if isinstance(item.get("checks"), list) else []
+                item["checks"] = [check for check in previous if check.get("id") != "C4"] + [measured]
+                if measured["status"] == "WARN" and item.get("status") == "PASS":
+                    item["status"] = "WARN"
             else:
                 missing[canonical] = "文件不存在"
         except (ValueError, OSError):
             missing[src] = "路径无效或超出当前会话的文件目录"
         items.append(item)
-    report = {**data, "items": items, "packaging": {
+    report = {**data, "image_limits": limits, "items": items, "packaging": {
         "packed_images": len(assets),
         "missing_images": [{"image": src, "reason": reason} for src, reason in missing.items()],
     }}

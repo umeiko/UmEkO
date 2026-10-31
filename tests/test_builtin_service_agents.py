@@ -9,7 +9,7 @@ from umeko.agent import UmekoAgent
 from umeko.config import ModelConfig, Settings
 from umeko.host.agents import AgentRegistry
 from umeko.host.builtin_agents import (
-    BUILTIN_SERVICE_AGENTS, FLOW_CHART_SLUG, FLOW_CORRECTION_SLUG, IMAGE_REASONING_SLUG,
+    BUILTIN_SERVICE_AGENTS, DOCUMENT_CHECK_SLUG, FLOW_CHART_SLUG, FLOW_CORRECTION_SLUG, IMAGE_REASONING_SLUG,
     agent_installation_key, install_builtin_agents,
 )
 from umeko.host.storage import Store
@@ -36,7 +36,7 @@ def test_new_defaults_discovery_admin_and_skill_isolation(tmp_path, user_prefix,
         assert admin.get(admin_prefix + "/admin/v1/agents").status_code == 401
         assert admin.post(admin_prefix + "/admin/login", json={"username": owner["username"], "password": "fixture-pass"}).status_code == 200
         listed = admin.get(admin_prefix + "/admin/v1/agents").json()["agents"]
-        assert {FLOW_CHART_SLUG, IMAGE_REASONING_SLUG} <= {item["slug"] for item in listed}
+        assert {FLOW_CHART_SLUG, IMAGE_REASONING_SLUG, DOCUMENT_CHECK_SLUG} <= {item["slug"] for item in listed}
         for expected in BUILTIN_SERVICE_AGENTS:
             definition = service.agent_registry.by_slug(expected["slug"])
             assert definition["name"] == expected["name"]
@@ -61,7 +61,7 @@ def test_new_defaults_discovery_admin_and_skill_isolation(tmp_path, user_prefix,
 
 
 @pytest.mark.parametrize("slug,skill", [(FLOW_CHART_SLUG, "drawio-flowchart.md"), (IMAGE_REASONING_SLUG, "image-reasoning.md"),
-                                       (FLOW_CORRECTION_SLUG, "drawio-correction.md")])
+                                       (FLOW_CORRECTION_SLUG, "drawio-correction.md"), (DOCUMENT_CHECK_SLUG, "document-check.md")])
 def test_upgrade_preserves_existing_disabled_dependency_and_custom_agent(tmp_path, slug, skill):
     store = Store(tmp_path / "data/umeko.db")
     store.upsert_default_skill(skill, f"---\nname: {skill[:-3]}\ndescription: custom\n---\nCustom instructions")

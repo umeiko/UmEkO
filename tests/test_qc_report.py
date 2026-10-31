@@ -10,6 +10,7 @@ from urllib.parse import quote
 import zipfile
 
 import pytest
+from PIL import Image
 
 from umeko.host.builtin_agents import ASSETS
 
@@ -194,4 +195,63 @@ def test_symlink_image_outside_session_is_not_packaged(renderer, tmp_path):
     report, assets = renderer._prepare_images({"items": [{"image": "attachments/link.png"}]}, root, root)
     assert not assets
     assert report["packaging"]["missing_images"]
+
+
+@pytest.mark.parametrize("size,limits,expected", [
+    ((800, 600), {}, "PASS"),
+    ((5000, 32), {}, "WARN"),
+    ((320, 200), {"max_bytes": 128}, "WARN"),
+    ((600, 600), {"max_pixels": 100_000}, "WARN"),
+    ((5000, 32), {"max_edge": 6000}, "PASS"),
+])
+def test_source_specs_are_measured_and_do_not_replace_visual_quality(renderer, tmp_path, size, limits, expected):
+    root = tmp_path / "session"
+    image_path = root / "attachments/source.bin"
+    image_path.parent.mkdir(parents=True)
+    Image.new("RGB", size, "white").save(image_path, format="PNG")
+    original = image_path.read_bytes()
+    report, assets = renderer._prepare_images({"image_limits": limits, "items": [{
+        "image": "attachments/source.bin", "status": "PASS", "quality": "原图关键文字存在模糊，需复核",
+        "checks": [{"id": "C4", "status": "FAIL", "note": "model guessed dimensions"}],
+    }]}, root, root)
+    item = report["items"][0]
+    measured = next(check for check in item["checks"] if check["id"] == "C4")
+    assert measured["status"] == expected
+    assert item["status"] == expected
+    assert item["image_metadata"] == {"size_bytes": len(original), "width": size[0], "height": size[1],
+                                      "pixels": size[0] * size[1], "format": "PNG"}
+    assert "model guessed dimensions" not in measured["note"]
+    assert "原图关键文字存在模糊，需复核" in renderer.render_report_html(report)
+    assert not any(check["id"] == "C2" for check in item["checks"])  # No invented visual verdict.
+    assert assets["attachments/source.bin"] == image_path
+    assert image_path.read_bytes() == original
+
+
+def test_unreadable_headers_do_not_get_a_false_spec_pass(renderer, tmp_path):
+    root = tmp_path / "session"
+    image_path = root / "attachments/source.png"
+    image_path.parent.mkdir(parents=True)
+    image_path.write_bytes(b"not an image")
+    report, _ = renderer._prepare_images({"items": [{"image": "attachments/source.png", "status": "ERROR"}]}, root, root)
+    item = report["items"][0]
+    assert item["image_metadata"]["size_bytes"] == len(b"not an image")
+    assert "width" not in item["image_metadata"]
+    assert item["checks"][0]["status"] == "NA"
+    assert item["status"] == "ERROR"
+
+
+@pytest.mark.parametrize("src", ["attachments/missing.png", "https://images.example.invalid/sample.png"])
+def test_unavailable_originals_cannot_keep_fabricated_measurements(renderer, tmp_path, src):
+    report, _ = renderer._prepare_images({"items": [{"image": src, "status": "SKIP",
+        "image_metadata": {"size_bytes": 1, "width": 1, "height": 1},
+        "checks": [{"id": "C4", "status": "PASS"}]}]}, tmp_path, tmp_path)
+    item = report["items"][0]
+    assert "image_metadata" not in item
+    assert item["checks"][0]["status"] == "NA"
+
+
+@pytest.mark.parametrize("limits", [{"max_bytes": 0}, {"max_edge": True}, {"max_pixels": -1}, {"other": 4}, []])
+def test_invalid_spec_thresholds_are_rejected(renderer, tmp_path, limits):
+    with pytest.raises(ValueError):
+        renderer._prepare_images({"image_limits": limits, "items": []}, tmp_path, tmp_path)
 

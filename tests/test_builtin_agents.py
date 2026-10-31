@@ -13,7 +13,7 @@ from fastapi.testclient import TestClient
 
 from umeko.config import ModelConfig, Settings
 from umeko.host.agents import AgentRegistry
-from umeko.host.builtin_agents import ASSETS, INSTALL_KEY, install_builtin_agents
+from umeko.host.builtin_agents import ASSETS, IMAGE_QC_SKILL, INSTALL_KEY, install_builtin_agents
 from umeko.host.storage import Store
 from umeko.server.app import create_app
 from umeko.skills.pack_reader import read_pack_file
@@ -142,6 +142,31 @@ def test_upgrade_replaces_only_recognized_stock_report(tmp_path, monkeypatch, in
     script.unlink()
     assert not install_builtin_agents(registry, library)
     assert not script.exists()
+
+
+@pytest.mark.parametrize("newline", ["\n", "\r\n"])
+def test_stock_checklist_upgrade_preserves_admin_edits_and_deletions(tmp_path, monkeypatch, newline):
+    from umeko.host import builtin_agents
+
+    store = Store(tmp_path / "db.sqlite")
+    registry = AgentRegistry(store)
+    library = Path(os.environ["UMEKO_SKILL_DIR"])
+    assert install_builtin_agents(registry, library)
+    reference = library / "doc-image-qc/references/checks.md"
+    stock = "# Old stock checks\n| C2 | Quality | Readability |\n"
+    reference.write_bytes(stock.replace("\n", newline).encode("utf-8"))
+    monkeypatch.setattr(builtin_agents, "_STOCK_CHECK_DIGESTS", {hashlib.sha256(stock.encode()).hexdigest()})
+    store.set_default_skill_enabled(IMAGE_QC_SKILL, False)
+    assert install_builtin_agents(registry, library)
+    assert reference.read_bytes() == (ASSETS / "doc-image-qc/references/checks.md").read_bytes()
+    assert not next(item for item in store.default_skills() if item["name"] == IMAGE_QC_SKILL)["enabled"]
+    assert not install_builtin_agents(registry, library)
+    reference.write_text("Administrator checklist", encoding="utf-8")
+    assert not install_builtin_agents(registry, library)
+    assert reference.read_text(encoding="utf-8") == "Administrator checklist"
+    reference.unlink()
+    assert not install_builtin_agents(registry, library)
+    assert not reference.exists()
 
 
 def test_stock_skill_upgrade_preserves_customizations_and_disabling(tmp_path, monkeypatch):

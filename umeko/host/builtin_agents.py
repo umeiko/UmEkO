@@ -19,6 +19,7 @@ ASSETS = Path(__file__).resolve().parents[1] / "builtin_skills"
 REPORT_SCRIPT = Path("doc-image-qc/render_report.py")
 # SHA-256 of UTF-8 text with normalized newlines: bundled v1 and the earlier stock library script.
 _STOCK_REPORT_DIGESTS = {
+    "308b8f3c7d302a61a0e8f70ff04a43272277f21012a0a039a7819139ed2b9edb",
     "f6cd3e46c253121f5a7dd6159d3ced1fc894b1159b258fe21894df159a93a6cf",
     "014912f4d5f06edf383581d1613c133a306fd829cd8c6068c27e262aa8866a06",
     "e3b61d1203ae91d4e3c7bbef9191f69cc844b0d48351744d3b25d1fb62e0ebfb",
@@ -26,9 +27,16 @@ _STOCK_REPORT_DIGESTS = {
     "9099203363b3e831dd7f0112cbfe280fb93b435f83ceb1def97bcd6150df1bc4",
 }
 _STOCK_SKILL_DIGESTS = {
+    "ecc37fbff60b6a583c260d8c15c254043c8192c63351a2e3e7da25ee11b16da6",
     "a5ae14eee2dd9c6af4f5ad1f88044b750f8b8f16466ac8f7ffa79c91a4ed8d12",
     "381ba0c51c222a38318a7c4b078a03cff22fcd0e470685fe0748c6f38d9c9d1a",
     "2d08877be8ebaf950709cef13b6243903d144a590b48ff9e23fad299a263355e",
+}
+_STOCK_CHECK_DIGESTS = {
+    "70f707dbf854b63c13a7233f175fc97a2ce49adb85a02d02fe3a1c8f6a87dd2d",
+    # Earlier stock checklists shipped in the legacy skills/<pack>/ layout.
+    "a59341163956d3148a303afabd965b4787a441155c578105c2ffcd4ba8da953c",
+    "230374c7a57bf56cc9cfa50153d1fbd71ca79aaa6b0f0a56d53db25c03504c61",
 }
 _STOCK_PROMPT_DIGESTS = {
     "6cb2e6ef66310b9b5df714642db4fb21a446711a0e084ed8cdc0f0848f3ab359",
@@ -51,8 +59,21 @@ IMAGE_QC_PROMPT = """你是图像质检智能体，帮助用户检查图片质�
 FLOW_CHART_SLUG = "flow-chart-agent"
 FLOW_CORRECTION_SLUG = "flowchart-correction"
 IMAGE_REASONING_SLUG = "image-resioning-agent"
+DOCUMENT_CHECK_SLUG = "document-check"
 
 BUILTIN_SERVICE_AGENTS = (
+    {
+        "slug": DOCUMENT_CHECK_SLUG,
+        "name": "文档检查",
+        "description": "检查文档错字、术语、参数和流程的前后一致性，通过网址下载工具核验文中链接的访问情况与指向，提供有位置和依据的修改建议。",
+        "skill_names": ["document-check.md"],
+        "system_prompt": """你是通用文档检查智能体，帮助用户找出文档错误、前后矛盾和需要核实的内容。
+收到文档审校任务时先 use_skill(name="document-check")，按技能核对正文、参考材料与网址。
+链接检查使用已有 download_url 工具，区分格式错误、访问失败、需要登录和页面与描述不符；工具不可用或内网受限时如实说明，不绕过策略或伪造已验证结论。
+给出可直接阅读的结论、问题位置、原文依据和修改建议，必要时将完整报告写入 generate/，不擅自改动源文档。
+优先直接交付正文和文件；仅在缺少必要材料或用户想接续时提供可用临时工作台信息。
+问候与能力咨询简洁回答；不能取得正文或参考材料时明确检查范围，不把未检查项当作通过。""",
+    },
     {
         "slug": FLOW_CORRECTION_SLUG,
         "name": "流程图修正",
@@ -124,6 +145,7 @@ def _upgrade_stock_report(library_dir: Path) -> bool:
 def _upgrade_builtin_assets(store, library_dir: Path) -> bool:
     report_updated = _upgrade_stock_report(library_dir)
     skill_updated = _upgrade_stock_file(library_dir, Path(IMAGE_QC_SKILL), _STOCK_SKILL_DIGESTS)
+    checks_updated = _upgrade_stock_file(library_dir, Path("doc-image-qc/checks.md"), _STOCK_CHECK_DIGESTS)
     # Library text and the dispatched DB copy are separate; synchronize only recognized defaults.
     source = entry_path(library_dir, IMAGE_QC_SKILL)
     if source.is_file() and source.resolve().is_relative_to(library_dir.resolve()):
@@ -136,7 +158,7 @@ def _upgrade_builtin_assets(store, library_dir: Path) -> bool:
                 skill_updated = True
         except (OSError, UnicodeError):
             logging.getLogger(__name__).warning("Could not synchronize the stock image QC skill", exc_info=True)
-    return report_updated or skill_updated
+    return report_updated or skill_updated or checks_updated
 
 
 def _upgrade_stock_prompt(registry) -> bool:
