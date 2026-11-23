@@ -363,6 +363,8 @@ Tools 使用同一个管理端请求入口，不需要单独配置 `base_url`。
 
 机器入口统一为用户服务基址加 `/agent/{slug}`，其下提供 `/mcp`、`/a2a`、`/v1/tasks`、`/oauth/token` 和 `/.well-known/...`。顶级协议入口已移除。代理应转发 Authorization，不能把协议请求改成网页登录页；A2A SSE 与 REST 任务流都要关闭缓冲。机器请求体最多 30 MiB，OAuth 表单最多 16 KiB，网关可设置更严格的限制。
 
+用户服务对实际 SSE 响应统一保证 `Content-Type: text/event-stream`（可带 charset）、`Cache-Control` 包含 `no-cache`、`X-Accel-Buffering: no`，覆盖网页对话、临时工作台、REST 和协议 SDK 的事件流。已有 `no-store`、`no-transform` 等指令保留，例如临时工作台返回 `no-cache, no-store`。NGINX 通常会消费 `X-Accel-Buffering` 而不继续转发，因此核对外部响应时也要检查上游服务头和代理规则；若外层网关必须读取该头，可由部署者按需配置 `proxy_pass_header X-Accel-Buffering`。服务响应头不能替代每层代理的缓冲与超时配置。
+
 使用客户端配置的完整 MCP URL、Agent Card URL 或 ClientFactory 基址时，始终包含前缀。MCP 未授权响应提供 `WWW-Authenticate` 的 `resource_metadata` 地址，可据此访问本服务的 metadata。
 
 带路径的 OAuth issuer 自动发现可能按 RFC 8414 在域名根下寻找 `/.well-known/oauth-authorization-server/<服务前缀>`；受保护资源也可能寻找 `/.well-known/oauth-protected-resource/<服务前缀>/mcp`。本应用的 metadata 位于公共前缀加 `/agent/{slug}` 下；自动发现需包含完整 Agent 路径。需要自动发现的网关应为这些域名根路径配置到对应 metadata 的路由，或让调用方显式配置 metadata 地址。不要把其他服务的整个 `/.well-known/` 目录都转发到 UMEKO。当前只实现客户端凭据流程，没有交互式 OAuth / PKCE。

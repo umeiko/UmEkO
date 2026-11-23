@@ -67,12 +67,21 @@ def test_mcp_official_client(machine_server, mode):
 def test_a2a_official_client(machine_server, streaming):
     base, app, a, b = machine_server
     async def check():
-        async with httpx.AsyncClient(headers={"Authorization":"Bearer "+a["token"], "A2A-Version":"1.0"}, trust_env=False, timeout=15) as http:
+        streamed = []
+        async def check_headers(response):
+            if response.headers.get("content-type", "").split(";", 1)[0].strip().lower() == "text/event-stream":
+                assert "no-cache" in {value.strip().lower() for value in response.headers["cache-control"].split(",")}
+                if not app.root_path:  # NGINX consumes X-Accel-Buffering upstream.
+                    assert response.headers["x-accel-buffering"] == "no"
+                streamed.append(response)
+        async with httpx.AsyncClient(headers={"Authorization":"Bearer "+a["token"], "A2A-Version":"1.0"},
+                                     event_hooks={"response": [check_headers]}, trust_env=False, timeout=15) as http:
             client = await ClientFactory(ClientConfig(httpx_client=http,streaming=streaming)).create_from_url(base)
             request = a2a.SendMessageRequest(message=a2a.Message(message_id="sdk-message",role=a2a.Role.ROLE_USER,
                 parts=[a2a.Part(text="A2A SDK"),a2a.Part(raw=b"A2A attachment",filename="input.txt",media_type="text/plain")]))
             events = [event async for event in client.send_message(request)]
             assert events
+            assert bool(streamed) is streaming
             task_id = next(e.task.id for e in events if e.HasField("task"))
             results_url = base + f"/v1/tasks/{task_id}/results"
             for event in events:
@@ -103,6 +112,9 @@ def test_a2a_official_client(machine_server, streaming):
             assert len(app.state.task_service.list({**app.state.identity_store.authenticate(a["token"]), "agent_id": app.state.fixture_agent["id"]})["tasks"]) == 1
             assert task.artifacts[1].parts[0].url.startswith(base + "/v1/tasks/")
             assert (await http.get(task.artifacts[1].parts[0].url)).status_code == 200
+            async with http.stream("GET", base + f"/v1/tasks/{task_id}/events") as response:
+                assert response.headers["content-type"].startswith("text/event-stream")
+                assert "task.completed" in (await response.aread()).decode()
             with pytest.raises(Exception, match="任务列表"):
                 await client.list_tasks(a2a.ListTasksRequest())
         async with httpx.AsyncClient(headers={"Authorization":"Bearer "+b["token"], "A2A-Version":"1.0"},trust_env=False) as http:

@@ -22,6 +22,7 @@ from ..host.agents import AgentRegistry
 from ..host.builtin_agents import install_builtin_agents
 from .monitor import ResourceMonitor
 from .body_limit import MachineBodyLimitMiddleware
+from .sse import SSEHeadersMiddleware
 from .agent_card import AgentCards
 from .agent_routing import AgentRoutingMiddleware, publish_agent_schema
 from .protocols import add_a2a_routes, build_mcp
@@ -1091,6 +1092,7 @@ def create_app(
     from .temporary import TemporaryWorkspaceMiddleware
     app.add_middleware(TemporaryWorkspaceMiddleware, tasks=service.task_service, base_path=base_path,
                        guide_url=guide_url(settings.public_url, base_path))
+    app.add_middleware(SSEHeadersMiddleware)
     internal_openapi = app.openapi
     def agent_openapi():
         return publish_agent_schema(internal_openapi())

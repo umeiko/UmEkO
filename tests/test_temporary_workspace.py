@@ -65,7 +65,7 @@ def test_temporary_events_external_runs_and_expiry(machine_server):
                 # NGINX consumes this upstream header rather than forwarding it.
                 if not app.root_path:
                     assert response.headers["x-accel-buffering"] == "no"
-                assert response.headers["cache-control"] == "no-store"
+                assert {"no-cache", "no-store"} <= {value.strip().lower() for value in response.headers["cache-control"].split(",")}
                 lines = response.iter_lines()
                 event, initial = next_workspace_event(lines)
                 assert event == "session.changed" and initial["run_id"] is None
@@ -154,6 +154,8 @@ def test_temporary_continuation_and_scope(machine_client, anonymous):
     run_id = run.json()["id"]
     stream = client.get(base + "/v1/runs/" + run_id + "/events")
     assert stream.status_code == 200 and "run.completed" in stream.text
+    assert stream.headers["content-type"].startswith("text/event-stream")
+    assert "no-cache" in {value.strip().lower() for value in stream.headers["cache-control"].split(",")}
     assert stream.headers["x-accel-buffering"] == "no"
     messages = client.get(scope + "/messages").json()
     assert [m["role"] for m in messages] == ["user", "assistant", "user", "assistant"]
