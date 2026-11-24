@@ -163,7 +163,26 @@ class Store:
                 db.execute(
                     "ALTER TABLE default_skills ADD COLUMN enabled INTEGER NOT NULL DEFAULT 1"
                 )
+            self._migrate_tool_names(db)
             db.execute("PRAGMA optimize")
+
+    @staticmethod
+    def _migrate_tool_names(db):
+        """Preserve grants and disabled flags when a capability is renamed."""
+        from ..tool_catalog import TOOL_ALIASES, canonical_tool_name
+        for old, current in TOOL_ALIASES.items():
+            # An explicitly configured current name wins over a legacy row.
+            db.execute("INSERT OR IGNORE INTO tool_dispatch(name,enabled) "
+                       "SELECT ?,enabled FROM tool_dispatch WHERE name=?", (current, old))
+            db.execute("DELETE FROM tool_dispatch WHERE name=?", (old,))
+            rows = db.execute("SELECT user_id,allowed_tool_names FROM user_tool_access "
+                              "WHERE instr(allowed_tool_names,?)>0", (old,)).fetchall()
+            for row in rows:
+                names = json.loads(row["allowed_tool_names"])
+                renamed = list(dict.fromkeys(canonical_tool_name(name) for name in names))
+                if renamed != names:
+                    db.execute("UPDATE user_tool_access SET allowed_tool_names=?,updated_at=? WHERE user_id=?",
+                               (json.dumps(renamed), _now(), row["user_id"]))
 
     @staticmethod
     def hash_password(password: str, salt: bytes | None = None) -> str:
@@ -529,7 +548,8 @@ class Store:
         return [{**tool, "enabled": tool["required"] or flags.get(tool["name"], True)} for tool in tool_catalog()]
 
     def set_tool_dispatch(self, name: str, enabled: bool) -> dict:
-        from ..tool_catalog import CONFIGURABLE_TOOLS, REQUIRED_TOOLS
+        from ..tool_catalog import CONFIGURABLE_TOOLS, REQUIRED_TOOLS, canonical_tool_name
+        name = canonical_tool_name(name)
         if name in REQUIRED_TOOLS:
             raise ValueError("机器任务答案提交是协议必需工具，不能停用")
         if name not in CONFIGURABLE_TOOLS:
@@ -553,13 +573,14 @@ class Store:
                 "retired_tool_names": [name for name in names or [] if name in RETIRED_TOOLS]}
 
     def set_user_tool_access(self, user_id: str, allowed_tool_names: list[str] | None) -> dict:
-        from ..tool_catalog import CONFIGURABLE_TOOLS
+        from ..tool_catalog import CONFIGURABLE_TOOLS, canonical_tool_name
         self.user_tool_access(user_id)
         if allowed_tool_names is not None:
-            if (not isinstance(allowed_tool_names, list) or any(not isinstance(name, str) for name in allowed_tool_names)
-                    or not set(allowed_tool_names) <= CONFIGURABLE_TOOLS):
+            if not isinstance(allowed_tool_names, list) or any(not isinstance(name, str) for name in allowed_tool_names):
                 raise ValueError("请选择有效的可配置工具，协议必需工具自动保留")
-            allowed_tool_names = list(dict.fromkeys(allowed_tool_names))
+            allowed_tool_names = list(dict.fromkeys(canonical_tool_name(name) for name in allowed_tool_names))
+            if not set(allowed_tool_names) <= CONFIGURABLE_TOOLS:
+                raise ValueError("请选择有效的可配置工具，协议必需工具自动保留")
         with self.connect() as db:
             db.execute("INSERT OR REPLACE INTO user_tool_access VALUES (?,?,?)",
                        (user_id, json.dumps(allowed_tool_names) if allowed_tool_names is not None else None, _now()))

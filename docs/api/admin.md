@@ -131,7 +131,7 @@ CLI 的导入文件只包含内层文档。导入按 Provider / 模型名称合�
 `submit_results` 是机器任务协议必需工具，不提供停用开关，不接受用户自选授权；它只在机器任务
 和对应临时工作台中注入，普通会话和子 Agent 均不暴露。
 
-`download_url` 可以读取网页正文或下载文件到当前工作区，文件最大 20 MB。使用方式见[文件与技能](files-skills.md#url-download)。
+`fetch_url` 可以读取网页正文或下载文件到当前工作区，文件最大 20 MB。使用方式见[文件与技能](files-skills.md#url-download)。
 
 | 方法 | 路径 | 用途 |
 | --- | --- | --- |

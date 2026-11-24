@@ -16,6 +16,7 @@ from .prompts.vision import (
     IMAGE_REASONING_DESCRIPTION, IMAGE_REASONING_PROMPT_DESCRIPTION, image_input_guidance,
 )
 from .session import Session
+from .tool_catalog import canonical_tool_name
 from .skills import Skill, build_file_tools, resolve_readable_path
 
 logger = logging.getLogger(__name__)
@@ -33,7 +34,7 @@ SUBAGENT_TOOL_NAMES = {
     "image_reasoning",
     "archive_tool",
     "file_operate",
-    "download_url",
+    "fetch_url",
 }
 
 SUBAGENT_SYSTEM = """你是主 Agent 启动的文件处理子 Agent，只完成收到的单个任务。
@@ -47,6 +48,7 @@ find_files/grep_files 缩小范围，再读取必要文件；大文件只提炼
 读完后自行提炼要点。写文件前先读取并确认依据。
 文件整理用 file_operate（cp/mv/rm/mkdir），target 为完整目标路径；默认不覆盖。
 目录复制与递归删除需 recursive=true，只在任务需要时删除，不得越出安全目录。
+HTTP/HTTPS 资料用 fetch_url 读取；图片链接先用 mode="download" 取得实际本地路径，再交给 image_reasoning，不把 URL 或网页正文当作图片。
 最终返回给主 Agent 的报告应简洁、可执行，必须包含关键发现、涉及路径、已做修改和未解决问题，
 通常控制在 2000 个中文字符以内。"""
 
@@ -161,6 +163,7 @@ class FileSubAgent:
             )
         self._should_cancel = should_cancel
         if allowed_tools is not None:
+            allowed_tools = frozenset(canonical_tool_name(name) for name in allowed_tools)
             self._skills = {name: skill for name, skill in self._skills.items() if name in allowed_tools}
             self._system_prompt += "\n只调用本轮实际提供的工具；工具未开放时说明限制，不绕过权限。"
         self._on_event = on_event
@@ -243,7 +246,7 @@ class FileSubAgent:
         self._emit("started", task=task)
         try:
             allowed = set(self._skills) if allowed_tools is None else (
-                set(allowed_tools) & set(self._skills)
+                {canonical_tool_name(name) for name in allowed_tools} & set(self._skills)
             )
             tools = [
                 self._skills[name].to_openai_tool()
@@ -353,9 +356,10 @@ class FileSubAgent:
         *,
         allowed_tools: set[str] | None = None,
     ) -> str:
+        name = canonical_tool_name(name)
         if self._tool_authorizer is not None and not self._tool_authorizer(name):
             return f"错误：当前没有使用工具 {name} 的权限，请联系管理员。"
-        if allowed_tools is not None and name not in allowed_tools:
+        if allowed_tools is not None and name not in {canonical_tool_name(tool) for tool in allowed_tools}:
             return f"错误：本次子 Agent 任务无权使用工具 {name}"
         skill = self._skills.get(name)
         if skill is None:

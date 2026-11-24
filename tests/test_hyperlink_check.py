@@ -66,7 +66,7 @@ def link_pages(monkeypatch):
 def test_fetch_preserves_evidence_and_raw_html_for_target_checks(link_pages, tmp_path):
     base, visits = link_pages
     def fetch(route, **kwargs):
-        return download.download_url(base + route, root=tmp_path, **kwargs)
+        return download.fetch_url(base + route, root=tmp_path, **kwargs)
 
     for route, status in (("/missing", 404), ("/gone", 410), ("/protected", 401), ("/forbidden", 403)):
         assert f"HTTP {status}" in fetch(route)
@@ -106,7 +106,7 @@ def test_builtin_hyperlink_agent_protocol_delivery(machine_server, link_pages, m
         assert prompt in request
         loaded = agent._skills["use_skill"].handler(name="hyperlink-check")
         assert loaded and not loaded.startswith("错误")
-        page = json.loads(agent._skills["download_url"].handler(url=pages + "/withdrawn"))
+        page = json.loads(agent._skills["fetch_url"].handler(url=pages + "/withdrawn"))
         assert page["http_status"] == 200 and page["title"] == "Document withdrawn"
         # Exercise result plumbing using real fetched evidence, not an LLM correctness claim.
         text = "页面证据：" + page["content"]

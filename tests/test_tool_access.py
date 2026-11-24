@@ -1,6 +1,7 @@
 """Global dispatch, personal grants, both Agent roles, persistence and machine submissions."""
 import json
 import time
+from dataclasses import replace
 from types import SimpleNamespace
 
 from fastapi.testclient import TestClient
@@ -47,7 +48,7 @@ def test_global_dispatch_personal_grants_and_roles(access):
     assert {t["name"] for t in tools} == CONFIGURABLE_TOOLS | REQUIRED_TOOLS
     assert all(t["enabled"] for t in tools)
     state = e.service.create_session(user_id=e.owner["id"])
-    assert "write_file" in state.agent._skills and "download_url" in state.agent._subagent._skills
+    assert "write_file" in state.agent._skills and "fetch_url" in state.agent._subagent._skills
     e.admin.put(e.api + "/tools/write_file", json={"enabled": False}).raise_for_status()
     args = json.dumps({"path": "blocked.txt", "content": "must not write"})
     assert "权限" in state.agent._execute("write_file", args)
@@ -57,16 +58,16 @@ def test_global_dispatch_personal_grants_and_roles(access):
     assert "write_file" not in fresh.agent._skills and "write_file" not in fresh.agent._subagent._skills
     url = e.api + f"/users/{e.owner['id']}/tool-access"
     assert e.admin.get(url).json()["allowed_tool_names"] is None
-    e.admin.put(url, json={"allowed_tool_names": ["write_file", "download_url"]}).raise_for_status()
+    e.admin.put(url, json={"allowed_tool_names": ["write_file", "fetch_url"]}).raise_for_status()
     granted = e.service.create_session(user_id=e.owner["id"])
-    assert set(granted.agent._skills) == set(granted.agent._subagent._skills) == {"write_file", "download_url"}
+    assert set(granted.agent._skills) == set(granted.agent._subagent._skills) == {"write_file", "fetch_url"}
     ordinary = e.service.create_session(user_id=e.other["id"])
     assert "write_file" not in ordinary.agent._skills
     e.admin.put(url, json={"allowed_tool_names": []}).raise_for_status()
     denied = e.service.create_session(user_id=e.owner["id"])
     assert not denied.agent._skills and not denied.agent._subagent._skills
     e.admin.put(url, json={"allowed_tool_names": None}).raise_for_status()
-    assert "download_url" in e.store.effective_tool_names(e.owner["id"])
+    assert "fetch_url" in e.store.effective_tool_names(e.owner["id"])
     assert "write_file" not in e.store.effective_tool_names(e.owner["id"])
 
 
@@ -104,11 +105,11 @@ def test_management_auth_validation_and_persistence(access):
     assert e.admin.put(url, json={"allowed_tool_names": ["unknown"]}).status_code == 400
     assert e.admin.put(url, json={"allowed_tool_names": ["submit_results"]}).status_code == 400
     assert e.admin.put(url, json={}).status_code == 422
-    e.admin.put(e.api + "/tools/download_url", json={"enabled": False}).raise_for_status()
-    e.admin.put(url, json={"allowed_tool_names": ["download_url"]}).raise_for_status()
+    e.admin.put(e.api + "/tools/fetch_url", json={"enabled": False}).raise_for_status()
+    e.admin.put(url, json={"allowed_tool_names": ["fetch_url"]}).raise_for_status()
     store = Store(e.store.path)
-    assert store.effective_tool_names(e.owner["id"]) == {"download_url", "submit_results"}
-    assert "download_url" not in store.effective_tool_names(e.other["id"])
+    assert store.effective_tool_names(e.owner["id"]) == {"fetch_url", "submit_results"}
+    assert "fetch_url" not in store.effective_tool_names(e.other["id"])
 
 
 def test_catalog_matches_native_tool_implementations(access):
@@ -116,6 +117,54 @@ def test_catalog_matches_native_tool_implementations(access):
     tools = build_file_tools(state.session, SimpleNamespace(add=lambda p: ""), vision_llm=object(),
                              command_runner=SimpleNamespace(run=lambda command: ""))
     assert {tool.name for tool in tools} | {"delegate_task", "submit_results"} == CONFIGURABLE_TOOLS | REQUIRED_TOOLS
+
+
+@pytest.mark.parametrize("current_flag", [None, False, True])
+def test_fetch_rename_migrates_old_grants_without_reopening_disabled_tool(access, current_flag):
+    e = access
+    with e.store.connect() as db:
+        db.execute("INSERT OR REPLACE INTO tool_dispatch VALUES ('download_url',0)")
+        if current_flag is not None:
+            db.execute("INSERT OR REPLACE INTO tool_dispatch VALUES ('fetch_url',?)", (int(current_flag),))
+        db.execute("INSERT OR REPLACE INTO user_tool_access VALUES (?,?,?)", (e.owner["id"],
+                   json.dumps(["download_url", "list_dir", "fetch_url"]), "fixture-time"))
+    restarted = Store(e.store.path)
+    expected_flag = current_flag if current_flag is not None else False
+    tool = next(t for t in restarted.tool_dispatch() if t["name"] == "fetch_url")
+    assert tool["enabled"] is expected_flag
+    assert "download_url" not in {t["name"] for t in restarted.tool_dispatch()}
+    assert restarted.user_tool_access(e.owner["id"])["allowed_tool_names"] == ["fetch_url", "list_dir"]
+    assert restarted.effective_tool_names(e.owner["id"]) == REQUIRED_TOOLS | {"fetch_url", "list_dir"}
+    assert ("fetch_url" in restarted.effective_tool_names(e.other["id"])) is expected_flag
+    assert Store(e.store.path).user_tool_access(e.owner["id"]) == restarted.user_tool_access(e.owner["id"])
+    with restarted.connect() as db:
+        assert db.execute("SELECT 1 FROM tool_dispatch WHERE name='download_url'").fetchone() is None
+
+
+def test_fetch_legacy_calls_share_current_authorization_and_are_not_disclosed(access):
+    e = access
+    state = e.service.create_session(user_id=e.owner["id"])
+    for agent in (state.agent, state.agent._subagent):
+        assert "fetch_url" in agent._skills and "download_url" not in agent._skills
+        agent._skills["fetch_url"] = replace(agent._skills["fetch_url"], handler=lambda **kwargs: "controlled fetch result")
+        for name in ("fetch_url", "download_url"):
+            assert agent._execute(name, '{"url":"https://docs.example.test/guide"}') == "controlled fetch result"
+    assert "download_url" not in {t["function"]["name"] for t in state.agent._tools}
+    child = state.agent._subagent
+    assert "无权" in child._execute("download_url", '{}', allowed_tools=set())
+    assert child._execute("download_url", '{}', allowed_tools={"fetch_url"}) == "controlled fetch result"
+    # Legacy management requests also update the canonical permission, never a separate switch.
+    response = e.admin.put(e.api + "/tools/download_url", json={"enabled": False})
+    assert response.status_code == 200 and response.json()["name"] == "fetch_url"
+    for agent in (state.agent, child):
+        for name in ("fetch_url", "download_url"):
+            assert "权限" in agent._execute(name, '{}')
+    url = e.api + f"/users/{e.owner['id']}/tool-access"
+    granted = e.admin.put(url, json={"allowed_tool_names": ["download_url", "fetch_url"]})
+    assert granted.json()["allowed_tool_names"] == ["fetch_url"]
+    assert state.agent._execute("download_url", '{}') == "controlled fetch result"
+    e.admin.put(url, json={"allowed_tool_names": []}).raise_for_status()
+    assert "权限" in state.agent._execute("download_url", '{}')
 
 
 def test_working_notes_use_only_general_file_tools(access):

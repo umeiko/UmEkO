@@ -559,7 +559,7 @@ enabled 控制启停；rotate=true 生成新凭据并撤销旧令牌。不要在
 
 认证：`umeko_admin` Cookie。
 
-以 enabled 显式设置开关；个人授权可独立开放全局关闭的工具。submit_results 不在此开关范围。
+以 enabled 显式设置开关；个人授权可独立开放全局关闭的工具。工具旧名兼容映射到当前名称，响应统一使用当前名称。submit_results 不在此开关范围。
 
 | 参数 | 位置 | 必填 | 类型与约束 |
 | --- | --- | --- | --- |
@@ -599,7 +599,7 @@ enabled 控制启停；rotate=true 生成新凭据并撤销旧令牌。不要在
 
 认证：`umeko_admin` Cookie。
 
-allowed_tool_names 是完整个人清单，null 跟随全局。保存后下一轮使用新权限。
+allowed_tool_names 是完整个人清单，null 跟随全局。工具旧名兼容映射到当前名称并去重。保存后下一轮使用新权限。
 
 | 参数 | 位置 | 必填 | 类型与约束 |
 | --- | --- | --- | --- |

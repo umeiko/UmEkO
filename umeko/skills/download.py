@@ -211,7 +211,7 @@ def _result_json(result, insecure_hosts_used):
     return json.dumps(result, ensure_ascii=False)
 
 
-def download_url(url: str, path: str = "", overwrite: bool = False, *, root: Path,
+def fetch_url(url: str, path: str = "", overwrite: bool = False, *, root: Path,
                  allowed_roots: tuple[Path, ...] | None = None, default_dir: str = "downloads",
                  should_cancel: CancelCheck = None, config: DownloadConfig = DownloadConfig(), mode: str = "auto") -> str:
     """Read a bounded text preview or publish a complete file atomically."""
@@ -313,3 +313,7 @@ def download_url(url: str, path: str = "", overwrite: bool = False, *, root: Pat
             connection.close()
         if temporary is not None:
             temporary.unlink(missing_ok=True)
+
+
+# Python callers from earlier integrations share the same implementation.
+download_url = fetch_url

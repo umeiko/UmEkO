@@ -22,6 +22,7 @@ description: 检查图片与图文文档的图文一致性、清晰度和原图�
 1. `write_file(path="generate/working_doc.md", content=完整内容)` 初始化工作笔记（见下方模板），这是断点续跑的依据。
 2. 确认视觉能力：若 `image_reasoning` 工具不在你的工具列表里（无视觉模型配置），
    **立即停止并告知用户**"需要配置视觉模型才能做图片质检"，不要硬跑。
+   用户以网址提供图片、文档或压缩包时，用 `fetch_url` 取得资料；图片和压缩包使用 `mode="download"` 保存到 workspace 的不同路径，再按返回的实际路径处理。网页说明可用默认模式读取，网页正文不能代替原图；URL 不能直接填进 image_reasoning 的 image_paths。链接受限或下载失败时记录实际原因；缺少关键资料则及时交付阻塞说明，不无限重试。
 3. **收到压缩包先解压**：用户附件若是压缩包（zip/7z/rar/tar 等），先用
    `archive_tool`（operation=`list`）查看包内结构，再 `archive_tool`（operation=`extract`）
    解压到 workspace，然后从解压出的 Markdown 文档开始质检；包内若有多份文档，
@@ -53,7 +54,7 @@ description: 检查图片与图文文档的图文一致性、清晰度和原图�
 >    这些图片使用 `attachments/<实际文件名>` 等 Session 相对路径，不要省略目录。
 > 5. 汇报：图片总数、清单路径、本地/外链/缺失分类。
 
-外链图（http/https）在清单里标注 `外链`，后续不检。
+外链图（HTTP/HTTPS）也纳入用户要求的检查范围：用 `fetch_url(url="图片原链接", mode="download", path="workspace/url-images/001.bin")` 取得本地文件，多图使用不同路径。清单同时保留原链接、文档位置和工具返回的 Session 相对 path；后续分析与报告打包使用本地 path。失败的链接记录实际错误及未检查原因；登录页或其他非图片响应不能视为已取得原图。不得绕过网络、权限或证书策略。
 
 ## 阶段 2：逐图质检（子 Agent #2..N，每图一个）
 
@@ -83,6 +84,7 @@ description: 检查图片与图文文档的图文一致性、清晰度和原图�
 >    ```
 >    文档配图的 image 使用**文档内的原始引用路径**，按 doc_dir 解析；直接上传、粘贴的
 >    图片使用 `attachments/<实际文件名>` 等 Session 相对路径，不拼到文档目录下。
+>    已下载的外链图片使用 `workspace/url-images/...` 的实际 Session 相对路径，保留原链接作为来源证据，不把 URL 写入 image 字段。
 >    不要只写附件文件名，也不要移动图片来凑相对路径。
 > 4. 用 `write_file` 覆盖 `generate/qc-progress.md`（读旧内容 + 追加本图一行
 >    `图名|状态` 整体写回）。
@@ -91,7 +93,7 @@ description: 检查图片与图文文档的图文一致性、清晰度和原图�
 **主 Agent 纪律（省轮次）**：
 - 只连续 `delegate_task`，每图 1 轮；进度看 qc-progress.md，不要每图更新 working_doc。
 - 每完成 5 张，向用户报一次进度（"已完成 x/N"）。
-- 外链图片派子 Agent 仅记录"外链未检"（status 用 SKIP），不调 image_reasoning。
+- 外链图片下载成功后按本地图片检查；无法取得的图片记录未检查原因（status 用 SKIP），不伪造 image_reasoning 结果。
 - 图片文件不存在：status 记 MISSING，继续下一张。
 - 单个子 Agent 反复失败 2 次：status 记 ERROR，跳过。
 

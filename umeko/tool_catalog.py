@@ -10,7 +10,7 @@ TOOL_CATALOG = (
     ("replace_in_file", "替换文件内容", "Replace file contents", "files"),
     ("file_operate", "文件与目录管理", "Manage files and directories", "files"),
     ("archive_tool", "压缩与解压", "Create and extract archives", "files"),
-    ("download_url", "读取网页与下载文件", "Fetch web pages and download files", "files"),
+    ("fetch_url", "读取网页与下载文件", "Fetch web pages and download files", "files"),
     ("read_image", "读取图片", "Read images", "vision"),
     ("image_reasoning", "图像推理", "Image reasoning", "vision"),
     ("list_skill_packs", "列出技能包", "List skill packs", "skills"),
@@ -25,6 +25,14 @@ TOOL_CATALOG = (
 )
 REQUIRED_TOOLS = frozenset({"submit_results"})
 CONFIGURABLE_TOOLS = frozenset(name for name, *_ in TOOL_CATALOG) - REQUIRED_TOOLS
+# Same capability under its former name; never expose a second tool or permission.
+TOOL_ALIASES = {"download_url": "fetch_url"}
+
+
+def canonical_tool_name(name: str) -> str:
+    return TOOL_ALIASES.get(name, name)
+
+
 # Guidance for old histories/instructions only; these names have no executable handlers.
 RETIRED_TOOLS = {
     "read_working_doc": "改用 read_document 读取产物目录的 working_doc.md（服务会话为 generate/working_doc.md）",
@@ -35,5 +43,5 @@ RETIRED_TOOLS = {
 def tool_catalog() -> list[dict]:
     return [{"name": name, "title": title, "title_en": english, "group": group,
              "required": name in REQUIRED_TOOLS,
-             "max_bytes": 20 * 1024 * 1024 if name == "download_url" else None}
+             "max_bytes": 20 * 1024 * 1024 if name == "fetch_url" else None}
             for name, title, english, group in TOOL_CATALOG]

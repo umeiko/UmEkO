@@ -179,7 +179,7 @@ def test_agent_decides_whether_download_failure_blocks_the_task(machine_client, 
         if len(turns) == 1:
             assert "下载或处理失败后，由你判断" in messages[0]["content"]
             return ChatCompletionMessage(role="assistant", tool_calls=[
-                tool_call("download_url", {"url": url}, "download")])
+                tool_call("fetch_url", {"url": url}, "download")])
         if len(turns) == 2:
             assert "HTTP_ERROR" in messages[-1]["content"]
             if can_continue:
@@ -190,7 +190,7 @@ def test_agent_decides_whether_download_failure_blocks_the_task(machine_client, 
                 "必要图片下载失败（HTTP 403），本轮无法继续质检。请外层 Agent 将响应 workspace_url 提供给用户，在临时工作台上传图片后继续。")
         return ChatCompletionMessage(role="assistant", tool_calls=[tool_call("submit_results", {
             "text": text, "files": [{"path": "generate/summary.txt"}] if can_continue else []}, "submit")])
-    monkeypatch.setattr("umeko.skills.file_tools.download_url", failed_download)
+    monkeypatch.setattr("umeko.skills.file_tools.fetch_url", failed_download)
     monkeypatch.setattr(UmekoAgent, "chat", REAL_CHAT)
     monkeypatch.setattr(LLMClient, "chat_with_tools_stream", llm_chat)
     headers = {"Authorization": "Bearer " + account["token"]}

@@ -70,7 +70,9 @@
 
 ## Agent 网页读取与文件下载 {#url-download}
 
-主 Agent 和文件子 Agent 使用同一个 `download_url` 工具读取 HTTP/HTTPS 网页或保存文件。
+主 Agent 和文件子 Agent 使用同一个 `fetch_url` 工具读取 HTTP/HTTPS 网页或保存文件。
+
+工具原名 `download_url`，现统一为 `fetch_url`。升级会保留全局关闭状态和个人授权，旧调用名兼容到同一工具并执行相同权限检查，模型工具列表只披露新名。产物响应中的 `download_url` 仍是下载地址字段，与工具名无关。
 
 ```json
 {"url":"https://docs.example.com/guide","mode":"auto"}
@@ -87,6 +89,8 @@
 可指定 `workspace/` 或 `generate/` 下的相对路径；已有文件默认不覆盖，显式 `overwrite=true`
 仅允许覆盖文件。成功返回 JSON 的 `path`、`size` 和 `files`，不把文件正文放进模型上下文。
 文件需要再次给外部调用方下载时，仍由 Agent 通过 `submit_results` 选择最终交付件。
+
+图片链接交给图像推理或图像质检前，用 `fetch_url(url="图片链接", mode="download", path="workspace/url-images/001.bin")` 取得实际文件，再将返回的 Session 相对路径传给 `image_reasoning`；不把 URL 或网页正文当作本地图片。下载失败时保留实际错误，网络、证书及文件边界规则继续生效。
 
 上限为 **20×1024×1024 字节**，先检查大小声明，再对实际接收字节计数；没有声明大小也受限。
 超限、下载中断、失败或取消时删除临时文件，保留原有文件。下载不解压、不执行内容，也不

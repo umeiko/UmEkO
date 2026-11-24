@@ -134,13 +134,13 @@ def test_both_agent_roles_receive_server_download_policy(tmp_path, monkeypatch):
     settings = Settings(ModelConfig("fixture", "fixture-key", "https://unused.invalid"), download=config)
     service = AgentService(settings, tmp_path / "data", tmp_path / "output")
     seen = []
-    monkeypatch.setattr(file_tools, "download_url",
+    monkeypatch.setattr(file_tools, "fetch_url",
                         lambda *args, **kwargs: seen.append((kwargs["config"], kwargs["mode"])) or "fixture")
     try:
         user = service.store.create_user("download-user", "fixture-password")
         session = service.create_session(user_id=user["id"])
         for agent in (session.agent, session.agent._subagent):
-            tool = agent._skills["download_url"]
+            tool = agent._skills["fetch_url"]
             assert set(tool.parameters["properties"]) == {"url", "path", "overwrite", "mode"}
             assert tool.handler("https://files.internal/guide", mode="text") == "fixture"
         assert seen == [(config, "text"), (config, "text")]

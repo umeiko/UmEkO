@@ -95,6 +95,42 @@ def test_upgrade_keeps_existing_same_slug_definitions(tmp_path):
     assert [registry.get(item["id"]) for item in before] == before
 
 
+@pytest.mark.parametrize("slug", [HYPERLINK_CHECK_SLUG, DOCUMENT_CHECK_SLUG])
+def test_fetch_rename_upgrades_stock_instructions_without_touching_old_session_or_customizations(tmp_path, slug):
+    app = app_for(tmp_path)
+    service, store = app.state.agent_service, app.state.store
+    registry, library = service.agent_registry, service._skills_library_dir()
+    owner = store.create_user("rename-fixture", "fixture-pass")
+    definition = registry.by_slug(slug)
+    skill = slug + ".md"
+    path = entry_path(library, skill)
+    current = path.read_text(encoding="utf-8")
+    previous = current.replace("fetch_url", "download_url")
+    path.write_text(previous, encoding="utf-8")
+    store.upsert_default_skill(skill, previous)
+    old = service.create_session(user_id=owner["id"], agent_snapshot=registry.snapshot(definition))
+    try:
+        store.set_default_skill_enabled(skill, False)
+        registry.save({**definition, "name": "Administrator label", "enabled": False,
+                       "system_prompt": definition["system_prompt"].replace("fetch_url", "download_url")}, definition["id"])
+        assert install_builtin_agents(registry, library)
+        assert path.read_text(encoding="utf-8") == store.default_skill(skill) == current
+        assert not next(s for s in store.default_skills() if s["name"] == skill)["enabled"]
+        assert entry_path(old.root / "client/skills", skill).read_text(encoding="utf-8") == previous
+        upgraded = registry.get(definition["id"])
+        assert upgraded["system_prompt"] == definition["system_prompt"]
+        assert upgraded["name"] == "Administrator label" and not upgraded["enabled"]
+        custom = previous + "\nAdministrator custom instructions."
+        path.write_text(custom, encoding="utf-8")
+        store.upsert_default_skill(skill, custom)
+        registry.save({**upgraded, "system_prompt": "Administrator custom prompt with download_url."}, definition["id"])
+        assert not install_builtin_agents(registry, library)
+        assert path.read_text(encoding="utf-8") == store.default_skill(skill) == custom
+        assert registry.get(definition["id"])["system_prompt"] == "Administrator custom prompt with download_url."
+    finally:
+        service.evict_session(old.id)
+
+
 @pytest.mark.parametrize("prefix", ["", "/teams/umeko"])
 @pytest.mark.parametrize("count", [1, 5])
 @pytest.mark.parametrize("suffix", [".png", "", ".bin", ".jpg"])
@@ -122,7 +158,7 @@ def test_image_reasoning_tasks_accept_images_and_open_prompt(tmp_path, monkeypat
         assert question in prompt
         assert images and len(images) == count
         instructions = agent._skills["use_skill"].handler(name="image-reasoning")
-        assert instructions and "错误" not in instructions
+        assert instructions and not instructions.startswith("错误：")
         answer = agent._skills["image_reasoning"].handler(prompt=question, image_paths=[str(path) for path in images])
         agent._skills["submit_results"].handler(text=answer, files=[])
         return answer

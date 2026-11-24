@@ -6,7 +6,7 @@ export async function checkToolAccess(page, context, adminBase, state, prefix, s
   const retiredUid = users.find((u) => u.username === 'ui-retired-tools').id;
   await checkRetiredToolScope(page, context, adminBase, retiredUid);
   const scope = adminBase + `/admin/v1/users/${uid}/tool-access`;
-  const dispatchUrl = adminBase + '/admin/v1/tools/download_url';
+  const dispatchUrl = adminBase + '/admin/v1/tools/fetch_url';
   const expected = new Set([
     `GET ${adminBase}/admin/v1/tools`,
     `PUT ${dispatchUrl}`,
@@ -36,7 +36,7 @@ export async function checkToolAccess(page, context, adminBase, state, prefix, s
     }
     await page.locator('#tab-tools').click();
     await checkToolOrganization(page, prefix, screenshot);
-    const download = page.locator('#tool-dispatch-download_url');
+    const download = page.locator('#tool-dispatch-fetch_url');
     await download.waitFor();
     assert.ok(await download.isChecked());
     assert.equal(
@@ -61,26 +61,26 @@ export async function checkToolAccess(page, context, adminBase, state, prefix, s
     await row.getByRole('button', { name: '工具权限', exact: true }).click();
     const dialog = page.locator('#user-tool-access[open]');
     await dialog.waitFor();
-    await dialog.locator('#user-tool-download_url').waitFor();
+    await dialog.locator('#user-tool-fetch_url').waitFor();
     assert.ok(await dialog.locator('#user-inherit-tools').isChecked());
-    assert.equal(await dialog.locator('#user-tool-download_url').isChecked(), false);
-    assert.equal(await dialog.locator('#user-tool-download_url').isDisabled(), false);
-    await dialog.locator('#user-tool-download_url').check();
+    assert.equal(await dialog.locator('#user-tool-fetch_url').isChecked(), false);
+    assert.equal(await dialog.locator('#user-tool-fetch_url').isDisabled(), false);
+    await dialog.locator('#user-tool-fetch_url').check();
     await dialog.locator('#user-tool-access-save').click();
     await dialog.waitFor({ state: 'hidden' });
     assert.ok(
-      (await (await context.request.get(scope)).json()).allowed_tool_names.includes('download_url'),
+      (await (await context.request.get(scope)).json()).allowed_tool_names.includes('fetch_url'),
     );
     assert.equal(
       (await (await context.request.get(adminBase + '/admin/v1/tools')).json()).tools.find(
-        (t) => t.name === 'download_url',
+        (t) => t.name === 'fetch_url',
       ).enabled,
       false,
     );
     await row.getByRole('button', { name: '工具权限', exact: true }).click();
     await dialog.waitFor();
-    await dialog.locator('#user-tool-download_url').waitFor();
-    assert.ok(await dialog.locator('#user-tool-download_url').isChecked());
+    await dialog.locator('#user-tool-fetch_url').waitFor();
+    assert.ok(await dialog.locator('#user-tool-fetch_url').isChecked());
     await dialog.getByRole('button', { name: '清空工具选择', exact: true }).click();
     assert.ok(await dialog.locator('#user-tool-submit_results').isChecked());
     assert.ok(await dialog.locator('#user-tool-submit_results').isDisabled());
@@ -122,7 +122,7 @@ async function checkToolOrganization(page, prefix, screenshot) {
   await screenshot(page, 'tools-categories-collapsed', prefix);
   await files.focus();
   await files.press('Enter');
-  await page.locator('#tool-dispatch-download_url').waitFor();
+  await page.locator('#tool-dispatch-fetch_url').waitFor();
   assert.equal(await files.getAttribute('aria-expanded'), 'true');
 
   await search.fill('  SKILL_SCRIPT  ');
@@ -134,7 +134,7 @@ async function checkToolOrganization(page, prefix, screenshot) {
   );
   await screenshot(page, 'tools-search-scripts', prefix);
   await search.press('Escape');
-  await page.locator('#tool-dispatch-download_url').waitFor();
+  await page.locator('#tool-dispatch-fetch_url').waitFor();
   assert.equal(await files.getAttribute('aria-expanded'), 'true');
   assert.equal(
     await page.locator('#tool-group-toggle-skills').getAttribute('aria-expanded'),
@@ -158,7 +158,7 @@ async function checkToolOrganization(page, prefix, screenshot) {
   await page.getByText('No matching tools', { exact: true }).waitFor();
   assert.equal(await rows.count(), 0);
   await page.getByRole('button', { name: 'Reset filters', exact: true }).click();
-  await page.locator('#tool-dispatch-download_url').waitFor();
+  await page.locator('#tool-dispatch-fetch_url').waitFor();
   await page.locator('#tools-expand-all').click();
   await page.locator('#tool-dispatch-submit_results').waitFor();
   assert.equal(

@@ -4086,7 +4086,7 @@
 <h2 id="put-adminv1toolsname">PUT /admin/v1/tools/{name}<a class="headerlink" href="#put-adminv1toolsname" title="Permanent link">&para;</a></h2>
 <p>设置工具全局下发</p>
 <p>认证：<code>umeko_admin</code> Cookie。</p>
-<p>以 enabled 显式设置开关；个人授权可独立开放全局关闭的工具。submit_results 不在此开关范围。</p>
+<p>以 enabled 显式设置开关；个人授权可独立开放全局关闭的工具。工具旧名兼容映射到当前名称，响应统一使用当前名称。submit_results 不在此开关范围。</p>
 <table>
 <thead>
 <tr>
@@ -4176,7 +4176,7 @@
 <h2 id="put-adminv1usersuser_idtool-access">PUT /admin/v1/users/{user_id}/tool-access<a class="headerlink" href="#put-adminv1usersuser_idtool-access" title="Permanent link">&para;</a></h2>
 <p>设置用户工具权限</p>
 <p>认证：<code>umeko_admin</code> Cookie。</p>
-<p>allowed_tool_names 是完整个人清单，null 跟随全局。保存后下一轮使用新权限。</p>
+<p>allowed_tool_names 是完整个人清单，null 跟随全局。工具旧名兼容映射到当前名称并去重。保存后下一轮使用新权限。</p>
 <table>
 <thead>
 <tr>

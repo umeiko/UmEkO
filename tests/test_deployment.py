@@ -33,16 +33,16 @@ def test_admin_prefix_assets_auth_and_management(tmp_path, prefix):
             assert admin.get(prefix + "/admin/v1/me").json()["id"] == account["id"]
             for route in ("users", "providers", "skill-library", "tools", "resources", "tasks", "agents", "service-accounts"):
                 assert admin.get(prefix + "/admin/v1/" + route).status_code == 200
-            dispatch = prefix + "/admin/v1/tools/download_url"
+            dispatch = prefix + "/admin/v1/tools/fetch_url"
             access = prefix + f"/admin/v1/users/{account['id']}/tool-access"
             assert admin.put(dispatch, json={"enabled": False}).status_code == 200
-            assert admin.put(access, json={"allowed_tool_names": ["download_url"]}).status_code == 200
+            assert admin.put(access, json={"allowed_tool_names": ["fetch_url"]}).status_code == 200
             # A new page load and subsequent reads retain the cookie and saved grants.
             assert admin.get(prefix + "/").status_code == 200
-            assert admin.get(access).json()["allowed_tool_names"] == ["download_url"]
+            assert admin.get(access).json()["allowed_tool_names"] == ["fetch_url"]
             assert not next(tool for tool in admin.get(prefix + "/admin/v1/tools").json()["tools"]
-                            if tool["name"] == "download_url")["enabled"]
-            assert "download_url" in store.effective_tool_names(account["id"])
+                            if tool["name"] == "fetch_url")["enabled"]
+            assert "fetch_url" in store.effective_tool_names(account["id"])
             created = admin.post(prefix + "/admin/v1/service-accounts", json={"name": "test-service"})
             assert created.status_code == 201
             assert admin.delete(prefix + "/admin/v1/service-accounts/" + created.json()["id"]).status_code == 204

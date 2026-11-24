@@ -3813,7 +3813,7 @@
     },
     "/admin/v1/tools/{name}": {
       "put": {
-        "description": "以 enabled 显式设置开关；个人授权可独立开放全局关闭的工具。submit_results 不在此开关范围。",
+        "description": "以 enabled 显式设置开关；个人授权可独立开放全局关闭的工具。工具旧名兼容映射到当前名称，响应统一使用当前名称。submit_results 不在此开关范围。",
         "operationId": "set_tool_dispatch_admin_v1_tools__name__put",
         "parameters": [
           {
@@ -4324,7 +4324,7 @@
         "x-umeko-mutating": false
       },
       "put": {
-        "description": "allowed_tool_names 是完整个人清单，null 跟随全局。保存后下一轮使用新权限。",
+        "description": "allowed_tool_names 是完整个人清单，null 跟随全局。工具旧名兼容映射到当前名称并去重。保存后下一轮使用新权限。",
         "operationId": "set_user_tool_access_admin_v1_users__user_id__tool_access_put",
         "parameters": [
           {

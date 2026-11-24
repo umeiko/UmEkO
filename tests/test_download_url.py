@@ -79,7 +79,7 @@ def files(tmp_path, monkeypatch):
     root = tmp_path / "session"
     (root / "workspace").mkdir(parents=True); (root / "generate").mkdir()
     def run(route, **kwargs):
-        return download.download_url(f"http://files.example.test:{server.server_port}{route}", root=root,
+        return download.fetch_url(f"http://files.example.test:{server.server_port}{route}", root=root,
             allowed_roots=(root / "workspace", root / "generate"), default_dir="workspace/downloads", **kwargs)
     yield run, root
     server.shutdown(); server.server_close(); thread.join(2)
@@ -160,7 +160,7 @@ def test_destination_boundary(files, path):
 @pytest.mark.parametrize("url", ["file:///etc/passwd", "ftp://example.com/a", "http://user:pass@example.com/file",
                                   "http://127.0.0.1/a", "http://[::1]/a", "http://169.254.169.254/a", "http://224.0.0.1/a"])
 def test_unsupported_urls_and_private_addresses_are_rejected(tmp_path, url):
-    result = download.download_url(url, root=tmp_path)
+    result = download.fetch_url(url, root=tmp_path)
     assert result.startswith("错误：") and not list(tmp_path.iterdir())
 
 
@@ -242,7 +242,7 @@ def secure_files(tmp_path, monkeypatch):
     root.mkdir()
 
     def run(route="/file.txt", host="files.example.test", **kwargs):
-        return download.download_url(f"https://{host}:{server.server_port}{route}", root=root, **kwargs)
+        return download.fetch_url(f"https://{host}:{server.server_port}{route}", root=root, **kwargs)
 
     yield run, root, str(ca_file)
     server.shutdown(); server.server_close(); thread.join(2)
@@ -294,7 +294,7 @@ def test_internal_host_grants_do_not_allow_local_or_metadata_addresses(monkeypat
 
 
 def test_insecure_tls_grant_does_not_grant_internal_network_access(tmp_path):
-    result = download.download_url("https://127.0.0.1/file.txt", root=tmp_path,
+    result = download.fetch_url("https://127.0.0.1/file.txt", root=tmp_path,
                                    config=DownloadConfig(insecure_tls_hosts=("127.0.0.1",)))
     assert "网络策略拒绝" in result and not list(tmp_path.iterdir())
 
@@ -312,6 +312,6 @@ def test_connection_errors_return_visible_category_without_leaking_url(tmp_path,
     def fail(*args):
         raise failure
     monkeypatch.setattr(download, "_open", fail)
-    result = download.download_url("https://files.example.test/file?token=do-not-expose", root=tmp_path)
+    result = download.fetch_url("https://files.example.test/file?token=do-not-expose", root=tmp_path)
     assert result.startswith("错误：") and code in result and "do-not-expose" not in result
     assert not list(tmp_path.iterdir())

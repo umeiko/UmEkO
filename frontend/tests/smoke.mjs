@@ -1098,7 +1098,7 @@ try {
         assert.equal((await context.request.get(adminBase + '/admin/v1/tools')).status(), 401);
         assert.equal(
           (
-            await context.request.put(adminBase + '/admin/v1/tools/download_url', {
+            await context.request.put(adminBase + '/admin/v1/tools/fetch_url', {
               data: { enabled: true },
             })
           ).status(),
@@ -1949,7 +1949,7 @@ try {
         assert.equal((await context.request.get(adminBase + route)).status(), 401);
       assert.equal(
         (
-          await context.request.put(adminBase + '/admin/v1/tools/download_url', {
+          await context.request.put(adminBase + '/admin/v1/tools/fetch_url', {
             data: { enabled: false },
           })
         ).status(),
