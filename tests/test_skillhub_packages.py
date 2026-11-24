@@ -50,7 +50,7 @@ def run(pack, root, script, arguments):
 
 def test_complete_portable_reproducible_packages(packages, tmp_path):
     source, snapshot, output, archives = packages
-    assert {p.stem for p in archives} == {"doc-image-qc", "drawio-flowchart", "image-reasoning", "drawio-correction", "document-check"}
+    assert {p.stem for p in archives} == {"doc-image-qc", "drawio-flowchart", "image-reasoning", "drawio-correction", "document-check", "hyperlink-check"}
     for archive_path in archives:
         with zipfile.ZipFile(archive_path) as archive:
             assert archive.testzip() is None

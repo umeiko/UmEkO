@@ -1,7 +1,8 @@
-"""Bounded HTTP(S) downloads with pinned DNS and administrator-scoped trust."""
+"""Bounded HTTP(S) fetches with pinned DNS and administrator-scoped trust."""
 from __future__ import annotations
 
 from email.message import Message
+from html.parser import HTMLParser
 import http.client
 import ipaddress
 import json
@@ -20,7 +21,11 @@ from ..file_operations import bounded_path
 from ..skill_security import guard_skill_write
 
 MAX_DOWNLOAD_BYTES = 20 * 1024 * 1024
+MAX_FETCH_BYTES = 1024 * 1024
+MAX_FETCH_CHARS = 12_000
 MAX_REDIRECTS = 5
+FETCH_MODES = ("auto", "text", "download")
+_HTML_TYPES = {"text/html", "application/xhtml+xml"}
 _INTERNAL_NETWORKS = tuple(ipaddress.ip_network(value) for value in (
     "10.0.0.0/8", "172.16.0.0/12", "192.168.0.0/16", "fc00::/7",
 ))
@@ -94,16 +99,130 @@ def _filename(url: str, headers) -> str:
     return name
 
 
+class _PageText(HTMLParser):
+    _hidden = {"script", "style", "template", "noscript", "svg", "nav", "footer"}
+    _void = {"area", "base", "br", "col", "embed", "hr", "img", "input", "link", "meta", "param", "source", "track", "wbr"}
+    _blocks = {"article", "blockquote", "br", "dd", "div", "dl", "dt", "h1", "h2", "h3", "h4", "h5",
+               "h6", "hr", "li", "main", "p", "pre", "section", "td", "th", "tr"}
+
+    def __init__(self):
+        super().__init__(convert_charrefs=True)
+        self.parts = []
+        self.title = []
+        self.in_head = self.in_title = False
+        self.hidden_tag = None
+        self.hidden_depth = 0
+
+    def handle_starttag(self, tag, attrs):
+        if self.hidden_tag:
+            if tag == self.hidden_tag:
+                self.hidden_depth += 1
+            return
+        attributes = dict(attrs)
+        if tag in self._hidden or (tag not in self._void and (
+            "hidden" in attributes or attributes.get("aria-hidden") == "true"
+        )):
+            self.hidden_tag, self.hidden_depth = tag, 1
+        elif tag == "head":
+            self.in_head = True
+        elif tag == "body":
+            self.in_head = self.in_title = False
+        elif tag == "title":
+            self.in_title = True
+        elif tag in self._blocks:
+            self.parts.append("\n")
+
+    def handle_endtag(self, tag):
+        if self.hidden_tag:
+            if tag == self.hidden_tag:
+                self.hidden_depth -= 1
+                if self.hidden_depth == 0:
+                    self.hidden_tag = None
+            return
+        if tag == "head" or tag == "body":
+            self.in_head = self.in_title = False
+        elif tag == "title":
+            self.in_title = False
+        elif tag in self._blocks:
+            self.parts.append("\n")
+
+    def handle_data(self, data):
+        if self.hidden_tag:
+            return
+        if self.in_title:
+            self.title.append(data)
+        elif not self.in_head:
+            self.parts.append(re.sub(r"\s+", " ", data))
+
+
+def _chunks(response, started, should_cancel, limit=None):
+    while limit is None or limit > 0:
+        raise_if_cancelled(should_cancel)
+        if time.monotonic() - started > 120:
+            raise ValueError("读取网址超时（120 秒）")
+        chunk = response.read1(64 * 1024 if limit is None else min(limit, 64 * 1024))
+        if not chunk:
+            return
+        yield chunk
+        if limit is not None:
+            limit -= len(chunk)
+
+
+def _read_text(response, media_type, length, started, should_cancel):
+    raw = b"".join(_chunks(response, started, should_cancel, MAX_FETCH_BYTES + 1))
+    raise_if_cancelled(should_cancel)
+    truncated = len(raw) > MAX_FETCH_BYTES
+    if not truncated and length is not None and len(raw) != length:
+        raise ValueError("网页读取中断，实际大小与声明大小不一致")
+    data = raw[:MAX_FETCH_BYTES]
+    charset = response.headers.get_content_charset()
+    if media_type in _HTML_TYPES and not charset:
+        meta = re.search(rb"""<meta\b[^>]{0,512}\bcharset\s*=\s*["']?([\w-]+)""", data[:4096], re.I)
+        if meta:
+            charset = meta.group(1).decode("ascii")
+    if data.startswith(b"\xef\xbb\xbf"):
+        charset = "utf-8-sig"
+    elif data.startswith((b"\xff\xfe", b"\xfe\xff")):
+        charset = "utf-16"
+    try:
+        content = data.decode(charset or "utf-8", errors="replace")
+    except LookupError:
+        content = data.decode("utf-8", errors="replace")
+    title = ""
+    if media_type in _HTML_TYPES:
+        page = _PageText()
+        try:
+            page.feed(content)
+            page.close()
+        except AssertionError as exc:
+            raise ValueError("网页 HTML 格式异常，请用 download 模式保存原始响应") from exc
+        title = " ".join("".join(page.title).split())[:300]
+        lines = (line.strip() for line in "".join(page.parts).splitlines())
+        content = "\n".join(filter(None, lines))
+    return {"ok": True, "result": "已读取网址正文" if content.strip() else "已访问网址，响应中没有可读取的正文",
+            "kind": "webpage" if media_type in _HTML_TYPES else "text", "http_status": 200,
+            "content_type": media_type, "title": title, "content": content[:MAX_FETCH_CHARS],
+            "truncated": truncated or len(content) > MAX_FETCH_CHARS, "files": []}
+
+
+def _result_json(result, insecure_hosts_used):
+    if insecure_hosts_used:
+        result["warnings"] = ["管理员已为以下主机关闭 TLS 证书校验：" + ", ".join(sorted(insecure_hosts_used))]
+    return json.dumps(result, ensure_ascii=False)
+
+
 def download_url(url: str, path: str = "", overwrite: bool = False, *, root: Path,
                  allowed_roots: tuple[Path, ...] | None = None, default_dir: str = "downloads",
-                 should_cancel: CancelCheck = None, config: DownloadConfig = DownloadConfig()) -> str:
-    """Stream at most 20 MiB; publish atomically only after a complete successful transfer."""
+                 should_cancel: CancelCheck = None, config: DownloadConfig = DownloadConfig(), mode: str = "auto") -> str:
+    """Read a bounded text preview or publish a complete file atomically."""
     temporary, connection = None, None
     started = time.monotonic()
     insecure_hosts_used = set()
     try:
         if not isinstance(path, str) or not isinstance(overwrite, bool):
             raise ValueError("path 须为字符串，overwrite 须为布尔值")
+        if mode not in FETCH_MODES or (mode == "text" and (path or overwrite)):
+            raise ValueError("mode 须为 auto、text 或 download；text 不接受 path 或 overwrite")
         if path and (Path(path).is_absolute() or PureWindowsPath(path).drive):
             raise ValueError("下载目标必须使用当前工作区内的相对路径")
         target = bounded_path(root, path, allowed_roots) if path else None
@@ -128,11 +247,23 @@ def download_url(url: str, path: str = "", overwrite: bool = False, *, root: Pat
             break
         if response.status != 200:
             raise ValueError(f"文件下载失败：HTTP {response.status}")
-        length = response.getheader("Content-Length")
-        if length is not None and (not length.isdecimal() or int(length) > MAX_DOWNLOAD_BYTES):
+        media_type = response.getheader("Content-Type", "").split(";", 1)[0].strip().lower()
+        read_text = mode == "text" or (mode == "auto" and not path and not overwrite
+                                      and media_type in _HTML_TYPES
+                                      and response.headers.get_content_disposition() != "attachment")
+        length_header = response.getheader("Content-Length")
+        if length_header is not None and not length_header.isdecimal():
+            raise ValueError("下载文件超过 20 MB 或大小声明无效")
+        length = int(length_header) if length_header is not None else None
+        if not read_text and length is not None and length > MAX_DOWNLOAD_BYTES:
             raise ValueError("下载文件超过 20 MB 或大小声明无效")
         if response.getheader("Content-Encoding", "identity").lower() not in {"", "identity"}:
-            raise ValueError("服务器未提供原始文件传输，请使用可直接下载的文件链接")
+            raise ValueError("服务器返回了不支持的内容编码，请使用提供原始响应的链接")
+        if read_text:
+            if media_type not in _HTML_TYPES and not media_type.startswith("text/") and media_type != "application/json":
+                raise ValueError("响应未声明为网页或文本，请用 download 模式保存原文件")
+            result = _read_text(response, media_type, length, started, should_cancel)
+            return _result_json(result, insecure_hosts_used)
         if target is None:
             target = bounded_path(root, f"{default_dir}/{_filename(url, response.headers)}", allowed_roots)
         guard_skill_write(target)
@@ -142,18 +273,12 @@ def download_url(url: str, path: str = "", overwrite: bool = False, *, root: Pat
         size = 0
         with tempfile.NamedTemporaryFile(dir=target.parent, prefix=".download-", delete=False) as output:
             temporary = Path(output.name)
-            while True:
-                raise_if_cancelled(should_cancel)
-                if time.monotonic() - started > 120:
-                    raise ValueError("文件下载超时（120 秒）")
-                chunk = response.read1(64 * 1024)
-                if not chunk:
-                    break
+            for chunk in _chunks(response, started, should_cancel):
                 size += len(chunk)
                 if size > MAX_DOWNLOAD_BYTES:
                     raise ValueError("下载文件超过 20 MB，已停止并清除未完成文件")
                 output.write(chunk)
-        if length is not None and size != int(length):
+        if length is not None and size != length:
             raise ValueError("文件下载中断，实际大小与声明大小不一致")
         raise_if_cancelled(should_cancel)
         # Recheck containment after transfer; never overwrite existing files implicitly.
@@ -165,9 +290,7 @@ def download_url(url: str, path: str = "", overwrite: bool = False, *, root: Pat
             os.link(temporary, target)
         relative = target.relative_to(root.resolve()).as_posix()
         result = {"ok": True, "result": "文件下载完成", "path": relative, "size": size, "files": [relative]}
-        if insecure_hosts_used:
-            result["warnings"] = ["管理员已为以下主机关闭 TLS 证书校验：" + ", ".join(sorted(insecure_hosts_used))]
-        return json.dumps(result, ensure_ascii=False)
+        return _result_json(result, insecure_hosts_used)
     except ssl.SSLCertVerificationError as exc:
         host = urlsplit(url).hostname or "文件主机"
         return (f"错误：文件下载失败 [TLS_CERTIFICATE_VERIFY_FAILED]：{host} 的 HTTPS 证书校验失败"

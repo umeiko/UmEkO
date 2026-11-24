@@ -10,7 +10,7 @@ TOOL_CATALOG = (
     ("replace_in_file", "替换文件内容", "Replace file contents", "files"),
     ("file_operate", "文件与目录管理", "Manage files and directories", "files"),
     ("archive_tool", "压缩与解压", "Create and extract archives", "files"),
-    ("download_url", "网址下载文件", "Download files from URLs", "files"),
+    ("download_url", "读取网页与下载文件", "Fetch web pages and download files", "files"),
     ("read_image", "读取图片", "Read images", "vision"),
     ("image_reasoning", "图像推理", "Image reasoning", "vision"),
     ("list_skill_packs", "列出技能包", "List skill packs", "skills"),

@@ -20,6 +20,11 @@ from umeko.skills import download
 
 @pytest.fixture
 def files(tmp_path, monkeypatch):
+    page = ('<!doctype html><html><head><meta charset="gb18030"><title>示例 &amp; 指南</title></head>'
+            '<body><nav>导航内容</nav><main><h1>使用说明</h1><p>输入 <strong>文档</strong>。</p>'
+            '<script>脚本内容</script><div hidden><div>隐藏内容</div>仍然隐藏</div>'
+            '<p>输出报告。</p></main></body></html>').encode("gb18030")
+
     class Handler(BaseHTTPRequestHandler):
         def log_message(self, *args):
             pass
@@ -32,12 +37,26 @@ def files(tmp_path, monkeypatch):
             if self.path == "/missing":
                 self.send_response(404); self.end_headers(); return
             self.send_response(200)
+            if self.path in {"/page", "/page-attachment", "/long-page"}:
+                body = page if self.path != "/long-page" else b"<p>" + b"x" * (download.MAX_FETCH_BYTES + 10)
+                self.send_header("Content-Type", "text/html")
+                if self.path == "/page-attachment":
+                    self.send_header("Content-Disposition", 'attachment; filename="page.html"')
+                self.send_header("Content-Length", str(len(body)))
+                self.end_headers()
+                try:
+                    self.wfile.write(body)
+                except (BrokenPipeError, ConnectionResetError):
+                    pass
+                return
             if self.path == "/big-length":
                 self.send_header("Content-Length", str(download.MAX_DOWNLOAD_BYTES + 1)); self.end_headers(); return
             if self.path == "/truncated":
                 self.send_header("Content-Length", "100"); self.end_headers(); self.wfile.write(b"short"); return
             if self.path == "/name":
                 self.send_header("Content-Disposition", 'attachment; filename="../../report.txt"')
+            if self.path == "/small.txt":
+                self.send_header("Content-Type", "text/plain; charset=utf-8")
             if self.path in {"/big-stream", "/exact"}:
                 # No Content-Length: prove stream accounting, not just header checking.
                 self.end_headers()
@@ -78,6 +97,31 @@ def test_download_redirect_filename_and_no_implicit_overwrite(files):
     explicit = json.loads(run("/small.txt", path="generate/result.bin"))
     assert explicit["path"] == "generate/result.bin"
     assert json.loads(run("/small.txt", path="generate/result.bin", overwrite=True))["ok"]
+
+
+def test_fetch_reads_html_text_and_can_download_raw_html(files):
+    run, root = files
+    page = json.loads(run("/page"))
+    assert page["ok"] and page["kind"] == "webpage" and page["http_status"] == 200
+    assert page["title"] == "示例 & 指南"
+    assert page["content"] == "使用说明\n输入 文档。\n输出报告。"
+    assert not page["truncated"] and page["files"] == [] and not list((root / "workspace").iterdir())
+    for route, kwargs in (("/page", {"path": "workspace/source.html"}),
+                          ("/page", {"mode": "download"}), ("/page-attachment", {})):
+        result = json.loads(run(route, **kwargs))
+        assert result["ok"] and b"<script>" in (root / result["path"]).read_bytes()
+    text = json.loads(run("/small.txt", mode="text"))
+    assert text["kind"] == "text" and text["content"] == "fixture" and text["files"] == []
+
+
+def test_fetch_is_bounded_and_rechecks_redirect_and_destination_policy(files):
+    run, root = files
+    page = json.loads(run("/long-page"))
+    assert page["ok"] and page["truncated"] and len(page["content"]) == download.MAX_FETCH_CHARS
+    assert "网络策略拒绝" in run("/private", mode="text")
+    assert "text 不接受" in run("/page", path="generate/page.html", mode="text")
+    assert "请用 download 模式" in run("/name", mode="text")
+    assert not list(root.rglob("*.*"))
 
 
 @pytest.mark.parametrize("route", ["/big-length", "/big-stream", "/truncated", "/missing", "/private"])

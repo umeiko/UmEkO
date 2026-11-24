@@ -20,7 +20,7 @@ TEMPLATES = REPO / "scripts" / "skillhub"
 TEXT_TYPES = {".md", ".py", ".json", ".txt", ".yaml", ".yml", ".js", ".ts", ".sh"}
 IGNORED = {"__pycache__", ".git", ".DS_Store", "Thumbs.db", "desktop.ini"}
 TITLES = {"doc-image-qc": "图文文档图片质检", "drawio-flowchart": "draw.io 流程图与架构图",
-          "image-reasoning": "图像推理", "drawio-correction": "流程图修正", "document-check": "文档检查"}
+          "image-reasoning": "图像推理", "drawio-correction": "流程图修正", "document-check": "文档检查", "hyperlink-check": "超链接检查"}
 REQUIRED = {"name", "description", "slug", "displayName", "version"}
 PREAMBLE = """## 独立 Skill 的调用方式
 

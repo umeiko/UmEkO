@@ -34,6 +34,7 @@ def test_document_agent_uses_download_tool_and_delivers_results(machine_server, 
             status = {"/guide": 200, "/missing": 404, "/protected": 401}[self.path]
             body = b"<html><title>Fixture guide</title><p>Input and output</p></html>" if status == 200 else b""
             self.send_response(status)
+            self.send_header("Content-Type", "text/html; charset=utf-8")
             self.send_header("Content-Length", str(len(body)))
             self.end_headers()
             self.wfile.write(body)
@@ -52,9 +53,9 @@ def test_document_agent_uses_download_tool_and_delivers_results(machine_server, 
         loaded = agent._skills["use_skill"].handler(name="document-check")
         assert loaded and not loaded.startswith("错误")
         assert agent._skills["read_document"].handler(path="attachments/manual.md") == document
-        valid = json.loads(agent._skills["download_url"].handler(url=urls[0], path="workspace/link-check/001.html"))
-        assert valid["ok"] and valid["path"] == "workspace/link-check/001.html"
-        assert "Fixture guide" in agent._skills["read_document"].handler(path=valid["path"])
+        valid = json.loads(agent._skills["download_url"].handler(url=urls[0]))
+        assert valid["ok"] and valid["title"] == "Fixture guide"
+        assert valid["content"] == "Input and output" and valid["files"] == []
         missing = agent._skills["download_url"].handler(url=urls[1], path="workspace/link-check/002.html")
         protected = agent._skills["download_url"].handler(url=urls[2], path="workspace/link-check/003.html")
         assert "HTTP 404" in missing and "HTTP 401" in protected

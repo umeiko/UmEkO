@@ -62,7 +62,7 @@ def test_admin_dispatch_session_generation_and_download(tmp_path, user_prefix, a
     try:
         assert store.config()[installation_key(FLOWCHART_SKILL)] == "1"
         assert {a["slug"] for a in service.agent_registry.list()} == {
-            "image-qc", "flow-chart-agent", "image-resioning-agent", "flowchart-correction", "document-check"}
+            "image-qc", "flow-chart-agent", "image-resioning-agent", "flowchart-correction", "document-check", "hyperlink-check"}
         with TestClient(admin_app) as admin, TestClient(app) as user:
             api = admin_prefix + "/admin/v1/"
             assert admin.get(api + "skill-library").status_code == 401

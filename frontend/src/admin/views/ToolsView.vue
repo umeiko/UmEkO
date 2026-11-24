@@ -243,7 +243,7 @@ onMounted(load);
                   class="tool-note"
                 >
                   <span v-if="tool.required" class="badge">{{ tr('协议必需') }}</span>
-                  <span v-else-if="tool.max_bytes">{{ tr('公网 HTTP/HTTPS，最大 20 MB') }}</span>
+                  <span v-else-if="tool.max_bytes">{{ tr('读取网页正文，文件最大 20 MB') }}</span>
                   <span v-else-if="['read_image', 'image_reasoning'].includes(tool.name)">{{
                     tr('需要相应模型的视觉能力')
                   }}</span>

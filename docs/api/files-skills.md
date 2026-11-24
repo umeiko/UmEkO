@@ -68,15 +68,22 @@
 
 `target` 是完整目标路径，不会自动把文件放入某个已存在目录。复制目录与递归删除需要 `recursive: true`；默认不覆盖，仅文件可显式设置 `overwrite: true`。工作区、附件和产物顶层节点不能修改，路径及目录中的链接会被拒绝。移动会更新内存与数据库中的附件 ID 映射；删除会移除映射，避免重启后恢复失效附件。文本内容编辑继续使用 `write_file` 和 `replace_in_file`，压缩操作继续使用 `archive_tool`。
 
-## Agent 网址下载工具 {#url-download}
+## Agent 网页读取与文件下载 {#url-download}
 
-主 Agent 和文件子 Agent 可调用 `download_url`，将 HTTP/HTTPS 文件网址下载到本次工作区：
+主 Agent 和文件子 Agent 使用同一个 `download_url` 工具读取 HTTP/HTTPS 网页或保存文件。
 
 ```json
-{"url":"https://files.example.com/report.pdf","path":"workspace/downloads/report.pdf"}
+{"url":"https://docs.example.com/guide","mode":"auto"}
 ```
 
-`url` 必填；`path` 可省略，默认在 `workspace/downloads/` 使用服务器建议或网址中的文件名。
+`url` 必填。`mode` 默认为 `auto`，直接返回网页正文，其他响应按文件下载。带附件标记的 HTML
+也按文件下载。`mode="text"` 可读取网页、纯文本或 JSON。`mode="download"` 或在自动模式下指定
+`path` 可保存原始响应，包括 HTML 源码。
+
+网页返回 `title`、`content`、`content_type` 和 `truncated`。每次最多读取 1 MiB 并返回 12,000 个字符，
+`truncated=true` 表示只返回了部分内容。网页读取使用服务器返回的静态正文。需要登录或执行页面脚本的内容可通过附件提供。
+
+下载时 `path` 可省略，默认在 `workspace/downloads/` 使用服务器建议或网址中的文件名。
 可指定 `workspace/` 或 `generate/` 下的相对路径；已有文件默认不覆盖，显式 `overwrite=true`
 仅允许覆盖文件。成功返回 JSON 的 `path`、`size` 和 `files`，不把文件正文放进模型上下文。
 文件需要再次给外部调用方下载时，仍由 Agent 通过 `submit_results` 选择最终交付件。
