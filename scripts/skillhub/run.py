@@ -11,6 +11,7 @@ import sys
 SCRIPTS = {
     "prepare_drawio.py": "drawio-flowchart",
     "generate_drawio.py": "drawio-flowchart",
+    "generate_principle.py": "drawio-design-principle",
     "render_report.py": "doc-image-qc",
     "prepare_correction.py": "drawio-correction",
     "finish_correction.py": "drawio-correction",

@@ -20,7 +20,8 @@ TEMPLATES = REPO / "scripts" / "skillhub"
 TEXT_TYPES = {".md", ".py", ".json", ".txt", ".yaml", ".yml", ".js", ".ts", ".sh"}
 IGNORED = {"__pycache__", ".git", ".DS_Store", "Thumbs.db", "desktop.ini"}
 TITLES = {"doc-image-qc": "图文文档图片质检", "drawio-flowchart": "draw.io 流程图与架构图",
-          "image-reasoning": "图像推理", "drawio-correction": "流程图修正", "document-check": "文档检查", "hyperlink-check": "超链接检查"}
+          "image-reasoning": "图像推理", "drawio-correction": "流程图修正", "document-check": "文档检查", "hyperlink-check": "超链接检查",
+          "drawio-design-principle": "draw.io 设计原理图"}
 REQUIRED = {"name", "description", "slug", "displayName", "version"}
 PREAMBLE = """## 独立 Skill 的调用方式
 
@@ -151,12 +152,14 @@ def export_skills(source_root: Path, snapshot_dir: Path, version: str) -> list[P
         sources = {entry.relative_to(source_root).as_posix(): digest(original), **{resource.relative_to(source_root).as_posix(): digest(members[relative])
                                                   for relative, resource in resources.items()}}
         changes = ["Added portable host instructions and SkillHub metadata to SKILL.md"]
-        if name in {"drawio-flowchart", "drawio-correction"}:
+        if name in {"drawio-flowchart", "drawio-correction", "drawio-design-principle"}:
             config_name = "assets/config.json"
             config = json.loads(files[config_name])
             config["drawio_path"] = ""
+            if "render_urls" in config:
+                config["render_urls"] = []
             files[config_name] = (json.dumps(config, ensure_ascii=False, indent=2) + "\n").encode("utf-8")
-            changes.append("Cleared machine-specific drawio_path; preserved all other config fields")
+            changes.append("Cleared deployment-specific drawio_path and render_urls; preserved other config fields")
         if any(Path(script).suffix == ".py" for script in members):
             files["scripts/run.py"] = (TEMPLATES / "run.py").read_bytes()
         manifest = {"name": name, "version": validate_entry(adapted)["version"],

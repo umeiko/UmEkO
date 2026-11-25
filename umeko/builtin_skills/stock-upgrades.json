@@ -1,12 +1,23 @@
 {
+  "document-check.md": [
+    "74975606fa4ab78980136bb640806d5be5358fb6a0660367c78c1bdc6ffee8e5",
+    "802b1a36059ed217b1045868419c0225a2848c2cb501cf6e01d299ba239bd06b"
+  ],
   "drawio-flowchart.md": [
-    "8f2ed90cdc76ca24a14038cad06200c580c70a9b500ab61f57b04269b685e45f"
+    "8f2ed90cdc76ca24a14038cad06200c580c70a9b500ab61f57b04269b685e45f",
+    "cff08ba623f3b7dd1897b5b4e7ba5374d7c8e07b438f07ce951d3aaeb1202119"
   ],
   "drawio-flowchart/generate_drawio.py": [
     "5b1574ad855ad0c1a73ae4e7d4f0fbc92b4f877bf5989a768d6d5eaef39a6312",
     "b555a58397fe0ab2eaffd2b1a5b337f9d5398789a1ee305bc587430421bc55e8",
     "1ada241fc0c12c08bc7d9fa7d5a4e53fd8be673eaddc952a82e70411dd4d15f4",
-    "3a92394551fea8223eaa839e203b67688c5427b49ad95f55d1ac0316abb612d9"
+    "3a92394551fea8223eaa839e203b67688c5427b49ad95f55d1ac0316abb612d9",
+    "adbd4636f64710b2cbed5ef1bcf32b24a8456d8add0f145789e16f63892c919b",
+    "c0052184c3587d615612ca6adb13a635ad6d42acbb8e8810991da7c2d0b7cb93"
+  ],
+  "drawio-flowchart/drawio_xml.py": [
+    "f463704d2643f26826620df3da0f36f94c78f2fb65e187cc4754eafa0d843827",
+    "0b69b45d07bd2bcffd0f62225595e18f559c0dc64f4414f3a7d568fab756012d"
   ],
   "drawio-flowchart/prepare_drawio.py": [
     "3bf63cd07a5934761715d58f8765f4a0ca8bb8d96f108efabca4bd763d0022f0",
@@ -23,11 +34,8 @@
     "4b0a33825dd563582d4d529cf55b4a96c1f3b259e48c7d28fac95ec16275ec4f"
   ],
   "drawio-flowchart/linux-deployment.md": [
-    "aae02d70ddbd3023492628c56ab3b215e1cf006221c37233fe9ef78beb73a167"
-  ],
-  "document-check.md": [
-    "74975606fa4ab78980136bb640806d5be5358fb6a0660367c78c1bdc6ffee8e5",
-    "802b1a36059ed217b1045868419c0225a2848c2cb501cf6e01d299ba239bd06b"
+    "aae02d70ddbd3023492628c56ab3b215e1cf006221c37233fe9ef78beb73a167",
+    "afcf1bcdb1152f092edfe11da399fa3640d31eb9327022c1c1c47b4c8bf9b6ae"
   ],
   "document-check/checks.md": [
     "45d4155f67d671f379d4542f45bc4967ca77b22d43f05a469fdbb1d25488efb4"
@@ -37,5 +45,14 @@
   ],
   "image-reasoning.md": [
     "d2665659430b6f2f7529394feb9c17b43deef3dfe313168188ae976516d99653"
+  ],
+  "drawio-flowchart/config.json": [
+    "6ed247ecb5f81333443b34c022fb6dec070cfac87d9593a11f4d658c5cf631d2"
+  ],
+  "drawio-design-principle.md": [
+    "4c3e071e29439c5eeab801bd4d6b7c262eb6ca9934767d49e0c341e32abe7ad4"
+  ],
+  "drawio-design-principle/config.json": [
+    "1a0c3b167932010d7a953ae26299ba342152279677c17bdf94c6a436b4fad4ea"
   ]
 }

@@ -1,16 +1,12 @@
 #!/usr/bin/env python
-"""Standalone draw.io structure → layout → optional desktop export; no model calls."""
+"""Standalone draw.io structure, layout, and optional image export."""
 from __future__ import annotations
 
 import html
 import json
 import logging
-import math
-import os
 from pathlib import Path
 import re
-import shutil
-import subprocess
 import sys
 import xml.etree.ElementTree as ET
 
@@ -18,12 +14,12 @@ import xml.etree.ElementTree as ET
 sys.path.insert(0, str(Path(__file__).resolve().parent))
 from drawio_arch import apply_layout
 from drawio_flow import apply_flow_layout, make_flow_grid
-from drawio_xml import apply_font, extract_xml, sanitize_xml
+from drawio_xml import apply_font, export_diagram, extract_xml, sanitize_xml
 from drawio_style import load_style, edge_visuals, apply_visuals, verify_restyle, packaged_file
 
 SKILL_SCRIPT = {
     "description": "校验 draw.io XML 结构、确定性布局并按需导出 PNG/SVG/PDF；不调用模型或执行图像复检。",
-    "usage": "先生成完整 mxfile XML，推荐通过 source_path 传文件；也可传 xml 字符串。formats=[] 仅输出可编辑文件，图片导出需要服务器配置 draw.io。",
+    "usage": "先生成完整 mxfile XML，推荐通过 source_path 传文件；也可传 xml 字符串。formats=[] 仅输出可编辑文件。PNG/SVG 使用管理员配置的网络或本地渲染器，PDF 使用本地 draw.io。",
     "input_schema": {"type": "object", "additionalProperties": False,
                      "anyOf": [{"required": ["source_path"]}, {"required": ["xml"]}], "properties": {
         "source_path": {"type": "string", "minLength": 1, "pattern": r"\S", "description": "已有 mxfile XML 的会话相对路径"},
@@ -157,17 +153,6 @@ def _config():
     return config
 
 
-def _renderer(config):
-    configured = config.get("drawio_path") or os.getenv("UMEKO_DRAWIO_PATH") or os.getenv("DRAWIO_PATH")
-    if configured:
-        candidate = Path(configured)
-        if not candidate.is_absolute() or not candidate.is_file():
-            return None, "管理员配置的 draw.io 可执行文件不存在或不是绝对路径"
-        return str(candidate), None
-    found = shutil.which("draw.io") or shutil.which("drawio")
-    return found, None if found else "未配置 draw.io 桌面版，已保存可直接打开编辑的 .drawio"
-
-
 def architecture_edges(xml_text):
     """Native edges for explicitly requested architecture dependencies."""
     root = ET.fromstring(xml_text)
@@ -180,16 +165,6 @@ def architecture_edges(xml_text):
         parts = [p for p in cell.get("style", "").split(";") if p and p.split("=", 1)[0] != "edgeStyle"]
         cell.set("style", "edgeStyle=orthogonalEdgeStyle;" + ";".join(parts) + ";")
     return ET.tostring(root, encoding="unicode", xml_declaration=True)
-
-
-def _export_detail(value, renderer, source, workdir, session_root):
-    if isinstance(value, bytes):
-        value = value.decode("utf-8", errors="replace")
-    detail = str(value or "").strip()
-    for absolute, label in ((str(source), "<图文件>"), (str(workdir), "<产物目录>"),
-                            (str(session_root), "<会话目录>"), (str(renderer), "<draw.io>")):
-        detail = detail.replace(absolute, label).replace(absolute.replace("\\", "/"), label)
-    return detail[-1000:]
 
 
 def generate(payload):
@@ -243,69 +218,10 @@ def generate(payload):
     source.resolve().relative_to(workdir)
     source.write_text(xml, encoding="utf-8")
     files = [source.relative_to(session_root).as_posix()]
-    exports, errors = [], []
-    if formats:
-        renderer, warning = _renderer(config)
-        unavailable_code = "renderer_unavailable"
-        if renderer:
-            try:
-                scale = float(config.get("scale", 2))
-                if not math.isfinite(scale) or not 0 < scale <= 8:
-                    raise ValueError("config.json 的 scale 必须在 0–8 之间")
-            except (TypeError, ValueError) as exc:
-                renderer, warning, unavailable_code = None, f"导出配置无效：{exc}", "export_config_invalid"
-        if renderer:
-            for fmt in formats:
-                # Fresh temporary output prevents stale images being reported after a failed export.
-                output = workdir / f"{name}.{fmt}"
-                temporary = workdir / f"{name}.export.{fmt}"
-                output.resolve().relative_to(workdir)
-                temporary.resolve().relative_to(workdir)
-                temporary.unlink(missing_ok=True)
-                command = [renderer, "--export", "--format", fmt, "--output", str(temporary)]
-                if fmt == "png":
-                    command += ["--scale", str(scale)]
-                command.append(str(source))
-                print(f"draw.io 导出 {fmt}", file=sys.stderr)
-                try:
-                    process = subprocess.run(command, capture_output=True, text=True, encoding="utf-8",
-                                             errors="replace", timeout=45 / len(formats),
-                                             creationflags=getattr(subprocess, "CREATE_NO_WINDOW", 0))
-                    if process.returncode != 0 or not temporary.is_file() or temporary.stat().st_size == 0:
-                        detail = " ".join((process.stdout[-400:] + " " + process.stderr[-400:]).strip().splitlines())
-                        detail = _export_detail(detail, renderer, source, workdir, session_root)
-                        raise ValueError(f"退出码 {process.returncode} 或没有有效文件"
-                                         + (f"：{detail[:800]}" if detail else ""))
-                    temporary.replace(output)
-                    files.append(output.relative_to(session_root).as_posix())
-                    exports.append({"format": fmt, "ok": True, "path": files[-1]})
-                except (OSError, ValueError, subprocess.TimeoutExpired) as exc:
-                    # A previous revision is no longer a preview of the current source.
-                    output.unlink(missing_ok=True)
-                    if isinstance(exc, subprocess.TimeoutExpired):
-                        reason = f"draw.io 导出超时（{exc.timeout:g}s）"
-                        captured = _export_detail(exc.stderr or exc.stdout, renderer, source, workdir, session_root)
-                        if captured:
-                            reason += "：" + captured
-                        code = "export_timeout"
-                    else:
-                        reason = _export_detail(exc, renderer, source, workdir, session_root)
-                        code = "export_failed"
-                    message = f"{fmt} 导出失败：{reason}"
-                    errors.append({"format": fmt, "code": code, "message": message})
-                    exports.append({"format": fmt, "ok": False, "error": message})
-                finally:
-                    temporary.unlink(missing_ok=True)
-        else:
-            for fmt in formats:
-                stale = workdir / f"{name}.{fmt}"
-                stale.resolve().relative_to(workdir)
-                stale.unlink(missing_ok=True)
-                message = f"{fmt} 未导出：{warning}；请由管理员检查 drawio_path / UMEKO_DRAWIO_PATH / DRAWIO_PATH 和运行环境。"
-                errors.append({"format": fmt, "code": unavailable_code, "message": message})
-                exports.append({"format": fmt, "ok": False, "error": message})
+    images, exports, errors, warnings = export_diagram(source, session_root, formats, config)
+    files.extend(images)
     result = f"draw.io 已生成：{nodes} 个节点、{edges} 条连线，结构校验与布局完成；未执行图像复检。"
-    warnings = [error["message"] for error in errors]
+    warnings.extend(error["message"] for error in errors)
     if errors:
         result = "图片导出未完成，已保留可编辑 .drawio 草稿。" + result + " " + "；".join(warnings)
     return {"ok": not errors, "status": "partial" if errors else "completed", "result": result, "files": files,

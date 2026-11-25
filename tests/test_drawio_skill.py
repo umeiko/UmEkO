@@ -496,7 +496,8 @@ def test_export_returns_fresh_files_and_drops_failed_stale_preview(tmp_path, mon
     spec = importlib.util.spec_from_file_location("drawio_skill_test", PACK / "scripts/generate_drawio.py")
     module = importlib.util.module_from_spec(spec)
     spec.loader.exec_module(module)
-    monkeypatch.setattr(module, "_renderer", lambda config: ("fixture-drawio", None))
+    exporter = sys.modules["drawio_xml"]
+    monkeypatch.setattr(exporter, "_renderer", lambda config: ("fixture-drawio", None))
     root = tmp_path / "session"
     workdir = root / "generate"
     workdir.mkdir(parents=True)
@@ -511,7 +512,7 @@ def test_export_returns_fresh_files_and_drops_failed_stale_preview(tmp_path, mon
         output.write_bytes(b"fixture rendered image")
         return SimpleNamespace(returncode=0)
 
-    monkeypatch.setattr(module.subprocess, "run", export)
+    monkeypatch.setattr(exporter.subprocess, "run", export)
     (workdir / "flowchart.svg").write_text("old preview", encoding="utf-8")
     result = module.generate({"args": {"xml": FLOW}, "workdir": str(workdir), "session_root": str(root)})
     assert result["files"] == ["generate/flowchart.drawio", "generate/flowchart.png"]
@@ -526,14 +527,15 @@ def test_export_timeout_retains_renderer_diagnosis_and_draft(tmp_path, monkeypat
     spec = importlib.util.spec_from_file_location("drawio_timeout_test", PACK / "scripts/generate_drawio.py")
     module = importlib.util.module_from_spec(spec)
     spec.loader.exec_module(module)
-    monkeypatch.setattr(module, "_renderer", lambda config: ("fixture-drawio", None))
+    exporter = sys.modules["drawio_xml"]
+    monkeypatch.setattr(exporter, "_renderer", lambda config: ("fixture-drawio", None))
     root = tmp_path / "session"
     workdir = root / "generate"
 
     def timeout(command, **kwargs):
         raise subprocess.TimeoutExpired(command, kwargs["timeout"], stderr=b"Renderer process gone: fixture-drawio")
 
-    monkeypatch.setattr(module.subprocess, "run", timeout)
+    monkeypatch.setattr(exporter.subprocess, "run", timeout)
     result = module.generate({"args": {"xml": FLOW, "formats": ["png"]}, "workdir": str(workdir), "session_root": str(root)})
     assert not result["ok"] and result["status"] == "partial"
     assert result["errors"][0]["code"] == "export_timeout" and "Renderer process gone" in result["result"]

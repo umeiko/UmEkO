@@ -37,13 +37,17 @@ python "<技能目录>/scripts/run.py" render_report.py --root "<任务目录>" 
 脚本 stdout 返回单行 JSON，`ok` 表示成功，`files` 为任务相对路径，stderr 为进度；
 失败时包装入口返回非零退出码。不要仅凭进程执行过就声称成功，须检查 `ok`、实际文件及警告。
 
+`drawio-design-principle` 用 `scripts/run.py generate_principle.py` 读取任务内的 JSON 模型。
+默认用 Python 标准库生成可编辑原理图。请求 PNG/SVG 时沿用下方的 draw.io 导出环境。宿主没有可用的 draw.io 命令且管理员未指定路径时，可使用 `umeko-drawio`。
+
 ## 图表导出环境
 
 draw.io 技能的完整原始默认样式在 `references/style.md`，默认字体为方正兰亭黑简体，
 字号 10.5，流程图网格 172×28、纵向间距 28，架构图组件 180×60。
 字体由运行环境自行安装，安装包不分发字体或 draw.io 可执行文件。
 
-`assets/config.json` 保留当前视觉配置，导出的 `drawio_path` 留空。
+`assets/config.json` 保留当前视觉配置，发行包的 `render_urls` 与 `drawio_path` 留空。
+管理员可在本机填写 HTTPS 渲染服务列表，PNG/SVG 按顺序尝试，失败后使用本地 draw.io。
 使用者可自行配置 draw.io 桌面程序路径，或设置 `DRAWIO_PATH`／`UMEKO_DRAWIO_PATH`，
 也可使用 PATH 中的 `draw.io`／`drawio`。Linux 无显示器时需要可用的导出显示环境。
 缺少桌面程序仍可生成可编辑 `.drawio`；PNG/SVG/PDF 必须以实际导出结果为准。

@@ -125,7 +125,7 @@ def test_admin_definitions_and_public_base_url(machine_app, tmp_path):
         assert {agent["slug"] for agent in listed["agents"]} == {
             "image-qc", "flow-chart-agent", "image-resioning-agent", "flowchart-correction", "document-check", "hyperlink-check", "alpha", "beta"}
         assert {s["filename"] for s in listed["skills"]} == {
-            "doc-image-qc.md", "drawio-flowchart.md", "drawio-correction.md", "image-reasoning.md", "document-check.md", "hyperlink-check.md", "alpha.md", "beta.md"}
+            "doc-image-qc.md", "drawio-flowchart.md", "drawio-correction.md", "image-reasoning.md", "document-check.md", "hyperlink-check.md", "drawio-design-principle.md", "alpha.md", "beta.md"}
         value = {"slug": "new-agent", "name": "New", "description": "New delivery", "skill_names": ["alpha.md"]}
         created = admin.post("/admin/v1/agents", json=value)
         assert created.status_code == 201, created.text

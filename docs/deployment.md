@@ -167,6 +167,8 @@ fc-match -f '%{family}\n' '方正兰亭黑简体'
 Linux 版 draw.io、Xvfb、`drawio_path`、完整 Docker 命令和无模型验收见
 [绘图 Skill 的 Linux 部署说明](https://github.com/umeiko/UmEkO/blob/main/umeko/builtin_skills/drawio-flowchart/references/linux-deployment.md)。
 
+网络渲染由管理员在绘图技能的 `assets/config.json` 中设置 `render_urls`，按顺序填写完整 HTTPS 渲染接口地址。PNG/SVG 依次尝试服务，失败后回退到本地 draw.io。PDF 使用本地二进制。网络服务收到完整图表 XML，因此列表应只包含获准接收图表的服务。企业 CA 可通过 `UMEKO_DRAWIO_RENDER_CA_FILE` 指定 PEM 文件。配置或脚本变更需要重新审核当前版本，批准后使用新会话。
+
 ## 配置放在哪里
 
 模型配置统一保存在 `UMEKO_DATA_ROOT/umeko.db` 的 Provider / Model 注册表中。

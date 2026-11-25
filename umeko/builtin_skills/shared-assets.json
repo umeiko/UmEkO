@@ -1,4 +1,7 @@
 {
+  "drawio-design-principle": {
+    "drawio-flowchart": ["drawio_xml.py"]
+  },
   "drawio-correction": {
     "drawio-flowchart": [
       "style.md",

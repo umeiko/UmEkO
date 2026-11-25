@@ -24,10 +24,12 @@ spec.loader.exec_module(packager)
 def packages(tmp_path):
     source = tmp_path / "source"
     shutil.copytree(BUILTINS, source, ignore=shutil.ignore_patterns("__pycache__", "*.pyc"))
-    config = source / "drawio-flowchart/assets/config.json"
-    data = json.loads(config.read_text(encoding="utf-8"))
-    data["drawio_path"] = "C:/fixture-only/private/drawio.exe"
-    config.write_text(json.dumps(data, ensure_ascii=False), encoding="utf-8")
+    for pack in ("drawio-flowchart", "drawio-design-principle"):
+        config = source / pack / "assets/config.json"
+        data = json.loads(config.read_text(encoding="utf-8"))
+        data["drawio_path"] = "C:/fixture-only/private/drawio.exe"
+        data["render_urls"] = ["https://renderer.example.test/render"]
+        config.write_text(json.dumps(data, ensure_ascii=False), encoding="utf-8")
     entry = source / "drawio-flowchart/SKILL.md"
     entry.write_text(entry.read_text(encoding="utf-8") + "\n管理员自定义正文必须完整保留。\n", encoding="utf-8")
     snapshot = tmp_path / "snapshot"
@@ -50,7 +52,7 @@ def run(pack, root, script, arguments):
 
 def test_complete_portable_reproducible_packages(packages, tmp_path):
     source, snapshot, output, archives = packages
-    assert {p.stem for p in archives} == {"doc-image-qc", "drawio-flowchart", "image-reasoning", "drawio-correction", "document-check", "hyperlink-check"}
+    assert {p.stem for p in archives} == {"doc-image-qc", "drawio-flowchart", "image-reasoning", "drawio-correction", "document-check", "hyperlink-check", "drawio-design-principle"}
     for archive_path in archives:
         with zipfile.ZipFile(archive_path) as archive:
             assert archive.testzip() is None
@@ -64,14 +66,16 @@ def test_complete_portable_reproducible_packages(packages, tmp_path):
             for relative, data in packager.safe_files(source / archive_path.stem).items():
                 if relative == "SKILL.md":
                     continue
-                if relative == "assets/config.json" and archive_path.stem == "drawio-flowchart":
-                    assert json.loads(archive.read(relative))["drawio_path"] == ""
+                if relative == "assets/config.json" and archive_path.stem in {"drawio-flowchart", "drawio-design-principle"}:
+                    assert json.loads(archive.read(relative)) == {**json.loads(data), "drawio_path": "", "render_urls": []}
                 else:
                     assert archive.read(relative) == data
             if archive_path.stem == "drawio-flowchart":
                 assert {"references/linux-deployment.md", "assets/Dockerfile.linux.txt",
                         "scripts/drawio_headless.sh", "scripts/linux_smoke.py"} <= set(archive.namelist())
                 assert not any(b"mermaid" in archive.read(member).lower() for member in archive.namelist())
+            if archive_path.stem == "drawio-correction":
+                assert json.loads(archive.read("assets/config.json"))["render_urls"] == []
     assert json.loads((source / "drawio-flowchart/assets/config.json").read_text(encoding="utf-8"))["drawio_path"]
     second = packager.package_skills(snapshot, tmp_path / "repeat")
     assert [p.read_bytes() for p in archives] == [p.read_bytes() for p in second]

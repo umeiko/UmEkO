@@ -59,6 +59,8 @@ fc-match -f '%{family}\n' '方正兰亭黑简体'
 
 | 字段 | 填写方式 |
 | --- | --- |
+| `render_urls` | PNG/SVG 的完整 HTTPS 渲染接口地址，按列表顺序尝试，最多 8 个。使用 `[]` 时直接使用本地导出 |
+| `render_bg` | 网络渲染背景色 `#RRGGBB`，`null` 采用服务默认值 |
 | `drawio_path` | 有桌面的 Linux 可填 `/usr/bin/drawio`；无桌面的服务器填 `/usr/local/bin/drawio-headless`。必须是单个可执行文件的绝对路径，不能填 `xvfb-run -a drawio` 这样的整条命令 |
 | `font_family` | 填 Linux 已安装字体的实际 family。保持原风格需安装方正兰亭黑简体；没有该字体时可显式选择 `Noto Sans CJK SC`，图像字体会随之变化 |
 | `font_size` | 原风格为字符串 `"10.5"` |
@@ -82,6 +84,14 @@ fc-match -f '%{family}\n' '方正兰亭黑简体'
 例如 `DRAWIO_PATH=/usr/local/bin/drawio-headless`。
 如果安装路径不是 `/usr/bin/drawio`，另设 `DRAWIO_BINARY` 为实际 Linux 可执行文件的绝对路径。
 这些变量要进入服务进程／容器的环境，不能只设在另一个终端里。
+
+### 网络渲染与回退
+
+在目标技能的 `assets/config.json` 添加 `"render_urls": ["https://renderer.example.test/render", "https://renderer-backup.example.test/render"]`。把需要优先使用的服务排在最前面。`drawio-flowchart` 和 `drawio-design-principle` 各有自己的配置。技能把排版后的 mxfile 以 `POST` JSON 的 `xml`、`format`、`scale` 及可选 `bg` 字段提交给列表中的服务。由管理员选择可以接收完整图表的端点。用户提供的图表、风格文件和脚本参数不能改选渲染端点。
+
+请求使用 HTTPS 并校验主机证书，不跟随重定向。使用企业私有 CA 时，把 PEM 文件挂载到服务可读的目录，并设置 `UMEKO_DRAWIO_RENDER_CA_FILE`。接口返回错误、超时、内容类型不符或图像校验失败时继续尝试。SVG 允许 Draw.io 的 HTML 标签和图内资源引用，含脚本、外部资源或活动属性的返回会被拒绝。各格式共享原有约 45 秒导出预算，网络仅使用其中的一部分，为本地二进制留出时间。PDF 直接使用本地二进制。
+
+服务端更新后，在技能库的安全门禁重新核对并批准更新后的 `scripts/drawio_xml.py`、`scripts/generate_drawio.py`（含该文件的包）和改过的 `assets/config.json`，再使用新会话。共享文件会按包检查，历史会话保留自己的已批准副本。可以用 `exports[].backend` 查看成功的导出来自 `network`、`local` 还是原理图原有的 `python`。
 
 检查字体：
 
