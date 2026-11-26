@@ -105,7 +105,7 @@ def test_fetch_rename_upgrades_stock_instructions_without_touching_old_session_o
     skill = slug + ".md"
     path = entry_path(library, skill)
     current = path.read_text(encoding="utf-8")
-    previous = current.replace("fetch_url", "download_url")
+    previous = current.replace("下载黑名单", "内网白名单").replace("fetch_url", "download_url")
     path.write_text(previous, encoding="utf-8")
     store.upsert_default_skill(skill, previous)
     old = service.create_session(user_id=owner["id"], agent_snapshot=registry.snapshot(definition))

@@ -40,7 +40,7 @@ class DownloadConfig:
     """仅由部署管理员配置的下载信任策略，不接受模型工具参数修改。"""
 
     ca_file: str | None = None
-    internal_hosts: tuple[str, ...] = ()
+    blocked_hosts: tuple[str, ...] = ()
     insecure_tls_hosts: tuple[str, ...] = ()
 
 
@@ -176,7 +176,7 @@ def load_settings(env_path: str | Path | None = None, data_root: str | Path | No
         admin_base_path=normalize_base_path(os.getenv("UMEKO_ADMIN_BASE_PATH", ""), "UMEKO_ADMIN_BASE_PATH"),
         download=DownloadConfig(
             ca_file=_load_ca_file(Path(env_path), "UMEKO_DOWNLOAD_CA_FILE"),
-            internal_hosts=_load_download_hosts("UMEKO_DOWNLOAD_INTERNAL_HOSTS"),
+            blocked_hosts=_load_download_hosts("UMEKO_DOWNLOAD_BLOCKED_HOSTS"),
             insecure_tls_hosts=_load_download_hosts("UMEKO_DOWNLOAD_TLS_INSECURE_HOSTS"),
         ),
         data_root=str(root.resolve()),

@@ -461,11 +461,13 @@ UMEKO **每次先尝试原生工具请求**。仅收到明确表示不支持工�
 文件下载与模型调用是独立链路。`MODEL_CA_FILE` 只用于模型；下载工具的企业 CA 用
 `UMEKO_DOWNLOAD_CA_FILE` 配置。两项可以指向同一份公司 CA 文件，下载仍保留默认公共 CA 并检查域名和有效期。
 
+`fetch_url` 默认允许访问服务器能解析并连接的公网和普通内网主机（RFC1918 IPv4、RFC6598 共享 IPv4 和 IPv6 ULA）。
+`UMEKO_DOWNLOAD_BLOCKED_HOSTS` 默认留空。升级后旧的 `UMEKO_DOWNLOAD_INTERNAL_HOSTS` 不再生效，可以从 `.env` 移除。
+
 从运维获取公司 CA 的 PEM 文件，配置服务使用的 `.env` 后重启：
 
 ```ini
 UMEKO_DOWNLOAD_CA_FILE=/etc/umeko/certs/company-files-ca.pem
-UMEKO_DOWNLOAD_INTERNAL_HOSTS=files.example.internal
 ```
 
 Windows 可填 `C:/certs/company-files-ca.pem`；相对路径以 `.env` 所在目录为准。
@@ -475,7 +477,6 @@ Docker 要把 CA 文件只读挂载进容器，配置值填写容器中的路径
 如果暂时拿不到 CA，需要允许指定文件站的自签名证书，可由管理员显式配置：
 
 ```ini
-UMEKO_DOWNLOAD_INTERNAL_HOSTS=files.example.internal
 UMEKO_DOWNLOAD_TLS_INSECURE_HOSTS=files.example.internal
 ```
 
@@ -483,28 +484,21 @@ UMEKO_DOWNLOAD_TLS_INSECURE_HOSTS=files.example.internal
 仅在明确接受这一点时使用，取得 CA 后可清空免校验列表并改用 CA 配置。
 没有全局关闭校验的开关，Agent 也不能通过工具参数选择关闭校验。成功结果会附带本次免校验主机的提示。
 
-两个主机列表相互独立：`INTERNAL_HOSTS` 开放网络访问，`TLS_INSECURE_HOSTS` 只控制证书校验。
-填写精确域名或 IP，多个用**英文逗号**分隔，不带协议、端口或路径，不支持 `*`、子域名通配符或网段。
-
-多个内网文件主机可以这样配置：
+需要禁止某些服务器时设置黑名单：
 
 ```ini
-UMEKO_DOWNLOAD_INTERNAL_HOSTS=files.example.internal,reports.example.internal
-UMEKO_DOWNLOAD_TLS_INSECURE_HOSTS=files.example.internal
+UMEKO_DOWNLOAD_BLOCKED_HOSTS=restricted.example.internal,10.0.0.8
 ```
 
-这里允许访问两个内网主机，仅对 `files.example.internal` 跳过证书校验；
-`reports.example.internal` 仍需通过默认证书信任库或已配置的企业 CA 验证。
-以上域名均为占位示例，部署时替换成实际文件主机名，修改后重启服务。
-文件链接若重定向到其他内网主机，也要单独将目标主机加入内网列表，并按其证书情况配置 TLS 信任。
+黑名单匹配请求的精确主机名以及全部 DNS 解析结果。要同时阻止别名或直接 IP 访问，填写相应 IP。
+黑名单和 `UMEKO_DOWNLOAD_TLS_INSECURE_HOSTS` 各自使用英文逗号分隔的精确主机名或 IP。
+列表不接受协议、端口、路径、通配符或网段。以上地址均为占位示例，修改后重启服务。
 
 如果多个站点共用同一公司 CA，只需配置一次 `UMEKO_DOWNLOAD_CA_FILE`，
-清空 `UMEKO_DOWNLOAD_TLS_INSECURE_HOSTS`，即可保留各站点的证书校验；
-`UMEKO_DOWNLOAD_INTERNAL_HOSTS` 仍须列出需要开放的全部内网文件主机。
+清空 `UMEKO_DOWNLOAD_TLS_INSECURE_HOSTS`，即可保留各站点的证书校验。
 
-内网开放限于这些主机解析到的 RFC1918 IPv4 / IPv6 ULA 地址；本机回环、链路本地、保留和云元数据地址仍禁止。
-公网文件主机不需要加入 `INTERNAL_HOSTS`。每一次重定向都会重新匹配目标主机的网络与 TLS 策略，
-不会把一个主机的授权传给其他主机。20 MiB 大小限制、工作区边界和失败清理保持生效。
+回环、链路本地、保留和云元数据地址固定拦截。每一次重定向都使用目标的网络与 TLS 策略。
+20 MiB 大小限制、工作区边界和失败清理继续生效。
 
 遇到 `TLS_CERTIFICATE_VERIFY_FAILED` 时，Agent 和工具详情会收到文件主机、校验原因和上述配置名；
 不会自动以不校验方式重试。`TLS_ERROR` 表示其他 TLS 握手错误，`DNS_ERROR` 表示解析失败，

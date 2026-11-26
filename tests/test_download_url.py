@@ -32,6 +32,11 @@ def files(tmp_path, monkeypatch):
         def do_GET(self):
             if self.path == "/redirect":
                 self.send_response(302); self.send_header("Location", "/small.txt"); self.end_headers(); return
+            if self.path == "/mirror":
+                self.send_response(302)
+                self.send_header("Location", f"http://mirror.example.test:{self.server.server_port}/small.txt")
+                self.end_headers()
+                return
             if self.path == "/private":
                 self.send_response(302); self.send_header("Location", "http://127.0.0.1/private"); self.end_headers(); return
             if self.path == "/missing":
@@ -72,10 +77,20 @@ def files(tmp_path, monkeypatch):
 
     server = ThreadingHTTPServer(("127.0.0.1", 0), Handler)
     thread = threading.Thread(target=server.serve_forever, daemon=True); thread.start()
-    addresses = download._addresses
-    # Only this controlled test hostname is pinned to the isolated fixture server.
-    monkeypatch.setattr(download, "_addresses", lambda host, port, internal_hosts=():
-                        ["127.0.0.1"] if host == "files.example.test" else addresses(host, port, internal_hosts))
+    internal = {"files.example.test": "10.101.2.3", "mirror.example.test": "10.101.2.4"}
+    getaddrinfo, connect = socket.getaddrinfo, socket.create_connection
+
+    def resolve(host, port, *args, **kwargs):
+        return getaddrinfo(internal.get(host, host), port, *args, **kwargs)
+
+    def route_fixture(address, *args, **kwargs):
+        ip, port = address
+        assert ip in internal.values() and port == server.server_port
+        return connect(("127.0.0.1", port), *args, **kwargs)
+
+    # Exercise the real policy and pinning with synthetic internal DNS answers.
+    monkeypatch.setattr(socket, "getaddrinfo", resolve)
+    monkeypatch.setattr(socket, "create_connection", route_fixture)
     root = tmp_path / "session"
     (root / "workspace").mkdir(parents=True); (root / "generate").mkdir()
     def run(route, **kwargs):
@@ -124,6 +139,17 @@ def test_fetch_is_bounded_and_rechecks_redirect_and_destination_policy(files):
     assert not list(root.rglob("*.*"))
 
 
+def test_internal_downloads_and_redirects_obey_host_and_ip_blocklist(files):
+    run, root = files
+    success = json.loads(run("/mirror"))
+    assert success["ok"] and (root / success["path"]).read_bytes() == b"fixture"
+    for blocked in ("mirror.example.test", "10.101.2.4", "::ffff:10.101.2.4"):
+        result = run("/mirror", path="generate/blocked.txt", config=DownloadConfig(blocked_hosts=(blocked,)))
+        assert "UMEKO_DOWNLOAD_BLOCKED_HOSTS" in result and not (root / "generate/blocked.txt").exists()
+    config = DownloadConfig(blocked_hosts=("files.example.test",), insecure_tls_hosts=("files.example.test",))
+    assert "主机命中" in run("/small.txt", mode="text", config=config)
+
+
 @pytest.mark.parametrize("route", ["/big-length", "/big-stream", "/truncated", "/missing", "/private"])
 def test_failed_download_cleans_partial_files_and_preserves_previous(files, route):
     run, root = files
@@ -159,13 +185,13 @@ def test_destination_boundary(files, path):
 
 @pytest.mark.parametrize("url", ["file:///etc/passwd", "ftp://example.com/a", "http://user:pass@example.com/file",
                                   "http://127.0.0.1/a", "http://[::1]/a", "http://169.254.169.254/a", "http://224.0.0.1/a"])
-def test_unsupported_urls_and_private_addresses_are_rejected(tmp_path, url):
+def test_unsupported_urls_and_special_addresses_are_rejected(tmp_path, url):
     result = download.fetch_url(url, root=tmp_path)
     assert result.startswith("错误：") and not list(tmp_path.iterdir())
 
 
 def test_dns_rebinding_is_prevented_and_https_keeps_original_host(monkeypatch):
-    monkeypatch.setattr(download, "_addresses", lambda host, port, internal_hosts=(): ["93.184.216.34"])
+    monkeypatch.setattr(download, "_addresses", lambda host, port, blocked_hosts=(): ["93.184.216.34"])
     calls = []
     class Connection:
         def __init__(self, host, port, **kwargs):
@@ -235,9 +261,9 @@ def secure_files(tmp_path, monkeypatch):
     thread = threading.Thread(target=server.serve_forever, daemon=True)
     thread.start()
     original = download._addresses
-    monkeypatch.setattr(download, "_addresses", lambda host, port, internal_hosts=():
+    monkeypatch.setattr(download, "_addresses", lambda host, port, blocked_hosts=():
                         ["127.0.0.1"] if host in {"files.example.test", "other.example.test"}
-                        else original(host, port, internal_hosts))
+                        else original(host, port, blocked_hosts))
     root = tmp_path / "session"
     root.mkdir()
 
@@ -278,32 +304,32 @@ def test_tls_bypass_is_explicit_host_only_and_does_not_follow_redirects(secure_f
     assert (root / result["path"]).read_bytes() == b"fixture"
 
 
-@pytest.mark.parametrize("ip,allowed", [("10.1.2.3", True), ("172.16.3.4", True), ("192.168.1.2", True),
-    ("fd00::1", True), ("127.0.0.1", False), ("::1", False), ("169.254.169.254", False),
-    ("100.100.100.200", False), ("224.0.0.1", False), ("0.0.0.0", False), ("fe80::1", False)])
-def test_internal_host_grants_do_not_allow_local_or_metadata_addresses(monkeypatch, ip, allowed):
+@pytest.mark.parametrize("ip,allowed", [("10.1.2.3", True), ("172.16.3.4", True), ("192.168.1.2", True), ("100.64.1.2", True),
+    ("fd00::1", True), ("::ffff:10.1.2.3", True), ("127.0.0.1", False), ("::1", False),
+    ("::ffff:127.0.0.1", False), ("169.254.169.254", False), ("fd00:ec2::254", False),
+    ("fd20:ce::254", False), ("100.100.100.200", False), ("224.0.0.1", False), ("0.0.0.0", False), ("fe80::1", False)])
+def test_empty_blocklist_allows_internal_but_rejects_special_addresses(monkeypatch, ip, allowed):
     monkeypatch.setattr(download.socket, "getaddrinfo", lambda *args, **kwargs:
                         [(socket.AF_INET, socket.SOCK_STREAM, 0, "", (ip, 443))])
     if allowed:
-        assert download._addresses("files.internal", 443, ("files.internal",)) == [ip]
+        assert download._addresses("files.internal", 443) == [ip]
     else:
         with pytest.raises(ValueError, match="网络策略拒绝"):
-            download._addresses("files.internal", 443, ("files.internal",))
-    with pytest.raises(ValueError):
-        download._addresses("other.internal", 443, ("files.internal",))
+            download._addresses("files.internal", 443)
 
 
-def test_insecure_tls_grant_does_not_grant_internal_network_access(tmp_path):
+def test_insecure_tls_grant_does_not_grant_access_to_loopback(tmp_path):
     result = download.fetch_url("https://127.0.0.1/file.txt", root=tmp_path,
                                    config=DownloadConfig(insecure_tls_hosts=("127.0.0.1",)))
     assert "网络策略拒绝" in result and not list(tmp_path.iterdir())
 
 
-def test_one_blocked_dns_answer_rejects_entire_destination(monkeypatch):
+@pytest.mark.parametrize("answer,blacklist", [("127.0.0.1", ()), ("10.4.5.6", ("10.4.5.6",))])
+def test_one_blocked_dns_answer_rejects_entire_destination(monkeypatch, answer, blacklist):
     monkeypatch.setattr(download.socket, "getaddrinfo", lambda *args, **kwargs: [
-        (socket.AF_INET, socket.SOCK_STREAM, 0, "", (ip, 443)) for ip in ("10.1.2.3", "127.0.0.1")])
+        (socket.AF_INET, socket.SOCK_STREAM, 0, "", (ip, 443)) for ip in ("10.1.2.3", answer)])
     with pytest.raises(ValueError, match="网络策略拒绝"):
-        download._addresses("files.internal", 443, ("files.internal",))
+        download._addresses("files.internal", 443, blacklist)
 
 
 @pytest.mark.parametrize("failure,code", [(ssl.SSLError("handshake failed"), "TLS_ERROR"),

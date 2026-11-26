@@ -1321,7 +1321,7 @@
 <h2 id="url">正文有下载 URL 会被拒绝吗<a class="headerlink" href="#url" title="Permanent link">&para;</a></h2>
 <p>普通 HTTP/HTTPS 文件链接允许提交，长签名参数也不会被当作正文文件编码。提交阶段不验证链接能否下载。</p>
 <p>下载、解压、读取或图像处理失败后，是否还有可行修正、关键材料是否缺失、能否继续其他部分由 Agent 判断。没有“一次工具错误就硬终止整项任务”的规则。确认无法继续时应及时提交情况说明、提供补齐步骤和工作台接续指引。</p>
-<p>内网访问范围与证书信任仍由管理员配置。模型服务和文件下载使用不同的 HTTPS 配置；请管理员分别检查，不能要求模型自行关闭 TLS 校验或绕过目录权限。</p>
+<p><code>fetch_url</code> 默认访问部署服务器可达的普通内网主机，下载黑名单 <code>UMEKO_DOWNLOAD_BLOCKED_HOSTS</code> 默认留空。遇到网络策略拒绝时请管理员核对目标主机、DNS 解析结果和黑名单。模型服务与文件下载使用各自的 HTTPS 配置，下载企业 CA 使用 <code>UMEKO_DOWNLOAD_CA_FILE</code>。</p>
 <h2 id="_3">提问成功，但一直没有回答<a class="headerlink" href="#_3" title="Permanent link">&para;</a></h2>
 <p>先看 queued / running，再检查任务 Worker 和每模型队列。MCP 用短提交、轮询结果；A2A 长任务用流式或 returnImmediately。代理需要转发完整子路径，SSE 关闭缓冲，并设置合适的读超时。首页可访问不代表协议、文件和登录都可用。</p>
 <h2 id="_4">图片没有后缀或太大<a class="headerlink" href="#_4" title="Permanent link">&para;</a></h2>

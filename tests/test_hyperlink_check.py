@@ -52,9 +52,9 @@ def link_pages(monkeypatch):
     thread = threading.Thread(target=server.serve_forever, daemon=True)
     thread.start()
     original_addresses = download._addresses
-    monkeypatch.setattr(download, "_addresses", lambda host, port, internal_hosts=():
+    monkeypatch.setattr(download, "_addresses", lambda host, port, blocked_hosts=():
                         ["127.0.0.1"] if host == "links.example.test" and port == server.server_port
-                        else original_addresses(host, port, internal_hosts))
+                        else original_addresses(host, port, blocked_hosts))
     try:
         yield f"http://links.example.test:{server.server_port}", visits
     finally:

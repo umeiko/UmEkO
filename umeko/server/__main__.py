@@ -73,7 +73,7 @@ def main() -> None:
             "MODEL_CA_FILE=\n"
             "# 文件下载信任：企业 CA / 内网精确主机 / 可选的免校验证书主机，见部署指南\n"
             "UMEKO_DOWNLOAD_CA_FILE=\n"
-            "UMEKO_DOWNLOAD_INTERNAL_HOSTS=\n"
+            "UMEKO_DOWNLOAD_BLOCKED_HOSTS=\n"
             "UMEKO_DOWNLOAD_TLS_INSECURE_HOSTS=\n"
             "UMEKO_DATA_ROOT=server_data\n"
             "UMEKO_TASK_WORKERS=4\n"

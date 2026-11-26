@@ -43,9 +43,9 @@ def test_document_agent_uses_download_tool_and_delivers_results(machine_server, 
     thread = threading.Thread(target=server.serve_forever, daemon=True)
     thread.start()
     original_addresses = download._addresses
-    monkeypatch.setattr(download, "_addresses", lambda host, port, internal_hosts=():
+    monkeypatch.setattr(download, "_addresses", lambda host, port, blocked_hosts=():
                         ["127.0.0.1"] if host == "docs.example.test" and port == server.server_port
-                        else original_addresses(host, port, internal_hosts))
+                        else original_addresses(host, port, blocked_hosts))
     urls = [f"http://docs.example.test:{server.server_port}{path}" for path in ("/guide", "/missing", "/protected")]
     document = "# Review fixture\n" + "\n".join(urls)
 

@@ -36,9 +36,9 @@ def test_builtin_image_agents_download_url_input_then_use_vision(tmp_path, monke
     thread = threading.Thread(target=server.serve_forever, daemon=True)
     thread.start()
     original = download._addresses
-    monkeypatch.setattr(download, "_addresses", lambda host, port, internal_hosts=():
+    monkeypatch.setattr(download, "_addresses", lambda host, port, blocked_hosts=():
                         ["127.0.0.1"] if host == "images.example.test" and port == server.server_port
-                        else original(host, port, internal_hosts))
+                        else original(host, port, blocked_hosts))
     app = create_app(Settings(ModelConfig("fixture", "fixture-key", "https://unused.invalid"), base_path=prefix),
                      data_root=tmp_path / "data", workspace_root=tmp_path / "output")
     store = app.state.store

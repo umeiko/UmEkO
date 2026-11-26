@@ -27,19 +27,37 @@ MAX_REDIRECTS = 5
 FETCH_MODES = ("auto", "text", "download")
 _HTML_TYPES = {"text/html", "application/xhtml+xml"}
 _INTERNAL_NETWORKS = tuple(ipaddress.ip_network(value) for value in (
-    "10.0.0.0/8", "172.16.0.0/12", "192.168.0.0/16", "fc00::/7",
+    "10.0.0.0/8", "172.16.0.0/12", "192.168.0.0/16", "100.64.0.0/10", "fc00::/7",
+))
+_METADATA_IPS = frozenset(ipaddress.ip_address(value) for value in (
+    "100.100.100.200", "fd00:ec2::254", "fd20:ce::254",
 ))
 
 
-def _addresses(host: str, port: int, internal_hosts: tuple[str, ...] = ()) -> list[str]:
+def _network_key(host: str) -> str:
+    try:
+        ip = ipaddress.ip_address(host.split("%", 1)[0])
+    except ValueError:
+        return host
+    if isinstance(ip, ipaddress.IPv6Address) and ip.ipv4_mapped is not None:
+        return str(ip.ipv4_mapped)
+    return str(ip)
+
+
+def _addresses(host: str, port: int, blocked_hosts: tuple[str, ...] = ()) -> list[str]:
+    blocked = {_network_key(name) for name in blocked_hosts}
+    if _network_key(host) in blocked:
+        raise ValueError("下载地址被网络策略拒绝：主机命中 UMEKO_DOWNLOAD_BLOCKED_HOSTS 黑名单")
     addresses = list(dict.fromkeys(item[4][0] for item in socket.getaddrinfo(host, port, type=socket.SOCK_STREAM)))
     for address in addresses:
-        ip = ipaddress.ip_address(address.split("%", 1)[0])
-        public = ip.is_global and not ip.is_multicast
-        private = host in internal_hosts and any(ip in network for network in _INTERNAL_NETWORKS)
-        if not (public or private):
-            raise ValueError("下载地址被网络策略拒绝：默认仅允许公网；内网文件主机须由管理员配置 "
-                             "UMEKO_DOWNLOAD_INTERNAL_HOSTS。始终禁止本机、链路本地、保留地址及元数据地址")
+        key = _network_key(address)
+        if key in blocked:
+            raise ValueError("下载地址被网络策略拒绝：解析到的 IP 命中 UMEKO_DOWNLOAD_BLOCKED_HOSTS 黑名单")
+        ip = ipaddress.ip_address(key)
+        public = ip.is_global and not ip.is_multicast and not ip.is_reserved
+        internal = any(ip in network for network in _INTERNAL_NETWORKS)
+        if ip in _METADATA_IPS or not (public or internal):
+            raise ValueError("下载地址被网络策略拒绝：不允许回环、链路本地、保留地址或云元数据地址")
     if not addresses:
         raise ValueError("文件主机没有可用的 DNS 地址")
     return addresses
@@ -53,7 +71,7 @@ def _open(url: str, config: DownloadConfig = DownloadConfig()):
         raise ValueError("仅支持不含账号密码的 HTTP/HTTPS 文件网址")
     host = normalize_download_host(parsed.hostname)
     port = parsed.port or (443 if parsed.scheme == "https" else 80)
-    addresses = _addresses(host, port, config.internal_hosts)
+    addresses = _addresses(host, port, config.blocked_hosts)
     if parsed.scheme == "https":
         context = ssl.create_default_context()
         if host in config.insecure_tls_hosts:
