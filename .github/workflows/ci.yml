@@ -72,8 +72,9 @@ jobs:
         run: |
           npm ci
           npm run format:check
+          npm test
           npm run build
-          git diff --exit-code -- ../umeko/server/static/ui
+          python ../scripts/sync_ui.py --source dist --check
 
       - name: Install browser dependencies
         timeout-minutes: 10
@@ -118,6 +119,7 @@ jobs:
         run: |
           npm ci
           npm run build
+          python ../scripts/sync_ui.py --source dist
 
       - name: Build single-file server exe
         run: pyinstaller umeko.spec --noconfirm

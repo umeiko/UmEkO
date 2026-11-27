@@ -117,7 +117,26 @@ npm run format:check
 npm run build
 ```
 
-构建只替换 `umeko/server/static/ui/`，不要在该目录手工修改代码。提交前端修改时同时提交构建资源。CI 重新构建并比较产物，再运行浏览器验收；exe 打包前也会重新构建。
+构建只写入前端自己的 `frontend/dist/`。需要更新 Python 包内置界面时，在后端仓运行
+`python scripts/sync_ui.py --source frontend/dist`，再一起提交 `umeko/server/static/ui/`。
+CI 使用同一命令的 `--check` 比较成品，exe 打包时显式导入成品。
+
+## 前后端分仓
+
+`frontend/` 可以整体迁入前端仓，独立运行 `npm ci`、`npm test` 和 `npm run build`。
+前端仓发布整个 `dist/`，后端部署时设置 `UMEKO_UI_DIR` 为该成品的解包目录，或启动时传
+`--ui-dir /opt/umeko-ui/releases/1.0.0`。后端只消费 HTML、JavaScript 和 CSS，
+部署机器可以分别取得后端 wheel 与前端成品。相对 `UMEKO_UI_DIR` 以所选 `.env` 所在目录为准。
+
+默认仍使用 Python 包中已有的前端。`UMEKO_SERVE_UI=false` 或 `--no-ui` 可仅运行 API，
+这种配置下普通、管理和临时工作台首页均返回 404，REST、机器协议和管理 API 继续提供服务。
+外部目录缺少入口或 assets 时启动失败，便于识别不完整的发布。
+
+分仓后的联调设置 `UMEKO_BACKEND_ROOT` 为后端仓，`UMEKO_TEST_PYTHON` 为后端解释器。
+浏览器验收从后端的 `tests/ui_fixture.py` 启动隔离测试服务，加载当前前端仓的 `dist/`。
+纯前端单元测试 `npm test` 可以单独运行。开发代理的两个上游可在前端 `.env.local`
+中通过 `UMEKO_DEV_API_TARGET` 和 `UMEKO_DEV_ADMIN_TARGET` 设置。
+可直接交给前端仓维护者的说明见 `frontend/README.md`。
 
 Vite 使用相对资源路径，Python 在返回首页时把主脚本、共享模块预加载和 CSS 链接转换成带部署前缀的 `/static/ui/assets/…`。JavaScript 的模块导入相对当前脚本解析，因此同一套构建可以运行在 `/` 或 `/doc-master/consistency/image-text/`。用户页使用运行时 `UMEKO_BASE_PATH`，管理页使用独立的 `UMEKO_ADMIN_BASE_PATH`；首页、资源、API 与 Cookie Path 均对齐各自的前缀，修改后只需重启服务。
 

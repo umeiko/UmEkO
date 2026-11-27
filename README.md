@@ -182,7 +182,8 @@ After changing frontend source, use Node 24 to rebuild and commit the bundle:
 cd frontend
 npm ci
 npm run dev                     # workspace / and admin /admin.html
-npm run build                   # output: umeko/server/static/ui
+npm run build                   # output: frontend/dist
+python ../scripts/sync_ui.py --source dist  # optional bundled Python distribution
 npx playwright install chromium
 npm run test:smoke              # isolated root and prefix browser checks
 ```

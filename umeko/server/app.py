@@ -8,7 +8,6 @@ from contextlib import asynccontextmanager
 
 from fastapi import FastAPI, Header, HTTPException, Query, Request, Response
 from fastapi.responses import FileResponse, HTMLResponse, JSONResponse, StreamingResponse
-from fastapi.staticfiles import StaticFiles
 from starlette.background import BackgroundTask
 
 from .. import __version__
@@ -28,6 +27,7 @@ from .agent_routing import AgentRoutingMiddleware, publish_agent_schema
 from .protocols import add_a2a_routes, build_mcp
 from .task_api import add_task_routes, public_base
 from .guide import add_guide, guide_url
+from .ui import mount_ui, render_ui, ui_directory
 from ..runner import Run as RunState
 from .models import (
     ArtifactView,
@@ -57,7 +57,6 @@ from .models import (
     WorkspaceExtract,
 )
 
-STATIC_DIR = Path(__file__).with_name("static")
 MAX_AVATAR_BYTES = 2 * 1024 * 1024
 AUTH_COOKIE = "umeko_auth"
 
@@ -101,6 +100,7 @@ def create_app(
     profile: Profile = CLOUD_PROFILE,
     command_runner=None,
 ) -> FastAPI:
+    ui_dir = ui_directory(settings)
     base_path = normalize_base_path(settings.base_path)
     data_root = data_root if data_root is not None else settings.data_root
     @asynccontextmanager
@@ -149,7 +149,7 @@ def create_app(
     app.add_middleware(MachineBodyLimitMiddleware)
     # 本地场景：所有请求都落在隐式单用户上，免登录直达工作台
     local_user = None if profile.auth_enabled else store.ensure_local_user()
-    app.mount("/static", StaticFiles(directory=STATIC_DIR), name="static")
+    mount_ui(app, ui_dir)
     add_guide(app)
 
     @app.middleware("http")
@@ -218,8 +218,8 @@ def create_app(
             return JSONResponse({"name": definition["name"], "description": definition["description"],
                                  "agent_card": base + "/.well-known/agent-card.json", "a2a": base + "/a2a",
                                  "mcp": base + "/mcp", "tasks": base + "/v1/tasks"})
-        from .ui import render_ui
-        return HTMLResponse(render_ui("index.html", base_path, guide_url=guide_url(settings.public_url, base_path)))
+        return HTMLResponse(render_ui("index.html", base_path, guide_url=guide_url(settings.public_url, base_path),
+                                      directory=ui_dir))
 
     @app.get("/agent", tags=["agent discovery"])
     def agent_catalogue(request: Request) -> dict:
@@ -1091,7 +1091,7 @@ def create_app(
     app.add_middleware(AgentRoutingMiddleware, registry=service.agent_registry)
     from .temporary import TemporaryWorkspaceMiddleware
     app.add_middleware(TemporaryWorkspaceMiddleware, tasks=service.task_service, base_path=base_path,
-                       guide_url=guide_url(settings.public_url, base_path))
+                       guide_url=guide_url(settings.public_url, base_path), ui_dir=ui_dir)
     app.add_middleware(SSEHeadersMiddleware)
     internal_openapi = app.openapi
     def agent_openapi():

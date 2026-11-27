@@ -133,6 +133,7 @@ def main():
     script_runner.skill_packs_dir = lambda: directory / "skills"
     settings = Settings(ModelConfig("fixture-text", "fixture-only", "https://example.invalid/v1"),
                         base_path=args.prefix, admin_base_path=args.admin_prefix,
+                        ui_dir=os.getenv("UMEKO_UI_DIR"),
                         public_url=args.public_url if args.configure_public_url else None)
     app = create_app(settings, data_root=directory / "data", workspace_root=directory / "output")
     service, store = app.state.agent_service, app.state.store

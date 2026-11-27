@@ -17,7 +17,8 @@ def deployment_env(monkeypatch, tmp_path):
     for key in {*LEGACY_MODEL_KEYS, "UMEKO_DATA_ROOT", "UMEKO_BASE_PATH", "UMEKO_ADMIN_BASE_PATH", "UMEKO_PUBLIC_URL", "MODEL_CA_FILE",
                 "UMEKO_DOWNLOAD_CA_FILE", "UMEKO_DOWNLOAD_INTERNAL_HOSTS", "UMEKO_DOWNLOAD_BLOCKED_HOSTS",
                 "UMEKO_DOWNLOAD_TLS_INSECURE_HOSTS",
-                "TEXT_MODEL_CONTEXT_WINDOW", "MAX_TOOL_ITERATIONS", "MAX_SUBAGENT_TOOL_ITERATIONS"}:
+                "TEXT_MODEL_CONTEXT_WINDOW", "MAX_TOOL_ITERATIONS", "MAX_SUBAGENT_TOOL_ITERATIONS",
+                "UMEKO_UI_DIR", "UMEKO_SERVE_UI"}:
         monkeypatch.delenv(key, raising=False)
     path = tmp_path / ".env"
     path.write_text("", encoding="utf-8")
@@ -27,6 +28,17 @@ def deployment_env(monkeypatch, tmp_path):
 @pytest.mark.parametrize("value, expected", [("", ""), ("/", ""), (" /doc-master/consistency/image-text/ ", "/doc-master/consistency/image-text"), ("/v1", "/v1")])
 def test_prefix_normalization(value, expected):
     assert normalize_base_path(value) == expected
+
+
+def test_frontend_directory_is_resolved_from_env_file(deployment_env, monkeypatch):
+    deployment_env.write_text("UMEKO_UI_DIR=ui-release\nUMEKO_SERVE_UI=false\n", encoding="utf-8")
+    settings = load_settings(deployment_env)
+    assert settings.ui_dir == str((deployment_env.parent / "ui-release").resolve())
+    assert not settings.serve_ui
+    deployment_env.write_text("UMEKO_SERVE_UI=disabled\n", encoding="utf-8")
+    monkeypatch.delenv("UMEKO_SERVE_UI")
+    with pytest.raises(RuntimeError, match="UMEKO_SERVE_UI"):
+        load_settings(deployment_env)
 
 
 def test_temporary_idle_limits_from_deployment_env(deployment_env, monkeypatch, tmp_path):

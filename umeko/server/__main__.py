@@ -10,6 +10,7 @@
 from __future__ import annotations
 
 import argparse
+from dataclasses import replace
 import logging
 import os
 import sys
@@ -45,6 +46,8 @@ def main() -> None:
                         help="管理面监听地址（默认 127.0.0.1，云部署建议内网网卡）")
     parser.add_argument("--admin-port", type=int, default=9000, help="管理面端口（默认 9000）")
     parser.add_argument("--no-admin", action="store_true", help="不启动管理端口")
+    parser.add_argument("--ui-dir", help="独立前端发布的 dist 目录，覆盖 UMEKO_UI_DIR")
+    parser.add_argument("--no-ui", action="store_true", help="仅提供 API，不加载前端资源")
     args = parser.parse_args()
 
     logging.basicConfig(
@@ -57,6 +60,11 @@ def main() -> None:
 
     try:
         settings = load_settings(args.env, args.data_root)
+        if args.ui_dir:
+            from pathlib import Path
+            settings = replace(settings, ui_dir=str(Path(args.ui_dir).expanduser().resolve()))
+        if args.no_ui:
+            settings = replace(settings, serve_ui=False)
     except RuntimeError as exc:
         print(exc, file=sys.stderr)
         sys.exit(1)
@@ -69,6 +77,8 @@ def main() -> None:
             "# 部署配置（修改后重启；本地开发前缀/CA 保持为空）\n"
             "UMEKO_BASE_PATH=\n"
             "UMEKO_ADMIN_BASE_PATH=\n"
+            "UMEKO_UI_DIR=\n"
+            "UMEKO_SERVE_UI=true\n"
             "UMEKO_PUBLIC_URL=\n"
             "MODEL_CA_FILE=\n"
             "# 文件下载信任：企业 CA / 内网精确主机 / 可选的免校验证书主机，见部署指南\n"

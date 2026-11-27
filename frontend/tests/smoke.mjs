@@ -17,7 +17,8 @@ import { checkSkillLayout } from './skill-layout.mjs';
 import { checkAdminAutomation, checkAdminAutomationLayout } from './admin-automation.mjs';
 const require = createRequire(import.meta.url);
 const { chromium } = require(process.env.UMEKO_PLAYWRIGHT || 'playwright');
-const root = fileURLToPath(new URL('../../', import.meta.url));
+const frontendRoot = fileURLToPath(new URL('../', import.meta.url));
+const root = path.resolve(process.env.UMEKO_BACKEND_ROOT || path.join(frontendRoot, '..'));
 const python = process.env.UMEKO_TEST_PYTHON || 'python';
 const screenshotDir = process.env.UMEKO_UI_SCREENSHOTS;
 const normalizedText = (text) => text.replaceAll('\r\n', '\n');
@@ -980,7 +981,7 @@ try {
     const child = spawn(
       python,
       [
-        path.join(root, 'frontend/tests/fixture.py'),
+        path.join(root, 'tests/ui_fixture.py'),
         '--port',
         String(port),
         '--admin-port',
@@ -997,7 +998,12 @@ try {
       ],
       {
         cwd: root,
-        env: { ...process.env, PYTHONPATH: root, PYTHONUTF8: '1' },
+        env: {
+          ...process.env,
+          PYTHONPATH: root,
+          PYTHONUTF8: '1',
+          UMEKO_UI_DIR: path.join(frontendRoot, 'dist'),
+        },
         stdio: ['ignore', 'ignore', 'pipe'],
       },
     );

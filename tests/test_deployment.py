@@ -8,6 +8,58 @@ from umeko.server.app import create_app
 from umeko.server.admin import create_admin_app
 
 
+@pytest.mark.parametrize("prefix,admin_prefix", [("", ""), ("/teams/docs/app", "/operations/console")])
+@pytest.mark.parametrize("serve_ui", [True, False])
+def test_independent_frontend_release_and_api_only_mode(tmp_path, prefix, admin_prefix, serve_ui):
+    directory = tmp_path / "ui-release"
+    (directory / "assets").mkdir(parents=True)
+    for entry in ("index.html", "admin.html"):
+        (directory / entry).write_text(
+            '<html><head><meta name="umeko-base-path" content="__UMEKO_BASE_PATH__">'
+            '<script src="./assets/release.js"></script></head><body>EXTERNAL_RELEASE</body></html>',
+            encoding="utf-8")
+    (directory / "assets/release.js").write_text("/* external release */", encoding="utf-8")
+    settings = Settings(ModelConfig("fixture", "key", "https://unused.invalid"),
+                        base_path=prefix, admin_base_path=admin_prefix, ui_dir=str(directory), serve_ui=serve_ui)
+    if not serve_ui:
+        # API-only deployments can omit the frontend release entirely.
+        from dataclasses import replace
+        settings = replace(settings, ui_dir=str(tmp_path / "missing-ui"))
+    app = create_app(settings, data_root=tmp_path / "data", workspace_root=tmp_path / "output")
+    service, store = app.state.agent_service, app.state.store
+    store.create_user("fixture-admin", "fixture-password", role="admin")
+    admin_app = create_admin_app(settings, service, store)
+    try:
+        with TestClient(app) as user, TestClient(admin_app) as admin:
+            for client, base in ((user, prefix), (admin, admin_prefix)):
+                html = client.get(base + "/")
+                temporary = user.get(prefix + "/TMP/fixture-token")
+                if serve_ui:
+                    assert html.status_code == 200 and "EXTERNAL_RELEASE" in html.text
+                    assert f'content="{base}"' in html.text
+                    assert client.get(base + "/static/ui/assets/release.js").text == "/* external release */"
+                    assert f'src="{base}/static/ui/assets/release.js"' in html.text
+                    assert 'content="/TMP/fixture-token"' in temporary.text
+                else:
+                    assert html.status_code == temporary.status_code == 404
+                    assert client.get(base + "/static/ui/index.html").status_code == 404
+                    assert client.get(base + "/static/ui/assets/release.js").status_code == 404
+                assert client.get(base + "/health").status_code == 200
+            login = admin.post(admin_prefix + "/admin/login",
+                               json={"username": "fixture-admin", "password": "fixture-password"})
+            assert login.status_code == 200
+            assert f"Path={admin_prefix or '/'}" in login.headers["set-cookie"]
+            assert admin.get(admin_prefix + "/admin/v1/tools").status_code == 200
+            assert user.get(prefix + "/openapi.json").status_code == 200
+            assert user.get(prefix + "/v1/sessions").status_code == 401
+            assert user.post(prefix + "/v1/auth/login",
+                             json={"username": "fixture-admin", "password": "fixture-password"}).status_code == 200
+            assert user.post(prefix + "/v1/sessions", json={}).status_code == 201
+            assert user.get(prefix + "/TMP/fixture-token/v1/temporary").status_code == 410
+    finally:
+        service.run_manager.shutdown()
+
+
 @pytest.mark.parametrize("prefix", ["", "/operations/umeko", "/admin"])
 def test_admin_prefix_assets_auth_and_management(tmp_path, prefix):
     settings = Settings(ModelConfig("test", "key", "https://test/v1"),

@@ -147,7 +147,8 @@ python -m umeko.cli
 cd frontend
 npm ci
 npm run dev                     # 工作台 /，管理端 /admin.html
-npm run build                   # 输出到 umeko/server/static/ui
+npm run build                   # 输出到 frontend/dist
+python ../scripts/sync_ui.py --source dist  # 更新 Python 分发包的内置界面
 npx playwright install chromium
 npm run test:smoke              # 独立的根路径与前缀浏览器验收
 ```

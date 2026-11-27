@@ -62,7 +62,7 @@ npm --prefix frontend run test:smoke
 
 验收报告区分原始端口直连、测试反向代理、CI 的真实 NGINX 与生产 ALB。没有读取生产代理规则并通过外部入口验收时，不能把本地通过表述为生产 ALB 已验证，也不能把可能的路径改写问题当作已确认的线上原因。
 
-前端源码改动后运行格式检查和构建，并一起提交 `umeko/server/static/ui/`；不要直接编辑构建文件。部署说明见 [docs/deployment.md](docs/deployment.md)，前端说明见 [docs/frontend.md](docs/frontend.md)。
+前端源码改动后运行格式检查和构建，再通过 `python scripts/sync_ui.py --source frontend/dist` 更新并一起提交 `umeko/server/static/ui/`；不要直接编辑构建文件。前端分仓时发布本仓的 `dist/`，后端通过 `UMEKO_UI_DIR` 加载成品。部署说明见 [docs/deployment.md](docs/deployment.md)，前端说明见 [docs/frontend.md](docs/frontend.md)。
 
 内网使用手册位于 `service_docs/`，与 GitHub Pages 的 `docs/` 独立。手册内部页面与资源使用相对链接；工作台及管理页的文档入口统一读取服务端注入的 `umeko-guide-url`，优先指向 `UMEKO_PUBLIC_URL + /guide/`，未配置时使用当前服务前缀。临时工作台的能力路径不能混入手册链接。修改手册后运行 `python scripts/build_service_docs.py` 和 `--check`，一起提交 `umeko/server/static/guide/`；截图只使用隔离的合成数据。
 

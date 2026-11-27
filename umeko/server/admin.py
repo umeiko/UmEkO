@@ -15,7 +15,6 @@ from typing import Literal
 
 from fastapi import FastAPI, HTTPException, Request, Response, Query
 from fastapi.responses import HTMLResponse, JSONResponse
-from fastapi.staticfiles import StaticFiles
 from pydantic import BaseModel, ConfigDict, Field, StrictBool
 from .. import __version__
 from ..host.identities import SCOPES
@@ -27,7 +26,6 @@ from ..skillpacks import parse_skill_pack_text
 from ..skill_layout import entries as skill_entries, entry_path, member_path, file_metadata
 
 ADMIN_COOKIE = "umeko_admin"
-STATIC_DIR = Path(__file__).parent / "static"
 SECRET_MASK = "********"
 
 
@@ -204,6 +202,8 @@ class _AgentIn(BaseModel):
 
 def create_admin_app(settings: Settings, service: AgentService, store: Store, public_url: str | None = None) -> FastAPI:
     from .guide import add_guide
+    from .ui import mount_ui, render_ui, ui_directory
+    ui_dir = ui_directory(settings)
     base_path = normalize_base_path(settings.admin_base_path, "UMEKO_ADMIN_BASE_PATH")
     public_base = settings.public_url or public_url or "http://127.0.0.1:8000" + settings.base_path
     app = FastAPI(
@@ -228,9 +228,9 @@ def create_admin_app(settings: Settings, service: AgentService, store: Store, pu
 
     @app.get("/", response_class=HTMLResponse, include_in_schema=False)
     def admin_page() -> HTMLResponse:
-        from .ui import render_ui
         from .guide import guide_url
-        return HTMLResponse(render_ui("admin.html", base_path, guide_url=guide_url(settings.public_url or public_url, base_path)))
+        return HTMLResponse(render_ui("admin.html", base_path,
+                                      guide_url=guide_url(settings.public_url or public_url, base_path), directory=ui_dir))
 
     @app.get("/health")
     def health() -> dict:
@@ -1032,7 +1032,7 @@ def create_admin_app(settings: Settings, service: AgentService, store: Store, pu
             )
         return {"output": result}
 
-    app.mount("/static", StaticFiles(directory=STATIC_DIR), name="static")
+    mount_ui(app, ui_dir)
     from .admin_automation import add_admin_automation
     add_admin_automation(app, base_path)
     return app

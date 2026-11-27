@@ -32,7 +32,26 @@ uv sync --extra server
 没有 `uv` 时，用 `python -m pip install -e ".[server]"`，之后直接使用 `python -m ...` 启动。
 普通 `uv sync` 只安装基础模型客户端依赖，Web 服务还需要 `server` 中的 FastAPI、Uvicorn、文件上传、MCP、A2A SDK 与资源监控依赖。
 
-仓库已包含构建后的 Vue 前端，直接启动 Python 服务即可，生产环境不需要 Node 或 Vite 服务。修改 `frontend/` 源码后，在打包或部署前执行 `cd frontend`、`npm ci`、`npm run build`；将更新后的 `umeko/server/static/ui/` 与后端一起发布，勿只拷贝首页。开发与验证步骤见[前端开发](frontend.md)。
+仓库已包含构建后的 Vue 前端，直接启动 Python 服务即可。修改 `frontend/` 源码后，
+执行 `npm ci`、`npm run build` 生成前端仓内的 `dist/`。需要内置到 Python 分发包时，
+在后端仓运行 `python scripts/sync_ui.py --source frontend/dist`。
+开发与验证步骤见[前端开发](frontend.md)。
+
+### 前后端分仓部署
+
+前端仓独立发布整个 `dist/` 成品，部署到例如 `/opt/umeko-ui/releases/1.0.0`，
+在后端配置 `UMEKO_UI_DIR=/opt/umeko-ui/releases/1.0.0`，重启后加载该版本。
+也可使用 `python -m umeko.server --ui-dir /opt/umeko-ui/releases/1.0.0`。
+后端的 wheel 与 exe 均可使用该配置，运行机器只需要后端及前端成品。
+不指定该目录时使用包内的前端。
+
+工作台、管理页和临时工作台共用这一份成品，入口由后端按请求类型提供。
+`UMEKO_BASE_PATH` 与 `UMEKO_ADMIN_BASE_PATH` 仍在后端运行时分别配置，
+同一份前端无需针对部署路径重新构建。网关继续转发相应服务的全部子路径，SSE 关闭缓冲。
+前端版本更新需要同步部署 HTML 与 assets，并重启后端。
+
+如需仅运行 REST、MCP、A2A 和管理 API，配置 `UMEKO_SERVE_UI=false` 或传 `--no-ui`。
+此时三个网页入口返回 404，后端可以在没有前端成品的环境启动。
 
 ### 内网使用手册
 

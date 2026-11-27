@@ -79,6 +79,9 @@ class Settings:
     admin_base_path: str = ""
     download: DownloadConfig = DownloadConfig()
     database_url: str | None = field(default=None, repr=False)
+    # Optional independently built frontend. None uses bundled assets.
+    ui_dir: str | None = None
+    serve_ui: bool = True
 
 
 def normalize_base_path(value: str, setting_name: str = "UMEKO_BASE_PATH") -> str:
@@ -166,6 +169,15 @@ def resolve_env_path(env_path: str | Path | None = None) -> Path:
 def load_settings(env_path: str | Path | None = None, data_root: str | Path | None = None) -> Settings:
     env_path = resolve_env_path(env_path)
     load_dotenv(env_path)
+    ui_dir = (os.getenv("UMEKO_UI_DIR") or "").strip()
+    if ui_dir:
+        ui_path = Path(ui_dir).expanduser()
+        if not ui_path.is_absolute():
+            ui_path = env_path.resolve().parent / ui_path
+        ui_dir = str(ui_path.resolve())
+    serve_ui = os.getenv("UMEKO_SERVE_UI", "true").strip().lower()
+    if serve_ui not in {"true", "false", "1", "0"}:
+        raise RuntimeError("UMEKO_SERVE_UI 必须为 true 或 false")
     model_ca = _load_ca_file(Path(env_path), "MODEL_CA_FILE")
     root = Path(data_root) if data_root is not None else Path(os.getenv("UMEKO_DATA_ROOT") or "server_data")
     if data_root is None and not root.is_absolute():
@@ -183,6 +195,8 @@ def load_settings(env_path: str | Path | None = None, data_root: str | Path | No
         data_root=str(root.resolve()),
         database_url=os.getenv("UMEKO_DATABASE_URL", "").strip() or None,
         registry_managed=True,
+        ui_dir=ui_dir or None,
+        serve_ui=serve_ui in {"true", "1"},
         max_subagent_tool_iterations=max(
             1, int(os.getenv("MAX_SUBAGENT_TOOL_ITERATIONS", "24"))
         ),
