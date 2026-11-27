@@ -83,7 +83,8 @@ class TaskService:
         self._active: set[str] = set()
         self._lock = threading.Lock()
         with self.store.connect() as db:
-            db.executescript("""
+            db.lock_schema()
+            db.executescript(f"""
             CREATE TABLE IF NOT EXISTS service_tasks (
               id TEXT PRIMARY KEY, user_id TEXT NOT NULL REFERENCES users(id) ON DELETE CASCADE,
               source TEXT NOT NULL, context_id TEXT NOT NULL, status TEXT NOT NULL,
@@ -96,14 +97,14 @@ class TaskService:
             CREATE INDEX IF NOT EXISTS idx_service_tasks_owner ON service_tasks(user_id, created_at);
             CREATE INDEX IF NOT EXISTS idx_service_tasks_status ON service_tasks(status, created_at);
             CREATE TABLE IF NOT EXISTS service_task_events (
-              id INTEGER PRIMARY KEY AUTOINCREMENT,
+              id {db.primary_id},
               task_id TEXT NOT NULL REFERENCES service_tasks(id) ON DELETE CASCADE,
               type TEXT NOT NULL, data TEXT NOT NULL, created_at TEXT NOT NULL
             );
             CREATE INDEX IF NOT EXISTS idx_task_events ON service_task_events(task_id, id);
             CREATE TABLE IF NOT EXISTS service_task_artifacts (
               id TEXT NOT NULL, task_id TEXT NOT NULL REFERENCES service_tasks(id) ON DELETE CASCADE,
-              path TEXT NOT NULL, name TEXT NOT NULL, media_type TEXT NOT NULL, size INTEGER NOT NULL,
+              path TEXT NOT NULL, name TEXT NOT NULL, media_type TEXT NOT NULL, size BIGINT NOT NULL,
               PRIMARY KEY(task_id,id)
             );
             CREATE TABLE IF NOT EXISTS service_task_file_refs (
@@ -112,7 +113,7 @@ class TaskService:
               PRIMARY KEY(task_id,file_id), UNIQUE(task_id,path,type)
             );
             """)
-            columns = {row["name"] for row in db.execute("PRAGMA table_info(service_tasks)")}
+            columns = db.columns("service_tasks")
             if "caller_ip" not in columns:
                 db.execute("ALTER TABLE service_tasks ADD COLUMN caller_ip TEXT")
             if "agent_id" not in columns:
@@ -142,7 +143,7 @@ class TaskService:
         self._stop.clear()
         # Single service process: never silently replay tools that may have side effects.
         with self.store.connect() as db:
-            db.execute("BEGIN IMMEDIATE")
+            db.begin_write()
             interrupted = db.execute("SELECT id FROM service_tasks WHERE status IN ('running','cancelling')").fetchall()
             db.execute("UPDATE service_tasks SET status='failed',error=?,completed_at=?,updated_at=?,expires_at=? "
                        "WHERE status IN ('running','cancelling')",
@@ -202,7 +203,7 @@ class TaskService:
         task_id, stamp = "task_" + uuid.uuid4().hex, now()
         expires = (datetime.now(timezone.utc) + timedelta(seconds=self.settings.task_retention_seconds)).isoformat()
         with self.store.connect() as db:
-            db.execute("BEGIN IMMEDIATE")
+            db.begin_write()
             if db.execute("SELECT 1 FROM users WHERE id=?", (owner,)).fetchone() is None:
                 raise PermissionError("服务账号已删除")
             if agent_id and db.execute("SELECT 1 FROM agent_definitions WHERE id=? AND enabled=1", (agent_id,)).fetchone() is None:
@@ -370,6 +371,7 @@ class TaskService:
     def workspace_finished(self, session, run):
         with self._lock:
             with self.store.connect() as db:
+                db.begin_write()
                 task = db.execute("SELECT id,run_id,status FROM service_tasks WHERE session_id=?", (session.id,)).fetchone()
                 if task is None or task["status"] not in TERMINAL or task["run_id"] == run.id:
                     return
@@ -384,7 +386,7 @@ class TaskService:
     def cancel(self, principal, task_id) -> dict:
         owner = require_scope(principal, "tasks:cancel")
         with self.store.connect() as db:
-            db.execute("BEGIN IMMEDIATE")
+            db.begin_write()
             row = self._owned(db, task_id, owner, principal.get("agent_id", ""))
             if row["status"] not in TERMINAL:
                 status = "cancelled" if row["status"] == "queued" else "cancelling"
@@ -470,7 +472,7 @@ class TaskService:
 
     def list_file(self, principal, task_id, directory_id=None):
         with self.store.connect() as db:
-            db.execute("BEGIN IMMEDIATE")
+            db.begin_write()
             row, root = self._file_context(db, principal, task_id)
             result = {"task_id": task_id, "agent_id": row["agent_id"], "directory_id": directory_id,
                       "ready": root is not None, "files": []}
@@ -527,7 +529,7 @@ class TaskService:
         verified = [(dict(item, description=self.service.web_text(session.id, item["description"])), path, kind, info)
                     for item, path, kind, info in verify_result_files(result, root)]
         public_text = self.service.web_text(session.id, result["text"])
-        # Acquire the writer lock before allocating IDs, shared with concurrent list_file.
+        # The caller holds the same writer lock as list_file while assigning IDs.
         db.execute("DELETE FROM service_task_artifacts WHERE task_id=?", (task_id,))
         next_id = db.execute("SELECT COALESCE(MAX(file_id),0)+1 FROM service_task_file_refs WHERE task_id=?", (task_id,)).fetchone()[0]
         files = []
@@ -591,7 +593,7 @@ class TaskService:
                     available = self.settings.task_workers - len(self._active)
                 if available:
                     with self.store.connect() as db:
-                        db.execute("BEGIN IMMEDIATE")
+                        db.begin_write()
                         rows = db.execute("SELECT id FROM service_tasks WHERE status='queued' ORDER BY created_at LIMIT ?",
                                           (available,)).fetchall()
                         for row in rows:
@@ -622,6 +624,7 @@ class TaskService:
         session, run = None, None
         try:
             with self.store.connect() as db:
+                db.begin_write()
                 row = db.execute("SELECT * FROM service_tasks WHERE id=?", (task_id,)).fetchone()
                 if row["cancel_requested"]:
                     db.execute("UPDATE service_tasks SET status='cancelled',completed_at=?,updated_at=?,expires_at=? WHERE id=?", (now(), now(), expiry(self.settings), task_id))
@@ -638,17 +641,21 @@ class TaskService:
             attachments = [self.service.save_file(session.id, item["name"], (self._directory(task_id) / str(i)).read_bytes())[0]
                            for i, item in enumerate(payload["files"])]
             with self.store.connect() as db:
+                db.begin_write()
                 if db.execute("SELECT cancel_requested FROM service_tasks WHERE id=?", (task_id,)).fetchone()[0]:
                     db.execute("UPDATE service_tasks SET status='cancelled',completed_at=?,updated_at=?,expires_at=? WHERE id=?", (now(), now(), expiry(self.settings), task_id))
                     self._event(db, task_id, "task.cancelled", {})
                     return
             run = self.service.create_run(session.id, payload["prompt"], attachments)
             with self.store.connect() as db:
+                db.begin_write()
                 db.execute("UPDATE service_tasks SET session_id=?,run_id=? WHERE id=?", (session.id, run.id, task_id))
                 self._event(db, task_id, "task.running", {})
             cursor, began = 0, time.monotonic()
             while True:
                 with self.store.connect() as db:
+                    # Keep event IDs visible in commit order for incremental polling.
+                    db.begin_write()
                     cancellation = db.execute("SELECT cancel_requested FROM service_tasks WHERE id=?", (task_id,)).fetchone()[0]
                     if cancellation or self._stop.is_set() or time.monotonic() - began > self.settings.task_timeout_seconds:
                         run.request_cancel()
@@ -667,6 +674,7 @@ class TaskService:
             reply = self.service.web_text(session.id, run.reply)
             error = self.service.web_text(session.id, run.error) if run.finished else "服务停止，任务执行已中断"
             with self.store.connect() as db:
+                db.begin_write()
                 if status == "completed":
                     reply = self._record_results(db, task_id, session, run)["text"]
                 expires = (datetime.now(timezone.utc) + timedelta(seconds=self.settings.task_retention_seconds)).isoformat()
@@ -674,30 +682,31 @@ class TaskService:
                            (status, reply, error, stamp, stamp, expires, task_id))
                 self._event(db, task_id, "task." + status, {"reply": reply, "error": error})
         except Exception as exc:
+            logger.exception("Machine task failed: %s", task_id)
             error = self.service.web_text(session.id, str(exc)) if session else "任务初始化失败，请管理员检查配置"
             with self.store.connect() as db:
+                db.begin_write()
                 db.execute("UPDATE service_tasks SET status='failed',error=?,completed_at=?,updated_at=?,expires_at=? WHERE id=?",
                            (error, now(), now(), expiry(self.settings), task_id))
                 self._event(db, task_id, "task.failed", {"error": error})
-            logger.exception("Machine task failed: %s", task_id)
         finally:
-            with self.store.connect() as db:
-                row = db.execute("SELECT workspace_opened_at FROM service_tasks WHERE id=?", (task_id,)).fetchone()
-                if row:
-                    db.execute("UPDATE service_tasks SET workspace_expires_at=? WHERE id=?", (self.workspace_expiry(bool(row["workspace_opened_at"])), task_id))
-            if session:
-                try:
-                    self.capture_files(task_id)
-                except Exception:
-                    logger.exception("Failed to capture task file metadata: %s", task_id)
-            if session and (run is None or run.finished) and not self.service.active_run(session.id):
-                self.service.evict_session(session.id)
-            if run and run.finished:
-                self.service.run_manager.forget(run.id)
             try:
+                with self.store.connect() as db:
+                    row = db.execute("SELECT workspace_opened_at FROM service_tasks WHERE id=?", (task_id,)).fetchone()
+                    if row:
+                        db.execute("UPDATE service_tasks SET workspace_expires_at=? WHERE id=?", (self.workspace_expiry(bool(row["workspace_opened_at"])), task_id))
+                if session:
+                    try:
+                        self.capture_files(task_id)
+                    except Exception:
+                        logger.exception("Failed to capture task file metadata: %s", task_id)
+                if session and (run is None or run.finished) and not self.service.active_run(session.id):
+                    self.service.evict_session(session.id)
+                if run and run.finished:
+                    self.service.run_manager.forget(run.id)
                 self._remove_staging(task_id)
             except OSError:
-                logger.exception("Failed to remove staging files: %s", task_id)
+                logger.exception("Failed to clean up task resources: %s", task_id)
             finally:
                 with self._lock:
                     self._active.discard(task_id)

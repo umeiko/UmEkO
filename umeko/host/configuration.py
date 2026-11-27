@@ -61,6 +61,7 @@ def migrate_legacy_models(store: Store, values: dict) -> int:
         return 0
     proxy = str(values.get("MODEL_PROXY") or "").strip() or None
     with store.connect() as db:
+        db.begin_write()
         for role, name, key, url, vision in models:
             provider = db.execute(
                 "SELECT id FROM providers WHERE base_url=? AND api_key=? AND COALESCE(proxy,'')=?",
@@ -71,7 +72,7 @@ def migrate_legacy_models(store: Store, values: dict) -> int:
             else:
                 label = "legacy-env" if role == "TEXT" else "legacy-env-vision"
                 candidate, suffix = label, 1
-                while db.execute("SELECT id FROM providers WHERE name=?", (candidate,)).fetchone():
+                while db.execute(f"SELECT id FROM providers WHERE {db.case_insensitive_eq('name')}", (candidate,)).fetchone():
                     suffix += 1
                     candidate = f"{label}-{suffix}"
                 pid = f"prv_{uuid.uuid4().hex}"
@@ -83,6 +84,7 @@ def migrate_legacy_models(store: Store, values: dict) -> int:
                 db.execute("INSERT INTO provider_models (id,provider_id,name,vision,created_at) VALUES (?,?,?,?,?)",
                            (mid, pid, name, int(vision), _now()))
             if role == "TEXT":
-                db.execute("INSERT OR IGNORE INTO app_config VALUES ('ACTIVE_MODEL_ID', ?, ?)", (mid, _now()))
+                db.execute("INSERT INTO app_config VALUES ('ACTIVE_MODEL_ID', ?, ?) ON CONFLICT(key) DO NOTHING",
+                           (mid, _now()))
         db.executemany("DELETE FROM app_config WHERE key=?", [(k,) for k in LEGACY_MODEL_KEYS])
     return len(models)

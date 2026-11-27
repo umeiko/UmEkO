@@ -171,7 +171,7 @@ Linux 版 draw.io、Xvfb、`drawio_path`、完整 Docker 命令和无模型验�
 
 ## 配置放在哪里
 
-模型配置统一保存在 `UMEKO_DATA_ROOT/umeko.db` 的 Provider / Model 注册表中。
+模型配置统一保存在共享数据库的 Provider / Model 注册表中。
 网页管理面、CLI、本地工作台使用同一解析逻辑，不再以 `.env` 的 API 地址和密钥作为回退配置。
 核心代码仍可直接构造 `Settings(ModelConfig(...))`，用于嵌入和隔离测试。
 
@@ -179,15 +179,33 @@ Linux 版 draw.io、Xvfb、`drawio_path`、完整 Docker 命令和无模型验�
 | --- | --- | --- |
 | 模型 API 地址、密钥、代理、模型名、视觉能力 | 管理面 Provider / Model，或 CLI 导入 | 网页下一轮提问生效；管理面修改仍执行原有重载；运行中的 CLI 用 `/reload` |
 | 用户主/子/视觉模型选择，会话模型覆盖 | 网页用户设置及会话设置 | 下一轮提问 |
-| 服务前缀、模型 CA、数据目录 | `.env` 或进程/容器环境变量 | 重启 |
+| 服务前缀、模型 CA、数据目录、数据库地址 | `.env` 或进程/容器环境变量 | 重启 |
 | 首次管理员账号 | `.env` 的 `UMEKO_ADMIN_USERNAME/PASSWORD` | 仅无管理员账号时用于引导 |
 
 `.env` 默认位于启动目录；exe 优先读取 exe 旁边的文件，也可通过 `--env` 指定。
 进程环境变量优先于 `.env`。`UMEKO_DATA_ROOT`、`MODEL_CA_FILE`、`UMEKO_DOWNLOAD_CA_FILE` 的相对路径以所选 `.env` 所在目录为准；
 启动参数 `--data-root` 优先于环境变量，其相对路径以启动目录为准。
-已有本地工作台数据在 `local_data` 时，继续用 `--data-root local_data`；需要和云端共用 Provider 时指定同一目录。
+已有本地工作台数据在 `local_data` 时，继续用 `--data-root local_data`。共享 Provider 配置的入口应指向同一个数据库。
 容器部署需持久化数据目录，CA 文件需挂载到容器可读的位置。
 如果使用 `--workspace-root`，该路径相对于进程启动目录，生产环境建议明确指定固定位置。
+
+### 选择 PostgreSQL {#postgresql}
+
+`UMEKO_DATABASE_URL` 留空时，使用 `UMEKO_DATA_ROOT/umeko.db`。源码部署使用 PostgreSQL 时，安装驱动：
+
+```sh
+python -m pip install -e '.[server,postgres]'
+```
+
+先创建一个专用数据库及普通登录角色，授予该角色在应用 schema 中创建和更新表的权限。通过部署环境或私有 `.env` 设置连接地址：
+
+```dotenv
+UMEKO_DATABASE_URL=postgresql://umeko:replace-me@db.example.invalid:5432/umeko?sslmode=verify-full
+```
+
+用户名和密码里的 URL 保留字符需要百分号编码。使用 `verify-full` 时，运行环境需信任数据库证书的 CA，可用连接参数 `sslrootcert` 指定 PEM 文件。Web、管理端和 CLI 使用同一个连接地址。连接失败会阻止启动，修正连接配置后再重启。
+
+首次连接会在空库中建表，切换后端会使用该数据库中的账号、Provider、会话和任务。已有 SQLite 记录不会自动迁移，原数据库文件继续保留。会话附件、产物、技能副本和信任记录仍依赖本地持久化目录。应用部署仍使用单进程。
 
 ### CLI 与网页对齐
 
@@ -201,8 +219,7 @@ python -m umeko.cli
 ```
 
 导入 JSON 的格式与管理面相同，`active` 是 `Provider名称/模型名称`。
-`list` 不显示密钥。Web、CLI、本地工作台默认共用 `server_data/umeko.db`；
-不同目录代表不同安装，不会自动同步。CLI 的 `/reload` 读取最新选择并开始新对话。
+`list` 不显示密钥。Web、CLI、本地工作台默认共用同一数据目录下的 `umeko.db`。配置 PostgreSQL 后，各入口通过 `UMEKO_DATABASE_URL` 选择同一个数据库。CLI 的 `/reload` 读取最新选择并开始新对话。
 `providers.local` 和数据库都包含凭据，已经被 Git 忽略，不要放入源码提交。
 
 ### 旧配置迁移
@@ -395,7 +412,7 @@ UMEKO_TASK_TIMEOUT_SECONDS=3600
 
 调用记录默认保留 24 小时；纯机器节点及文件在任务结束后默认 15 分钟回收。打开临时工作台后改为网页无实际操作 1 小时回收，心跳不续期；运行中的任务会等执行结束后再计时。清理约每分钟执行一次，释放节点、文件及内存，数据库中的消息、工具记录、文件树快照保留到调用记录期限。超时发起协作式取消，外部工具停止可能需要时间。新机器任务记录落盘，排队任务在重启后继续调度，执行中任务标记中断失败；普通网页 Run 仍不能跨重启恢复。
 
-备份应包含整个 `UMEKO_DATA_ROOT`，其中数据库含服务凭据摘要和 Provider 配置，任务产物在用户工作区。不要只备份 SQLite 而漏掉待执行输入与产物。部署仍要求单个应用进程；多进程共享数据库不等于支持多 Worker 调度。
+备份应包含数据库和整个 `UMEKO_DATA_ROOT`。数据库含服务凭据摘要和 Provider 配置，任务输入与产物在用户工作区。部署仍要求单个应用进程。
 
 ## 模型并发与调用排队
 
@@ -525,8 +542,7 @@ UMEKO_DOWNLOAD_BLOCKED_HOSTS=restricted.example.internal,10.0.0.8
 
 ## 升级、持久化与备份
 
-部署目录应固定，尤其要固定 `UMEKO_DATA_ROOT`：里面保存 Provider 密钥、用户、历史和会话文件。
-默认会话文件在 `UMEKO_DATA_ROOT/users/` 下，完整备份数据目录，不要只复制 `umeko.db`。
+部署目录应固定。默认会话文件在 `UMEKO_DATA_ROOT/users/` 下，SQLite 库在同一数据根目录。使用 PostgreSQL 时，在应用停写期间一并备份数据库（如 `pg_dump`）和完整数据目录，恢复时使用同一批备份。
 `UMEKO_DATA_ROOT/skill_trust/` 保存与会话代码配套的批准记录，须与数据库、会话文件在同一次停写备份中保存和恢复。
 管理面技能库在应用目录的 `skills/` 中（源码运行是项目根目录，exe 是 exe 所在目录），也应保留；
 使用的外部产物目录、自定义 `--workspace-root`、部署 `.env` 和 CA 文件一并纳入备份。
@@ -652,7 +668,7 @@ for relative in sorted(set(approved) | {"scripts/run.py", "assets/config.json"})
 
 内置 `image-qc` 在管理端“服务接入”中配置，其他 Agent 在此新建并启用，再把调用方 URL 更新为它的完整地址。旧全局 Card 编辑接口与顶级机器入口已删除。
 
-“智能体管理”配置保存在原 `umeko.db`，无需增加 `.env` 项，也无需为每个 Agent 新开一个端口或应用进程。升级启动时自动添加 Agent 配置表与任务归属字段，旧机器任务可在管理员资源监控中查看，但旧顶级协议地址不再可用；升级前按上节备份数据目录。
+“智能体管理”配置保存在共享数据库中。多个 Agent 使用同一个应用进程与端口。升级启动时自动添加 Agent 配置表与任务归属字段，旧机器任务可在管理员资源监控中查看。升级前按上节备份数据库和数据目录。
 
 如果公共部署前缀为 `/doc-master/consistency/image-text`，独立 MCP 地址为 `/doc-master/consistency/image-text/agent/image-qc/mcp`。代理按前述配置只剥离部署前缀，转给应用的路径必须保留 `/agent/image-qc/mcp`。不要再剥离 `/agent/image-qc`，否则请求会落到已移除的顶级入口，返回 404。
 

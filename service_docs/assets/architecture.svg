@@ -12,7 +12,7 @@
 <text x="550" y="284" font-size="14" fill="#446e77">任务与会话隔离 · 幂等与排队 · 工具调用 · 技能按需加载 · 结果提交</text>
 <g stroke="#12858a" stroke-width="2" fill="none" marker-end="url(#arrow)"><path d="M270 305v42"/><path d="M550 305v42"/><path d="M830 305v42"/></g>
 <g fill="#fff" stroke="#b9d7db" stroke-width="2"><rect x="80" y="360" width="310" height="92" rx="12"/><rect x="414" y="360" width="272" height="92" rx="12"/><rect x="710" y="360" width="310" height="92" rx="12"/></g>
-<g fill="#173e49" font-size="20"><text x="235" y="394">每模型队列 → 上游模型</text><text x="550" y="394">SQLite 持久化</text><text x="865" y="394">隔离会话目录</text></g>
+<g fill="#173e49" font-size="20"><text x="235" y="394">每模型队列 → 上游模型</text><text x="550" y="394">共享数据库</text><text x="865" y="394">隔离会话目录</text></g>
 <g fill="#5b7880" font-size="14"><text x="235" y="423">主模型 · 子模型 · 视觉模型</text><text x="550" y="423">配置 · 状态 · 消息 · 工具记录</text><text x="865" y="423">附件 · 工作材料 · 产物 · 技能副本</text></g>
 <text x="550" y="505" fill="#146c75" font-size="18">机器任务返回临时工作台：查看过程 → 补充材料 → 继续同一 Session</text>
 <text x="550" y="535" fill="#5b7880" font-size="14">闲置节点清理文件和内存，调用记录与文件树快照按保留期保存</text>

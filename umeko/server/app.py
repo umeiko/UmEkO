@@ -121,11 +121,11 @@ def create_app(
         title="Umeko API",
         version=__version__,
         description=(
-            "Umeko 通用 Agent 基座的服务化 API。用户、Session 与对话历史保存在 SQLite；"
+            "Umeko 通用 Agent 基座的服务化 API。用户、Session 与对话历史保存在配置的数据库；"
             "附件与产物保存在用户与 Session 隔离的服务端目录。"
         ),
     )
-    store = Store(Path(data_root) / "umeko.db")
+    store = Store.from_settings(settings, data_root)
     service = AgentService(
         settings, data_root, workspace_root=workspace_root, store=store,
         profile=profile, command_runner=command_runner,

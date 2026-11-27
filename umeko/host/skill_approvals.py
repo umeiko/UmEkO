@@ -24,22 +24,23 @@ class SkillApprovals:
         self.service = service
         self.lock = threading.RLock()
         with service.store.connect() as db:
+            db.lock_schema()
             # Earlier per-session maintenance events did not approve a library
             # version for future dispatch and are not used as authorizations.
             db.execute("""CREATE TABLE IF NOT EXISTS skill_file_approvals (
                 pack TEXT NOT NULL, member TEXT NOT NULL, md5 TEXT NOT NULL, sha256 TEXT NOT NULL,
                 actor TEXT NOT NULL, actor_id TEXT NOT NULL, created_at TEXT NOT NULL,
                 PRIMARY KEY(pack, member))""")
-            db.execute("""CREATE TABLE IF NOT EXISTS skill_file_approval_events (
-                id INTEGER PRIMARY KEY AUTOINCREMENT, pack TEXT NOT NULL, member TEXT NOT NULL,
+            db.execute(f"""CREATE TABLE IF NOT EXISTS skill_file_approval_events (
+                id {db.primary_id}, pack TEXT NOT NULL, member TEXT NOT NULL,
                 md5 TEXT NOT NULL, sha256 TEXT NOT NULL, actor TEXT NOT NULL,
                 actor_id TEXT NOT NULL, created_at TEXT NOT NULL)""")
-            if "approval_id" not in {r["name"] for r in db.execute("PRAGMA table_info(skill_file_approvals)")}:
-                db.execute("ALTER TABLE skill_file_approvals ADD COLUMN approval_id INTEGER NOT NULL DEFAULT 0")
-            if "action" not in {r["name"] for r in db.execute("PRAGMA table_info(skill_file_approval_events)")}:
+            if "approval_id" not in db.columns("skill_file_approvals"):
+                db.execute("ALTER TABLE skill_file_approvals ADD COLUMN approval_id BIGINT NOT NULL DEFAULT 0")
+            if "action" not in db.columns("skill_file_approval_events"):
                 db.execute("ALTER TABLE skill_file_approval_events ADD COLUMN action TEXT NOT NULL DEFAULT 'approve'")
             db.execute("""CREATE TABLE IF NOT EXISTS skill_file_revocations (
-                pack TEXT NOT NULL, member TEXT NOT NULL, event_id INTEGER NOT NULL,
+                pack TEXT NOT NULL, member TEXT NOT NULL, event_id BIGINT NOT NULL,
                 md5 TEXT NOT NULL, sha256 TEXT NOT NULL, actor TEXT NOT NULL,
                 actor_id TEXT NOT NULL, created_at TEXT NOT NULL, PRIMARY KEY(pack,member))""")
 
@@ -156,8 +157,9 @@ class SkillApprovals:
             # Approval and audit commit together. No session files or records
             # are inspected, rewritten or reissued by this operation.
             with self.service.store.connect() as db:
-                event_id = db.execute("INSERT INTO skill_file_approval_events "
-                                      "(pack,member,md5,sha256,actor,actor_id,created_at,action) VALUES(?,?,?,?,?,?,?,'approve')", values).lastrowid
+                event_id = db.insert_id("INSERT INTO skill_file_approval_events "
+                                        "(pack,member,md5,sha256,actor,actor_id,created_at,action) "
+                                        "VALUES(?,?,?,?,?,?,?,'approve')", values)
                 db.execute("INSERT INTO skill_file_approvals(pack,member,md5,sha256,actor,actor_id,created_at,approval_id) VALUES(?,?,?,?,?,?,?,?) "
                            "ON CONFLICT(pack,member) DO UPDATE SET md5=excluded.md5,sha256=excluded.sha256,"
                            "actor=excluded.actor,actor_id=excluded.actor_id,created_at=excluded.created_at,approval_id=excluded.approval_id", (*values, event_id))
@@ -179,8 +181,9 @@ class SkillApprovals:
                 raise RuntimeError("可信记录已变化，请刷新安全状态后重试")
             created_at = datetime.now(timezone.utc).isoformat()
             values = (pack, member, row["md5"], row["sha256"], actor, actor_id, created_at)
-            event_id = db.execute("INSERT INTO skill_file_approval_events "
-                                  "(pack,member,md5,sha256,actor,actor_id,created_at,action) VALUES(?,?,?,?,?,?,?,'revoke')", values).lastrowid
+            event_id = db.insert_id("INSERT INTO skill_file_approval_events "
+                                    "(pack,member,md5,sha256,actor,actor_id,created_at,action) "
+                                    "VALUES(?,?,?,?,?,?,?,'revoke')", values)
             db.execute("INSERT INTO skill_file_revocations(pack,member,md5,sha256,actor,actor_id,created_at,event_id) VALUES(?,?,?,?,?,?,?,?) "
                        "ON CONFLICT(pack,member) DO UPDATE SET md5=excluded.md5,sha256=excluded.sha256,actor=excluded.actor,"
                        "actor_id=excluded.actor_id,created_at=excluded.created_at,event_id=excluded.event_id", (*values, event_id))

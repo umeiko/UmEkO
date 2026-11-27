@@ -76,6 +76,8 @@ def main() -> None:
             "UMEKO_DOWNLOAD_BLOCKED_HOSTS=\n"
             "UMEKO_DOWNLOAD_TLS_INSECURE_HOSTS=\n"
             "UMEKO_DATA_ROOT=server_data\n"
+            "# Optional PostgreSQL URL. Leave empty to use the local SQLite database.\n"
+            "UMEKO_DATABASE_URL=\n"
             "UMEKO_TASK_WORKERS=4\n"
             "UMEKO_TASK_QUEUE_LIMIT=100\n"
             "UMEKO_TASK_CALLER_LIMIT=20\n"
@@ -102,7 +104,7 @@ def main() -> None:
     if not args.no_admin:
         from .admin import create_admin_app
 
-        store = app.state.store  # 与用户面共用同一 Store 实例（同一 SQLite）
+        store = app.state.store  # 与用户面共用同一 Store 实例
         _bootstrap_admin(store, logger)
         public_host = "127.0.0.1" if args.host in {"0.0.0.0", "::"} else args.host
         public_host = f"[{public_host}]" if ":" in public_host else public_host

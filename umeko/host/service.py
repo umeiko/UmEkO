@@ -83,7 +83,7 @@ class AgentService:
     """宿主服务（L2）：Session 装配、运行调度、工作区与 Skill 资源。
 
     纯 Python 实现，不依赖任何 Web 框架；FastAPI（云）/ 本地 IDE / CLI
-    各自作为薄适配层复用它。Session 与运行态在内存，历史与挂载在 SQLite。
+    各自作为薄适配层复用它。Session 与运行态在内存，历史与挂载在共享数据库。
     """
 
     WORKSPACE_ROOTS = ("workspace", "attachments", "generate")
@@ -105,7 +105,7 @@ class AgentService:
         self.data_root.mkdir(parents=True, exist_ok=True)
         self.workspace_root = Path(workspace_root).resolve()
         self.workspace_root.mkdir(parents=True, exist_ok=True)
-        self.store = store or Store(self.data_root / "umeko.db")
+        self.store = store or Store.from_settings(settings, self.data_root)
         self.settings = resolve_provider_settings(self._base_settings, self.store)
         self.sessions: dict[str, SessionState] = {}
         self._lock = threading.Lock()
@@ -975,7 +975,7 @@ class AgentService:
         task_service = getattr(self, "task_service", None)
         task_lock = task_service._lock if task_service else nullcontext()
         with task_lock, self.store.connect() as db:
-            db.execute("BEGIN IMMEDIATE")
+            db.begin_write()
             if hasattr(self, "task_service"):
                 tasks = db.execute("SELECT id,status FROM service_tasks WHERE user_id=?", (user_id,)).fetchall()
                 if any(t["status"] not in {"completed", "failed", "cancelled"}

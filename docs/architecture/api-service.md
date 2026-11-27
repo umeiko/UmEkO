@@ -8,7 +8,7 @@ flowchart TB
     MCP[MCP /agent/name/mcp] --> Identity
     A2A[A2A /agent/name/a2a] --> Identity
     Identity --> Admission[输入校验 / 幂等 / 容量检查]
-    Admission --> Tasks[(SQLite 持久化任务与事件)]
+    Admission --> Tasks[(数据库持久化任务与事件)]
     Tasks --> Worker[单进程任务调度器]
     Worker --> Agent[AgentService / RunManager]
     Agent --> Model[每模型调用队列]
@@ -52,7 +52,7 @@ flowchart TB
 
 任务提交成功后，`task_view` 统一生成带用户部署前缀的临时工作台地址；MCP 文字回执与 A2A 状态消息补充可点击链接，要求调用方立即邀请用户查看进度和接续任务。排队时也能返回地址，但权限不足时仍不披露链接。非流式 A2A 需使用 `returnImmediately=true` 才会在执行完成前返回；流式方式的初始 Task 即含链接。
 
-1. **任务级**：输入校验后，在 SQLite 事务中检查全局等待数量和每个调用者的未结束任务数量。通过后才保存输入文件；执行时才加载 Agent。FIFO 调度，有固定数量的任务 Worker。
+1. **任务级**：输入校验后，在数据库事务中检查全局等待数量和每个调用者的未结束任务数量。通过后才保存输入文件，执行时才加载 Agent。FIFO 调度，有固定数量的任务 Worker。
 2. **模型级**：任务执行中的每次主模型、子模型或视觉模型请求，继续使用 Provider 页面配置的每模型额度。额度为空表示无限制；同模型的网页和机器调用共享进程内队列。
 
 默认任务 Worker 4、全局等待任务 100、每调用者未结束任务 20。任务 Worker 数量不是上游模型并发额度；现有 Run 执行池也有容量限制。队列满时 REST 返回 `429` 和 `Retry-After: 5`；MCP 返回工具错误，A2A 返回带重试提示的协议错误。

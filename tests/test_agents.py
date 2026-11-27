@@ -14,6 +14,7 @@ from mcp.client import Client
 from mcp.client.streamable_http import streamable_http_client
 
 from umeko.agent import UmekoAgent
+from umeko.config import ModelConfig, Settings
 from umeko.host.tasks import TaskService
 from umeko.llm import LLMClient
 from umeko.llm.concurrency import model_call_queue
@@ -108,9 +109,11 @@ def test_admin_reports_explicit_public_url_configuration(machine_app, prefix, co
         assert all(agent["endpoints"]["a2a"].startswith(fallback + "/agent/") for agent in listed["agents"])
 
 
-def test_admin_definitions_and_public_base_url(machine_app, tmp_path):
-    _, _, _, settings = machine_app
-    settings = replace(settings, public_url="https://company.internal/doc-master/consistency/image-text", base_path="/doc-master/consistency/image-text")
+def test_admin_definitions_and_public_base_url(tmp_path, test_database_url):
+    prefix = "/doc-master/consistency/image-text"
+    settings = Settings(ModelConfig("fixture", "fixture-key", "https://models.example.invalid/v1"),
+                        database_url=test_database_url, base_path=prefix,
+                        public_url="https://service.example.invalid" + prefix)
     app = create_app(settings, data_root=tmp_path / "other", workspace_root=tmp_path / "out")
     service, store = app.state.agent_service, app.state.store
     a, _ = seed(app)

@@ -42,7 +42,7 @@ def _providers(args, settings) -> None:
     from dotenv import dotenv_values, unset_key
     from .host.configuration import LEGACY_MODEL_KEYS, migrate_legacy_models
     from .host.storage import Store
-    store = Store(Path(settings.data_root) / "umeko.db")
+    store = Store.from_settings(settings)
     if args.action == "list":
         active = store.active_model()
         providers = store.list_providers()
@@ -69,7 +69,8 @@ def _providers(args, settings) -> None:
             for key in LEGACY_MODEL_KEYS:
                 if key in dotenv_values(path):
                     unset_key(str(path), key)
-        print(f"已核对/迁移 {count} 个模型；注册表：{store.path}" + ("；旧 .env 模型项已移除。" if args.remove else "。"))
+        location = store.path or "PostgreSQL (UMEKO_DATABASE_URL)"
+        print(f"已核对/迁移 {count} 个模型；注册表：{location}" + ("；旧 .env 模型项已移除。" if args.remove else "。"))
 
 
 def _render(event: dict) -> None:

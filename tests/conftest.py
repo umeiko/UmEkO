@@ -6,6 +6,8 @@ import os
 import subprocess
 import threading
 import time
+import uuid
+from urllib.parse import parse_qsl, quote, urlencode, urlsplit, urlunsplit
 
 import pytest
 import httpx
@@ -23,6 +25,31 @@ from umeko.server.app import create_app
 def isolated_skill_library(tmp_path, monkeypatch):
     # Server bootstrap and admin edits must never touch the developer's skill library.
     monkeypatch.setenv("UMEKO_SKILL_DIR", str(tmp_path / "skills"))
+    monkeypatch.delenv("UMEKO_DATABASE_URL", raising=False)
+
+
+@pytest.fixture
+def test_database_url():
+    url = os.environ.get("UMEKO_TEST_POSTGRES_URL")
+    if not url:
+        yield None
+        return
+
+    import psycopg
+    from psycopg import sql
+
+    schema_name = "umeko_test_" + uuid.uuid4().hex
+    schema = sql.Identifier(schema_name)
+    parts = urlsplit(url)
+    params = dict(parse_qsl(parts.query, keep_blank_values=True))
+    params["options"] = (params.get("options", "") + f" -c search_path={schema_name}").strip()
+    isolated_url = urlunsplit(parts._replace(query=urlencode(params, quote_via=quote)))
+    with psycopg.connect(url, autocommit=True) as db:
+        db.execute(sql.SQL("CREATE SCHEMA {}").format(schema))
+        try:
+            yield isolated_url
+        finally:
+            db.execute(sql.SQL("DROP SCHEMA {} CASCADE").format(schema))
 
 
 @pytest.fixture
@@ -37,7 +64,7 @@ def approve_skill_files():
 
 
 @pytest.fixture
-def machine_app(tmp_path, monkeypatch, request):
+def machine_app(tmp_path, monkeypatch, request, test_database_url):
     def chat(agent, prompt, images=None):
         if prompt.startswith("hold"):
             while not agent._should_cancel():
@@ -54,7 +81,7 @@ def machine_app(tmp_path, monkeypatch, request):
     monkeypatch.setattr(UmekoAgent, "chat", chat)
     settings = Settings(ModelConfig("fixture", "fixture-key", "http://unused.invalid"), base_path=getattr(request,"param",""),
                         task_workers=1, task_queue_limit=2, task_caller_limit=3,
-                        task_retention_seconds=60, task_timeout_seconds=15)
+                        task_retention_seconds=60, task_timeout_seconds=15, database_url=test_database_url)
     app = create_app(settings, data_root=tmp_path / "data", workspace_root=tmp_path / "out")
     app.state.fixture_agent = app.state.agent_service.agent_registry.save({
         "slug": "fixture", "name": "Fixture Agent", "description": "Protocol test service", "skill_names": []})

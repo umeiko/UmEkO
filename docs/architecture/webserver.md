@@ -11,7 +11,7 @@ flowchart TB
     O[管理员内网入口] --> A[管理面 · 9000]
     U --> S[共享 AgentService]
     A --> S
-    S --> D[(SQLite 与会话文件)]
+    S --> D[(数据库与会话文件)]
     S --> L[模型客户端 · HTTPS / 公司 CA]
 ```
 
@@ -25,7 +25,7 @@ flowchart TB
 
 页面加载后会读取当前用户、模型和会话。提交问题调用 `POST /v1/sessions/{id}/runs`，服务立即返回 Run；随后网页从 `GET /v1/runs/{id}/events` 读取 SSE。
 
-Run 产生文字增量、工具状态、子 Agent 事件和最终结果。执行中的工具在聊天区展示，已经结束的工具可进入折叠历史；工具历史也持久化在 SQLite，便于恢复页面。
+Run 产生文字增量、工具状态、子 Agent 事件和最终结果。执行中的工具在聊天区展示，已经结束的工具可进入折叠历史。工具历史也持久化到数据库，便于恢复页面。
 
 SSE 连接断开不会自动取消 Run。网页可以带 `Last-Event-ID` 重新连接，重放当前进程保存的后续事件。重启会丢失 Run 与 SSE 缓冲，所以这还不是持久化业务任务系统。
 
@@ -55,7 +55,7 @@ NGINX 要关闭 SSE 缓冲，并给予长任务足够的读取超时。HTTPS 页
 
 ```text
 UMEKO_DATA_ROOT/
-  umeko.db
+  umeko.db                 # 默认 SQLite 后端
   skill_trust/<session_id>/   管理员下发代码的白名单与摘要，不对用户开放
   users/<user_id>/sessions/<session_id>/
     workspace/       用户工作区
@@ -66,10 +66,10 @@ UMEKO_DATA_ROOT/
 
 `AgentService` 懒加载会话并缓存 Agent，`RunManager` 使用 4 个执行线程。执行线程数量与模型并发额度是两件事：一个业务 Run 可多次调用不同模型；等待模型额度的 Run 也会占用执行线程。
 
-机器任务与其临时工作台已经具备闲置回收、Run 缓冲清理与调用记录 TTL，详见 [API 服务设计](api-service.md)。普通注册用户的网页会话没有这套自动闲置回收机制，历史与文件继续保留；SQLite 保存历史不代表所有网页会话内存对象都会自动淘汰。
+机器任务与其临时工作台支持闲置回收、Run 缓冲清理与调用记录 TTL，详见 [API 服务设计](api-service.md)。普通注册用户的网页会话保留历史与文件，内存对象不受机器任务回收机制影响。
 
 ## 部署约束
 
-当前采用单应用进程，反向代理在外层处理公共 HTTPS 与路径。SQLite、会话文件和技能库都要备份；根目录 `skills/` 中的管理脚本不包含在仅备份数据目录的操作里。
+当前采用单应用进程，反向代理在外层处理公共 HTTPS 与路径。备份包含实际使用的数据库、会话文件和根目录 `skills/` 中的技能库。PostgreSQL 配置见 [部署说明](../deployment.md#postgresql)。
 
 源码：[server/app.py](https://github.com/umeiko/UmEkO/blob/main/umeko/server/app.py)、[server/admin.py](https://github.com/umeiko/UmEkO/blob/main/umeko/server/admin.py)、[host/service.py](https://github.com/umeiko/UmEkO/blob/main/umeko/host/service.py)。

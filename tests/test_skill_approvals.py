@@ -21,10 +21,10 @@ SOURCE = b'import json\nprint(json.dumps({"ok":True,"result":"approved fixture"}
 
 
 @pytest.fixture
-def setup(tmp_path, request):
+def setup(tmp_path, request, test_database_url):
     prefix = getattr(request, "param", "")
     settings = Settings(ModelConfig("fixture", "unused", "https://unused.invalid"),
-                        base_path="/users/work" if prefix else "", admin_base_path=prefix)
+                        base_path="/users/work" if prefix else "", admin_base_path=prefix, database_url=test_database_url)
     public = create_app(settings, data_root=tmp_path / "data", workspace_root=tmp_path / "output")
     service = public.state.agent_service
     owner = service.store.create_user("approval-admin", "fixture-pass", "admin")
@@ -35,6 +35,17 @@ def setup(tmp_path, request):
 
 def login(admin, prefix):
     assert admin.post(prefix + "/admin/login", json={"username": "approval-admin", "password": "fixture-pass"}).status_code == 200
+
+
+def reject_audit_inserts(db, *, revoke_only=False):
+    condition = " WHEN (NEW.action='revoke')" if revoke_only else ""
+    trigger = "CREATE TRIGGER fail_skill_audit BEFORE INSERT ON skill_file_approval_events"
+    if db.postgres:
+        db.execute("CREATE FUNCTION fail_skill_audit() RETURNS trigger LANGUAGE plpgsql "
+                   "AS $$ BEGIN RAISE EXCEPTION 'synthetic failure'; END; $$")
+        db.execute(trigger + " FOR EACH ROW" + condition + " EXECUTE FUNCTION fail_skill_audit()")
+    else:
+        db.execute(trigger + condition + " BEGIN SELECT RAISE(ABORT, 'synthetic failure'); END")
 
 
 def approve_package(service, owner):
@@ -150,8 +161,7 @@ def test_md5_match_does_not_bypass_sha256_and_approval_transaction_rolls_back(se
     assert service.skill_approvals.status(PACK, MEMBER)["trusted"] is False
     assert "SHA-256" in run(service.create_session(user_id=owner["id"]))
     with service.store.connect() as db:
-        db.execute("CREATE TRIGGER fail_approval_audit BEFORE INSERT ON skill_file_approval_events "
-                   "BEGIN SELECT RAISE(ABORT, 'synthetic failure'); END")
+        reject_audit_inserts(db)
     with pytest.raises(Exception, match="synthetic failure"):
         service.skill_approvals.approve(PACK, MEMBER, hashlib.sha256(SOURCE).hexdigest(), actor=owner["username"])
     assert service.skill_approvals.approved_files(PACK)[MEMBER]["sha256"] == "0" * 64
@@ -349,8 +359,7 @@ def test_failed_revocation_audit_cannot_remove_an_approval(setup):
     service, owner, _, _, _ = setup
     approve_package(service, owner)
     with service.store.connect() as db:
-        db.execute("CREATE TRIGGER fail_revocation BEFORE INSERT ON skill_file_approval_events "
-                   "WHEN NEW.action='revoke' BEGIN SELECT RAISE(ABORT, 'synthetic failure'); END")
+        reject_audit_inserts(db, revoke_only=True)
     with pytest.raises(Exception, match="synthetic failure"):
         service.skill_approvals.revoke(PACK, MEMBER, hashlib.sha256(SOURCE).hexdigest(), actor=owner["username"])
     assert service.skill_approvals.status(PACK, MEMBER)["trusted"]

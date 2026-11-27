@@ -10,6 +10,7 @@ from datetime import datetime, timezone
 
 import psutil
 
+from ..host.database import DatabaseUnavailable
 from ..llm.concurrency import model_call_queue
 
 
@@ -42,7 +43,7 @@ class ResourceMonitor:
         while not self._stop.wait(self.interval):
             try:
                 self._sample()
-            except (OSError, psutil.Error):
+            except (DatabaseUnavailable, OSError, psutil.Error):
                 pass
 
     def _sample(self):
@@ -56,9 +57,7 @@ class ResourceMonitor:
         models = [{"id": m["id"], "name": m["name"], "provider": p["name"],
                    **model_call_queue(m["id"], m["max_concurrent_requests"]).snapshot()}
                   for p in self.service.store.list_providers() for m in p["models"]]
-        db_bytes = sum(p.stat().st_size for p in [self.service.store.path,
-                      self.service.store.path.with_name(self.service.store.path.name + "-wal")]
-                       if p.is_file())
+        db_bytes = self.service.store.database_bytes()
         sample = {
             "timestamp": datetime.now(timezone.utc).isoformat(), "uptime_seconds": round(time.monotonic() - self.started),
             "host": {"cpu_percent": psutil.cpu_percent(None), "cpu_count": psutil.cpu_count() or 1,

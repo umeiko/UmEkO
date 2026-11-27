@@ -26,7 +26,7 @@ Windows 可从 [GitHub Releases](https://github.com/umeiko/UmEkO/releases) 下�
 
 在 Provider 页面添加模型服务地址和 API Key，再添加模型名称、视觉能力与并发上限，激活一个主模型。模型上限填 `0` 表示无限制；如果公司按模型限制同时请求数，就填该模型的额度。
 
-模型配置保存在 `UMEKO_DATA_ROOT/umeko.db`。`.env` 只放部署类配置，例如：
+模型配置保存在共享数据库中，默认使用 `UMEKO_DATA_ROOT/umeko.db`。也可配置 [PostgreSQL](deployment.md#postgresql)。`.env` 保存部署类配置，例如：
 
 ```ini
 UMEKO_DATA_ROOT=server_data

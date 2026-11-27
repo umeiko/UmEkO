@@ -4,14 +4,13 @@ import hashlib
 import hmac
 import json
 import secrets
-import sqlite3
 import threading
 import uuid
 from datetime import datetime, timedelta, timezone
 from pathlib import Path
-from contextlib import contextmanager
 
 from ..llm.concurrency import set_model_limit, validate_limit
+from .database import DatabaseIntegrityError, connect_database
 
 _model_updates_lock = threading.Lock()
 
@@ -21,31 +20,42 @@ def _now() -> str:
 
 
 class Store:
-    """用户、Session、消息、上下文摘要与 Skill 挂载的 SQLite 持久化。"""
+    """用户、会话、配置及机器任务使用的共享数据库。"""
 
-    def __init__(self, path: str | Path):
-        self.path = Path(path)
-        self.path.parent.mkdir(parents=True, exist_ok=True)
+    def __init__(self, path: str | Path, *, database_url: str | None = None):
+        self._database_url = database_url
+        self.path = None if database_url else Path(path)
+        if self.path is not None:
+            self.path.parent.mkdir(parents=True, exist_ok=True)
         self._init()
 
-    @contextmanager
+    @classmethod
+    def from_settings(cls, settings, data_root=None):
+        root = settings.data_root if data_root is None else data_root
+        return cls(Path(root) / "umeko.db", database_url=settings.database_url)
+
+    @property
+    def backend(self) -> str:
+        return "postgresql" if self._database_url else "sqlite"
+
     def connect(self):
-        db = sqlite3.connect(self.path, timeout=10)
-        db.row_factory = sqlite3.Row
-        db.execute("PRAGMA foreign_keys=ON")
-        try:
-            with db:
-                yield db
-        finally:
-            db.close()
+        return connect_database(self.path, self._database_url)
+
+    def database_bytes(self) -> int:
+        if self.path is None:
+            with self.connect() as db:
+                return db.execute("SELECT pg_database_size(current_database())").fetchone()[0]
+        wal = self.path.with_name(self.path.name + "-wal")
+        return sum(p.stat().st_size for p in (self.path, wal) if p.is_file())
 
     def _init(self):
         with self.connect() as db:
-            db.executescript("""
+            db.lock_schema()
+            db.executescript(f"""
             CREATE TABLE IF NOT EXISTS users (
-              id TEXT PRIMARY KEY, username TEXT NOT NULL COLLATE NOCASE UNIQUE,
+              id TEXT PRIMARY KEY, username TEXT NOT NULL {db.case_insensitive_unique},
               password_hash TEXT NOT NULL, created_at TEXT NOT NULL,
-              avatar BLOB, avatar_mime TEXT
+              avatar {db.binary_type}, avatar_mime TEXT
             );
             CREATE TABLE IF NOT EXISTS auth_tokens (
               token_hash TEXT PRIMARY KEY, user_id TEXT NOT NULL REFERENCES users(id) ON DELETE CASCADE,
@@ -54,12 +64,12 @@ class Store:
             CREATE TABLE IF NOT EXISTS agent_sessions (
               id TEXT PRIMARY KEY, user_id TEXT NOT NULL REFERENCES users(id) ON DELETE CASCADE,
               title TEXT NOT NULL, created_at TEXT NOT NULL, updated_at TEXT NOT NULL,
-              context_summary TEXT, context_cutoff_id INTEGER NOT NULL DEFAULT 0
+              context_summary TEXT, context_cutoff_id BIGINT NOT NULL DEFAULT 0
             );
             CREATE INDEX IF NOT EXISTS idx_agent_sessions_user_updated
               ON agent_sessions(user_id, updated_at DESC);
             CREATE TABLE IF NOT EXISTS messages (
-              id INTEGER PRIMARY KEY AUTOINCREMENT,
+              id {db.primary_id},
               session_id TEXT NOT NULL REFERENCES agent_sessions(id) ON DELETE CASCADE,
               role TEXT NOT NULL, content TEXT NOT NULL, attachments TEXT NOT NULL DEFAULT '[]',
               created_at TEXT NOT NULL
@@ -76,7 +86,7 @@ class Store:
               key TEXT PRIMARY KEY, value TEXT NOT NULL, updated_at TEXT NOT NULL
             );
             CREATE TABLE IF NOT EXISTS providers (
-              id TEXT PRIMARY KEY, name TEXT NOT NULL COLLATE NOCASE UNIQUE,
+              id TEXT PRIMARY KEY, name TEXT NOT NULL {db.case_insensitive_unique},
               base_url TEXT NOT NULL, api_key TEXT NOT NULL, proxy TEXT,
               created_at TEXT NOT NULL
             );
@@ -107,7 +117,7 @@ class Store:
               allowed_tool_names TEXT, updated_at TEXT NOT NULL
             );
             CREATE TABLE IF NOT EXISTS tool_events (
-              id INTEGER PRIMARY KEY AUTOINCREMENT,
+              id {db.primary_id},
               session_id TEXT NOT NULL REFERENCES agent_sessions(id) ON DELETE CASCADE,
               run_id TEXT,
               agent TEXT NOT NULL DEFAULT 'main',
@@ -130,15 +140,17 @@ class Store:
               updated_at TEXT NOT NULL
             );
             """)
-            # 旧库迁移：users 补 role 列（管理员入口，role='admin'）
-            model_cols = {row["name"] for row in db.execute("PRAGMA table_info(provider_models)")}
+            if db.postgres:
+                db.execute("CREATE UNIQUE INDEX IF NOT EXISTS idx_users_username ON users(lower(username))")
+                db.execute("CREATE UNIQUE INDEX IF NOT EXISTS idx_providers_name ON providers(lower(name))")
+            model_cols = db.columns("provider_models")
             if "max_concurrent_requests" not in model_cols:
                 db.execute("ALTER TABLE provider_models ADD COLUMN max_concurrent_requests "
                            "INTEGER NOT NULL DEFAULT 0 CHECK(max_concurrent_requests >= 0)")
             if "user_enabled" not in model_cols:
                 db.execute("ALTER TABLE provider_models ADD COLUMN user_enabled "
                            "INTEGER NOT NULL DEFAULT 1 CHECK(user_enabled IN (0,1))")
-            cols = {row["name"] for row in db.execute("PRAGMA table_info(users)")}
+            cols = db.columns("users")
             if "role" not in cols:
                 db.execute(
                     "ALTER TABLE users ADD COLUMN role TEXT NOT NULL DEFAULT 'user'"
@@ -146,9 +158,7 @@ class Store:
             if "kind" not in cols:
                 db.execute("ALTER TABLE users ADD COLUMN kind TEXT NOT NULL DEFAULT 'human'")
             # 旧库迁移：agent_sessions 补 model_override_id 列（用户会话级模型覆盖）
-            session_cols = {
-                row["name"] for row in db.execute("PRAGMA table_info(agent_sessions)")
-            }
+            session_cols = db.columns("agent_sessions")
             if "model_override_id" not in session_cols:
                 db.execute(
                     "ALTER TABLE agent_sessions ADD COLUMN model_override_id TEXT"
@@ -156,27 +166,28 @@ class Store:
             if "purpose" not in session_cols:
                 db.execute("ALTER TABLE agent_sessions ADD COLUMN purpose TEXT NOT NULL DEFAULT 'chat'")
             # 旧库迁移：default_skills 补 enabled 列（管理员停用/启用，停用不下发）
-            skill_cols = {
-                row["name"] for row in db.execute("PRAGMA table_info(default_skills)")
-            }
+            skill_cols = db.columns("default_skills")
             if skill_cols and "enabled" not in skill_cols:
                 db.execute(
                     "ALTER TABLE default_skills ADD COLUMN enabled INTEGER NOT NULL DEFAULT 1"
                 )
             self._migrate_tool_names(db)
-            db.execute("PRAGMA optimize")
+            if not db.postgres:
+                db.execute("PRAGMA optimize")
 
     @staticmethod
     def _migrate_tool_names(db):
         """Preserve grants and disabled flags when a capability is renamed."""
         from ..tool_catalog import TOOL_ALIASES, canonical_tool_name
+        position = "strpos" if db.postgres else "instr"
         for old, current in TOOL_ALIASES.items():
             # An explicitly configured current name wins over a legacy row.
-            db.execute("INSERT OR IGNORE INTO tool_dispatch(name,enabled) "
-                       "SELECT ?,enabled FROM tool_dispatch WHERE name=?", (current, old))
+            db.execute("INSERT INTO tool_dispatch(name,enabled) "
+                       "SELECT ?,enabled FROM tool_dispatch WHERE name=? ON CONFLICT(name) DO NOTHING",
+                       (current, old))
             db.execute("DELETE FROM tool_dispatch WHERE name=?", (old,))
             rows = db.execute("SELECT user_id,allowed_tool_names FROM user_tool_access "
-                              "WHERE instr(allowed_tool_names,?)>0", (old,)).fetchall()
+                              f"WHERE {position}(allowed_tool_names,?)>0", (old,)).fetchall()
             for row in rows:
                 names = json.loads(row["allowed_tool_names"])
                 renamed = list(dict.fromkeys(canonical_tool_name(name) for name in names))
@@ -217,7 +228,7 @@ class Store:
                         user["created_at"], role,
                     ),
                 )
-        except sqlite3.IntegrityError as exc:
+        except DatabaseIntegrityError as exc:
             raise ValueError("用户名已存在") from exc
         return user
 
@@ -227,7 +238,7 @@ class Store:
         """本地 IDE 场景的隐式单用户：不存在则以不可用口令创建。"""
         with self.connect() as db:
             row = db.execute(
-                "SELECT * FROM users WHERE username=?", (self.LOCAL_USERNAME,)
+                f"SELECT * FROM users WHERE {db.case_insensitive_eq('username')}", (self.LOCAL_USERNAME,)
             ).fetchone()
         if row:
             return {
@@ -246,7 +257,8 @@ class Store:
 
     def authenticate(self, username: str, password: str) -> dict | None:
         with self.connect() as db:
-            row = db.execute("SELECT * FROM users WHERE username=?", (username.strip(),)).fetchone()
+            row = db.execute(f"SELECT * FROM users WHERE {db.case_insensitive_eq('username')}",
+                             (username.strip(),)).fetchone()
         if row and row["kind"] == "human" and self.verify_password(password, row["password_hash"]):
             return self._user_view(row)
         return None
@@ -269,6 +281,7 @@ class Store:
         if role not in {"user", "admin"}:
             raise ValueError("role 只能是 user 或 admin")
         with self.connect() as db:
+            db.begin_write()
             if role == "user":
                 admin_count = db.execute(
                     "SELECT COUNT(*) AS c FROM users WHERE role='admin' AND id!=?",
@@ -294,7 +307,7 @@ class Store:
     def delete_user(self, user_id: str, *, connection=None) -> None:
         if connection is None:
             with self.connect() as db:
-                db.execute("BEGIN IMMEDIATE")
+                db.begin_write()
                 self.delete_user(user_id, connection=db)
             return
         row = connection.execute("SELECT role FROM users WHERE id=?", (user_id,)).fetchone()
@@ -355,7 +368,7 @@ class Store:
                     (pid, name, base_url.strip(), api_key.strip(),
                      (proxy or "").strip() or None, _now()),
                 )
-        except sqlite3.IntegrityError as exc:
+        except DatabaseIntegrityError as exc:
             raise ValueError("Provider 名称已存在") from exc
         return {"id": pid, "name": name}
 
@@ -451,7 +464,7 @@ class Store:
                     "VALUES (?,?,?,?,?,?,?)",
                     (mid, provider_id, name, 1 if vision else 0, _now(), limit, int(user_enabled)),
                 )
-        except sqlite3.IntegrityError as exc:
+        except DatabaseIntegrityError as exc:
             raise ValueError("该 Provider 下模型已存在") from exc
         set_model_limit(mid, limit)
         return {"id": mid, "name": name, "vision": bool(vision), "max_concurrent_requests": limit,
@@ -505,7 +518,8 @@ class Store:
             ).fetchone() is None:
                 raise KeyError(model_id)
             db.execute(
-                "INSERT OR REPLACE INTO app_config VALUES ('ACTIVE_MODEL_ID', ?, ?)",
+                "INSERT INTO app_config VALUES ('ACTIVE_MODEL_ID', ?, ?) "
+                "ON CONFLICT(key) DO UPDATE SET value=excluded.value, updated_at=excluded.updated_at",
                 (model_id, _now()),
             )
 
@@ -557,7 +571,8 @@ class Store:
         if not isinstance(enabled, bool):
             raise ValueError("enabled 必须为布尔值")
         with self.connect() as db:
-            db.execute("INSERT OR REPLACE INTO tool_dispatch VALUES (?,?)", (name, int(enabled)))
+            db.execute("INSERT INTO tool_dispatch VALUES (?,?) "
+                       "ON CONFLICT(name) DO UPDATE SET enabled=excluded.enabled", (name, int(enabled)))
         return next(tool for tool in self.tool_dispatch() if tool["name"] == name)
 
     def user_tool_access(self, user_id: str) -> dict:
@@ -582,7 +597,8 @@ class Store:
             if not set(allowed_tool_names) <= CONFIGURABLE_TOOLS:
                 raise ValueError("请选择有效的可配置工具，协议必需工具自动保留")
         with self.connect() as db:
-            db.execute("INSERT OR REPLACE INTO user_tool_access VALUES (?,?,?)",
+            db.execute("INSERT INTO user_tool_access VALUES (?,?,?) ON CONFLICT(user_id) DO UPDATE SET "
+                       "allowed_tool_names=excluded.allowed_tool_names, updated_at=excluded.updated_at",
                        (user_id, json.dumps(allowed_tool_names) if allowed_tool_names is not None else None, _now()))
         return self.user_tool_access(user_id)
 
@@ -616,7 +632,9 @@ class Store:
                         raise ValueError("选择的供应商或模型不存在，请刷新后重试")
                     ids = list(dict.fromkeys(ids))
                 values.append(json.dumps(ids) if ids is not None else None)
-            db.execute("INSERT OR REPLACE INTO user_model_access VALUES (?,?,?,?)", (user_id, *values, _now()))
+            db.execute("INSERT INTO user_model_access VALUES (?,?,?,?) ON CONFLICT(user_id) DO UPDATE SET "
+                       "allowed_provider_ids=excluded.allowed_provider_ids, allowed_model_ids=excluded.allowed_model_ids, "
+                       "updated_at=excluded.updated_at", (user_id, *values, _now()))
         return self.user_model_access(user_id)
 
     def allowed_model_rows(self, user_id: str) -> list[dict]:
@@ -686,7 +704,9 @@ class Store:
                 raise ValueError("视觉智能体只能选择具备视觉能力的模型")
         with self.connect() as db:
             db.execute(
-                "INSERT OR REPLACE INTO user_model_prefs VALUES (?,?,?,?,?)",
+                "INSERT INTO user_model_prefs VALUES (?,?,?,?,?) ON CONFLICT(user_id) DO UPDATE SET "
+                "main_model_id=excluded.main_model_id, sub_model_id=excluded.sub_model_id, "
+                "vision_model_id=excluded.vision_model_id, updated_at=excluded.updated_at",
                 (user_id, main_model_id, sub_model_id, vision_model_id, _now()),
             )
         return self.user_model_prefs(user_id)
@@ -833,7 +853,8 @@ class Store:
         with self.connect() as db:
             for key, value in updates.items():
                 db.execute(
-                    "INSERT OR REPLACE INTO app_config VALUES (?,?,?)",
+                    "INSERT INTO app_config VALUES (?,?,?) "
+                    "ON CONFLICT(key) DO UPDATE SET value=excluded.value, updated_at=excluded.updated_at",
                     (key, value, _now()),
                 )
 
@@ -936,7 +957,8 @@ class Store:
             db.execute(
                 "INSERT INTO messages(session_id,role,content,attachments,created_at) "
                 "SELECT ?,role,content,attachments,created_at FROM messages "
-                "WHERE session_id=? AND id>(SELECT COALESCE(context_cutoff_id,0) FROM agent_sessions WHERE id=?)",
+                "WHERE session_id=? AND id>(SELECT COALESCE(context_cutoff_id,0) FROM agent_sessions WHERE id=?) "
+                "ORDER BY id",
                 (new_id, source_id, source_id),
             )
             db.execute(
@@ -944,10 +966,10 @@ class Store:
                 "(SELECT context_summary FROM agent_sessions WHERE id=?) WHERE id=?",
                 (source_id, new_id),
             )
-            db.execute(
-                "INSERT INTO session_files(file_id,session_id,path,created_at) "
-                "SELECT 'file_'||lower(hex(randomblob(16))),?,path,created_at FROM session_files WHERE session_id=?",
-                (new_id, source_id),
+            files = db.execute("SELECT path,created_at FROM session_files WHERE session_id=?", (source_id,)).fetchall()
+            db.executemany(
+                "INSERT INTO session_files(file_id,session_id,path,created_at) VALUES(?,?,?,?)",
+                [("file_" + uuid.uuid4().hex, new_id, row["path"], row["created_at"]) for row in files],
             )
             db.execute(
                 "INSERT INTO resource_mounts(session_id,kind,name,created_at) "
@@ -979,12 +1001,11 @@ class Store:
     ) -> int:
         """插入一条工具调用事件；返回事件 id（用于 started→completed 关联）。"""
         with self.connect() as db:
-            cur = db.execute(
+            return db.insert_id(
                 "INSERT INTO tool_events(session_id,run_id,agent,name,arguments,result,created_at) "
                 "VALUES(?,?,?,?,?,?,?)",
                 (session_id, run_id, agent, name, arguments, result, _now()),
             )
-            return cur.lastrowid
 
     def complete_tool_event(self, event_id: int, result: str | None) -> None:
         with self.connect() as db:
@@ -1010,8 +1031,9 @@ class Store:
             if exists is None:
                 return  # session 不在库中（测试桩场景），跳过持久化
             db.execute(
-                "INSERT OR REPLACE INTO session_files(file_id,session_id,path,created_at) "
-                "VALUES(?,?,?,?)",
+                "INSERT INTO session_files(file_id,session_id,path,created_at) VALUES(?,?,?,?) "
+                "ON CONFLICT(file_id) DO UPDATE SET session_id=excluded.session_id, "
+                "path=excluded.path, created_at=excluded.created_at",
                 (file_id, session_id, path.as_posix(), _now()),
             )
 
@@ -1151,7 +1173,8 @@ class Store:
         with self.connect() as db:
             if mounted:
                 db.execute(
-                    "INSERT OR REPLACE INTO resource_mounts VALUES (?, ?, ?, ?)",
+                    "INSERT INTO resource_mounts VALUES (?, ?, ?, ?) "
+                    "ON CONFLICT(session_id,kind,name) DO UPDATE SET created_at=excluded.created_at",
                     (session_id, kind, name, _now()),
                 )
             else:

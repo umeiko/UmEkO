@@ -13,7 +13,7 @@ python -m umeko.cli --data-root server_data
 
 全局参数放在 `providers` 子命令前面。`MODEL_ID` 是 `providers list` 输出的模型 ID，不是模型名称。
 
-CLI、Web 与本地工作台通过 `host/configuration.py` 读取同一 Provider 注册表。若要共享模型配置，必须指向**同一个数据目录**。`.env` 保存部署配置；模型 URL、Key、名称和每模型并发上限保存在 SQLite。
+CLI、Web 与本地工作台通过 `host/configuration.py` 读取 Provider 注册表。共用模型配置时，各入口指向同一 SQLite 数据目录或 PostgreSQL 数据库。模型 URL、Key、名称和每模型并发上限保存在数据库中。
 
 旧配置可显式迁移：
 

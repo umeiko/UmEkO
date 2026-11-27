@@ -15,6 +15,7 @@ class AgentRegistry:
     def __init__(self, store):
         self.store = store
         with store.connect() as db:
+            db.lock_schema()
             db.execute("""CREATE TABLE IF NOT EXISTS agent_definitions (
                 id TEXT PRIMARY KEY, slug TEXT UNIQUE NOT NULL, name TEXT NOT NULL,
                 enabled INTEGER NOT NULL, definition_json TEXT NOT NULL,
@@ -109,7 +110,7 @@ class AgentRegistry:
         allowed = {"slug", "name", "description", "version", "system_prompt", "default_model_id", "default_vision_model_id", "disclosed_model_ids", "skill_names", "enabled", "documentationUrl", "iconUrl", "provider"}
         value = {key: val for key, val in value.items() if key in allowed}
         with self.store.connect() as db:
-            db.execute("BEGIN IMMEDIATE")
+            db.begin_write()
             conflict = db.execute("SELECT id FROM agent_definitions WHERE slug=? AND id<>?", (slug, agent_id)).fetchone()
             if conflict:
                 raise ValueError("访问路径已被其他智能体使用")
@@ -145,7 +146,7 @@ class AgentRegistry:
 
     def delete(self, agent_id):
         with self.store.connect() as db:
-            db.execute("BEGIN IMMEDIATE")
+            db.begin_write()
             if db.execute("SELECT 1 FROM agent_definitions WHERE id=?", (agent_id,)).fetchone() is None:
                 raise KeyError("智能体不存在")
             if db.execute("SELECT 1 FROM service_tasks WHERE agent_id=? LIMIT 1", (agent_id,)).fetchone():

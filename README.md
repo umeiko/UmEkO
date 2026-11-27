@@ -57,7 +57,7 @@ Screenshots show the actual UI with isolated offline demo data; no live model ca
 - **Machine integrations**: MCP Streamable HTTP and A2A 1.0 JSON-RPC, with scoped service credentials, durable tasks, bounded queues and automatic expiry.
 - **Multiple agents**: configure separate names, instructions, default text and vision models, and skill selections in the admin console; publish each under `/agent/{slug}` with its own Card, MCP, A2A and REST task endpoints, sharing one runtime and model queues.
 - **File operations**: reading, searching, editing, copying, moving and deleting within session directories, clipboard/drag-and-drop attachments and cross-platform archive handling. All archive operations use native 7-Zip on Windows and Linux. See the [deployment guide](docs/deployment.md#archive-support).
-- **History**: messages, tool calls and attachment mappings are stored in SQLite.
+- **History**: messages, tool calls and attachment mappings are stored in SQLite or PostgreSQL.
 - **Run control**: SSE output and cooperative cancellation.
 
 ## Quick start
@@ -143,12 +143,12 @@ before changing deployed skills or restoring sessions.
 ## Configuration
 
 Model credentials, names, proxies, vision flags and concurrency limits are stored
-in the Provider registry (`UMEKO_DATA_ROOT/umeko.db`). Web, local mode and CLI share
-the same resolver. `.env` contains deployment settings and runtime defaults.
+in a shared Provider registry. Web, local mode and CLI read the registry from the configured database. `.env` contains deployment settings and runtime defaults.
 
 | Key | Description |
 |---|---|
-| `UMEKO_DATA_ROOT` | persistent data / Provider registry directory (default `server_data`) |
+| `UMEKO_DATA_ROOT` | persistent data directory (default `server_data`) |
+| `UMEKO_DATABASE_URL` | optional PostgreSQL connection URL. Leave empty for `UMEKO_DATA_ROOT/umeko.db` |
 | `UMEKO_BASE_PATH` | public URL prefix, e.g. `/doc-master/consistency/image-text`; empty for root |
 | `UMEKO_ADMIN_BASE_PATH` | independent admin URL prefix; empty for the admin port root |
 | `MODEL_CA_FILE` | additional PEM CA for HTTPS model services; certificate checks remain enabled |
@@ -164,8 +164,7 @@ python -m umeko.cli
 ```
 
 CLI `/reload` reads the current selection and starts a new conversation. Model
-changes apply to the next Web run. Set the same data directory on all entry
-points; use `--data-root local_data` to retain an existing isolated local install.
+changes apply to the next Web run. Set the same database on all entry points. For local SQLite installs, use `--data-root local_data` to retain an existing data directory. See [PostgreSQL setup and backup](docs/deployment.md#postgresql).
 Legacy environment model configuration is migrated once without replacing
 existing credentials or active selections. Remove old `.env` model entries with
 `python -m umeko.cli providers migrate-env --remove` after checking the data directory.

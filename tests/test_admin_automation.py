@@ -28,10 +28,10 @@ SPEC.loader.exec_module(client_module)
 
 
 @pytest.fixture(params=["", "/operations/console"])
-def admin_pair(tmp_path, request):
+def admin_pair(tmp_path, request, test_database_url):
     prefix = request.param
     settings = Settings(ModelConfig("fixture", "synthetic-key", "https://models.example.invalid/v1"),
-                        base_path="/teams/workbench", admin_base_path=prefix)
+                        base_path="/teams/workbench", admin_base_path=prefix, database_url=test_database_url)
     user = create_app(settings, data_root=tmp_path / "data", workspace_root=tmp_path / "output")
     service, store = user.state.agent_service, user.state.store
     account = store.create_user("automation-admin", "synthetic-password", role="admin")

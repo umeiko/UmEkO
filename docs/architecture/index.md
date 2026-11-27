@@ -14,7 +14,7 @@ flowchart TB
     Host --> Engine[L1 · Agent / Session / RunManager / 事件]
     Engine --> Core[L0 · LLM / 工具 / Skill / 文件 / 取消]
     Core --> Provider[OpenAI 兼容模型服务]
-    Host --> DB[(SQLite)]
+    Host --> DB[(SQLite / PostgreSQL)]
     Host --> Disk[用户与会话文件目录]
     CLI --> Config[共享 Provider 配置]
     Config --> DB

@@ -8,7 +8,7 @@
 
 ```mermaid
 flowchart TB
-    Admin[智能体管理表单] --> Registry[AgentRegistry · SQLite 配置]
+    Admin[智能体管理表单] --> Registry[AgentRegistry · 数据库配置]
     Defaults[默认 Skill 数据库副本] --> Registry
     Caller[调用者] --> Path["/agent/slug 路径解析"]
     Registry --> Path

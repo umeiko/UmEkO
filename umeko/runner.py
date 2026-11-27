@@ -126,7 +126,7 @@ class RunManager:
         self._executor.shutdown(wait=False, cancel_futures=True)
 
     def forget(self, run_id: str) -> None:
-        """Machine tasks retain their results in SQLite, so finished Runs can be released."""
+        """Machine tasks retain their results in the database after finished Runs are released."""
         with self._lock:
             run = self.runs.get(run_id)
             if run is not None and run.finished:

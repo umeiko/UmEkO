@@ -4,10 +4,10 @@ from __future__ import annotations
 import hashlib
 import json
 import secrets
-import sqlite3
 import uuid
 from datetime import datetime, timedelta, timezone
 
+from .database import DatabaseIntegrityError
 from .storage import Store
 
 SCOPES = frozenset({"tasks:create", "tasks:read", "tasks:cancel", "artifacts:read"})
@@ -25,6 +25,7 @@ class IdentityStore:
     def __init__(self, store: Store):
         self.store = store
         with store.connect() as db:
+            db.lock_schema()
             db.executescript("""
             CREATE TABLE IF NOT EXISTS service_accounts (
               id TEXT PRIMARY KEY, name TEXT NOT NULL UNIQUE,
@@ -61,7 +62,7 @@ class IdentityStore:
     def anonymous_principal(self) -> dict:
         # A single persistent identity for open access; IP is never an ownership key.
         with self.store.connect() as db:
-            db.execute("BEGIN IMMEDIATE")
+            db.begin_write()
             row = db.execute("SELECT id FROM users WHERE kind='anonymous' LIMIT 1").fetchone()
             if row:
                 user_id = row["id"]
@@ -87,7 +88,7 @@ class IdentityStore:
                 db.execute("INSERT INTO service_accounts(id,name,user_id,scopes,token_hash,created_at,expires_at) "
                            "VALUES(?,?,?,?,?,?,?)", (account_id, name, user_id, json.dumps(sorted(set(scopes))),
                                                     digest(token), created, expires))
-        except sqlite3.IntegrityError as exc:
+        except DatabaseIntegrityError as exc:
             raise ValueError("服务账号名称已存在") from exc
         return {**next(a for a in self.list() if a["id"] == account_id), "token": token}
 
@@ -97,6 +98,7 @@ class IdentityStore:
             raise ValueError("凭据有效期须为 1–3650 天")
         token = "umeko_svc_" + secrets.token_urlsafe(36) if rotate else None
         with self.store.connect() as db:
+            db.begin_write()
             if db.execute("SELECT 1 FROM service_accounts WHERE id=?", (account_id,)).fetchone() is None:
                 raise KeyError("服务账号不存在")
             if enabled is not None:
@@ -143,7 +145,7 @@ class IdentityStore:
             raise ValueError("invalid_scope")
         token = "umeko_access_" + secrets.token_urlsafe(36)
         with self.store.connect() as db:
-            db.execute("BEGIN IMMEDIATE")
+            db.begin_write()
             if db.execute("SELECT 1 FROM service_accounts WHERE id=? AND token_hash=? AND enabled=1 AND expires_at>?",
                           (client_id, digest(secret), now())).fetchone() is None:
                 raise PermissionError("invalid_client")

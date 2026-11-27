@@ -995,7 +995,7 @@
     }
   },
   "info": {
-    "description": "Umeko 通用 Agent 基座的服务化 API。用户、Session 与对话历史保存在 SQLite；附件与产物保存在用户与 Session 隔离的服务端目录。",
+    "description": "Umeko 通用 Agent 基座的服务化 API。用户、Session 与对话历史保存在配置的数据库；附件与产物保存在用户与 Session 隔离的服务端目录。",
     "title": "Umeko API",
     "version": "0.1.2"
   },

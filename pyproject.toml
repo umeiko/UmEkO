@@ -13,6 +13,7 @@ dependencies = [
 ]
 
 [project.optional-dependencies]
+postgres = ["psycopg[binary]>=3.2,<4"]
 drawio = ["umeko-drawio>=0.2.1,<0.3"]
 server = [
     "fastapi>=0.110.0",

@@ -10,7 +10,7 @@ import os
 import ipaddress
 import re
 import ssl
-from dataclasses import dataclass, replace
+from dataclasses import dataclass, field, replace
 from pathlib import Path
 from urllib.parse import urlsplit
 
@@ -78,6 +78,7 @@ class Settings:
     # 管理面独立入口前缀；不继承用户面的 base_path。留空表示管理端口根路径。
     admin_base_path: str = ""
     download: DownloadConfig = DownloadConfig()
+    database_url: str | None = field(default=None, repr=False)
 
 
 def normalize_base_path(value: str, setting_name: str = "UMEKO_BASE_PATH") -> str:
@@ -180,6 +181,7 @@ def load_settings(env_path: str | Path | None = None, data_root: str | Path | No
             insecure_tls_hosts=_load_download_hosts("UMEKO_DOWNLOAD_TLS_INSECURE_HOSTS"),
         ),
         data_root=str(root.resolve()),
+        database_url=os.getenv("UMEKO_DATABASE_URL", "").strip() or None,
         registry_managed=True,
         max_subagent_tool_iterations=max(
             1, int(os.getenv("MAX_SUBAGENT_TOOL_ITERATIONS", "24"))
@@ -198,7 +200,7 @@ def load_settings(env_path: str | Path | None = None, data_root: str | Path | No
     from .host.configuration import LEGACY_MODEL_KEYS, migrate_legacy_models, resolve_provider_settings
     from .host.storage import Store
 
-    store = Store(root / "umeko.db")
+    store = Store.from_settings(settings)
     # 旧安装首次迁移；注册表已有配置时，不再读取 .env 凭据作为运行时回退。
     if store.config().get("LEGACY_MODEL_CONFIG_MIGRATED") != "1":
         legacy = {k: os.getenv(k, v) for k, v in dotenv_values(env_path).items() if k in LEGACY_MODEL_KEYS}
