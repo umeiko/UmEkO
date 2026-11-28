@@ -169,19 +169,17 @@ class AgentService:
             raise FileNotFoundError(relative_path)
         return candidate
 
-    def workspace_tree(self, session_id: str, filter: str = "") -> list[dict]:
+    def workspace_tree(self, session_id: str, name_filter: str = "") -> list[dict]:
         session = self.get_session(session_id)
-        try:
-            rx = compile_filter(filter or None)
-        except ValueError as e:
-            raise ValueError(str(e))
+        pattern = name_filter or None
+        compile_filter(pattern)
         budget = TreeBudget()
         nodes: list[dict] = []
         for name in self.WORKSPACE_ROOTS:
             directory = session.root / name
             if not directory.is_dir():
                 continue
-            tree = build_tree(directory, budget=budget, pattern=filter or None)
+            tree = build_tree(directory, budget=budget, pattern=pattern)
             tree.path = name  # 可读根显示名（真实目录名可能不同）
             nodes.append(self._tree_node_to_dict(tree))
         return nodes
@@ -199,8 +197,6 @@ class AgentService:
         if node.omitted or node.children_truncated:
             base["truncated"] = True
             omitted = node.omitted
-            tail = node.children[-1] if node.children else None
-            tail_name = tail.name if tail is not None else None
             hint = f"其余 {omitted} 项" if omitted else "部分内容"
             base["children"].append({
                 "name": f"…（{hint}被折叠）",
@@ -238,6 +234,15 @@ class AgentService:
         except Exception:
             archive.unlink(missing_ok=True)
             raise
+
+    def web_value(self, session_id: str, value):
+        if isinstance(value, str):
+            value = self.web_text(session_id, value)
+        elif isinstance(value, list):
+            value = [self.web_value(session_id, item) for item in value]
+        elif isinstance(value, dict):
+            value = {key: self.web_value(session_id, item) for key, item in value.items()}
+        return value
 
     def web_text(self, session_id: str, content: str | None) -> str | None:
         """隐藏服务器路径，同时保留可点击的 Session 文件引用。
@@ -730,7 +735,11 @@ class AgentService:
         return run
 
     def context_stats(self, session_id: str) -> dict:
-        return self.get_session(session_id).agent.context_stats()
+        session = self.get_session(session_id)
+        local = session.active_run_holder["run"]
+        if self.replicas and (local is None or local.finished):
+            return session.agent.context_stats(restored_context=self.store.context_messages(session_id))
+        return session.agent.context_stats()
 
     @coordinated_session
     def compact_context(self, session_id: str) -> dict:

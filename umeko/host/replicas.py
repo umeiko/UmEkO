@@ -162,7 +162,8 @@ class ReplicaRuntime:
         key = model.model_id or hashlib.sha256((model.base_url + "\0" + model.name).encode()).hexdigest()
         return ReplicaModelQueue(self, key, model.max_concurrent_requests)
 
-    def reap_runs(self, db, cutoff: str):
+    @staticmethod
+    def reap_runs(db, cutoff: str):
         dead = db.execute(f"SELECT id,session_id FROM replica_runs r WHERE status IN ({_ACTIVE}) "
                           f"AND NOT EXISTS (SELECT 1 FROM replica_owners o WHERE o.id=r.owner_id AND {_LIVE}) "
                           "FOR UPDATE").fetchall()

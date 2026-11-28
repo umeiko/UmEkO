@@ -104,6 +104,9 @@ def test_cluster_run_sse_cancel_and_workspace_cleanup_cross_replicas(cluster):
         task = first.task_service.submit(principal, {"prompt": "prepare"})
         eventually(lambda: second.task_service.get(principal, task["id"]), lambda row: row["status"] == "completed")
         workspace = second.task_service.open_workspace(task["workspace_token"], activity=True)
+        sid = workspace["session_id"]
+        context_path = prefix + f"/v1/sessions/{sid}/context"
+        assert ui_b.get(context_path).json()["message_count"] == 2
         run = first.task_service.create_workspace_run(task["workspace_token"], "hold", [])
         try:
             assert entered.wait(15)
@@ -126,6 +129,7 @@ def test_cluster_run_sse_cancel_and_workspace_cleanup_cross_replicas(cluster):
             events = ui_b.get(remote_run + "/events", headers={"Last-Event-ID": "1"})
             assert events.status_code == 200 and "event: run.cancelled" in events.text
             assert "event: run.queued" not in events.text
+            assert ui_b.get(temporary + f"/v1/sessions/{sid}/context").json()["message_count"] == 4
         finally:
             finish.set()
 

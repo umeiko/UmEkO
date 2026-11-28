@@ -39,10 +39,10 @@
 | CLI 对话与共享 Provider 注册表 | 已实现 | [CLI](architecture/cli.md) |
 | 用户工作台、独立管理端口 | 已实现 | [Web Server](architecture/webserver.md) |
 | REST API、文件处理与 SSE | 已实现 | [API](api/index.md) |
-| 每个模型独立的并发额度与调用排队 | 已实现，单进程内共享 | [模型配置](api/admin.md) |
+| 每个模型独立的并发额度与调用排队 | 已实现，PostgreSQL 多副本可共享额度 | [模型配置](api/admin.md) |
 | MCP 服务 | 已实现，Streamable HTTP 与七个工具 | [MCP](api/mcp.md) |
 | A2A 服务 | 已实现，1.0 JSON-RPC、Agent Card 与流式 | [A2A](api/a2a.md) |
-| 机器身份、持久化任务队列、自动过期清理 | 已实现，单进程 | [机器任务](api/machine-tasks.md) |
+| 机器身份、持久化任务队列、自动过期清理 | 已实现，支持 PostgreSQL 多副本 | [机器任务](api/machine-tasks.md) |
 | MCP/A2A 临时工作台、同会话续聊与网页实时同步 | 已实现 | [临时工作台](api/temporary-workspace.md) |
 | 管理员资源监控与服务凭据管理 | 已实现 | [资源监控](api/monitoring.md) |
 | 受控技能、代码与配置只读、下发摘要校验 | 已实现，应用层门禁 | [技能安全](architecture/skill-security.md) |

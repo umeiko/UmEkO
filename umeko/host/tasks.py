@@ -2,7 +2,6 @@
 from __future__ import annotations
 
 import base64
-import binascii
 import hashlib
 import json
 import logging
@@ -63,7 +62,7 @@ def validate_input(payload: dict) -> tuple[dict, list[bytes]]:
             raise TaskInputError("INVALID_FILE", "文件名或 base64 内容无效，不能使用服务器路径。", "files")
         try:
             content = base64.b64decode(encoded, validate=True)
-        except (ValueError, binascii.Error) as exc:
+        except ValueError as exc:
             raise TaskInputError("INVALID_FILE_ENCODING", "文件内容不是合法 base64；不要包含 data URL 头部。", "files") from exc
         total += len(content)
         if total > MAX_FILE_BYTES:
@@ -529,7 +528,7 @@ class TaskService:
             raise KeyError("文件不存在或不可读取") from exc
 
     def _file_ref(self, db, root, task_id, file_id):
-        if type(file_id) is not int or not 1 <= file_id <= 2**63 - 1:
+        if isinstance(file_id, bool) or not isinstance(file_id, int) or not 1 <= file_id <= 2**63 - 1:
             raise ValueError("文件序号须为正整数")
         item = db.execute("SELECT path,type FROM service_task_file_refs WHERE task_id=? AND file_id=?",
                           (task_id, file_id)).fetchone()
@@ -750,7 +749,7 @@ class TaskService:
                     for event in run.events_after(cursor):
                         cursor = event["id"]
                         # Persist progress, without exposing absolute host paths or unbounded tool output.
-                        data = self._public_data(session.id, event["data"])
+                        data = self.service.web_value(session.id, event["data"])
                         if len(json.dumps(data)) > 16384:
                             data = {"summary": "事件内容超过 16 KiB，完整结果请读取任务产物"}
                         self._event(db, task_id, event["type"], data)
@@ -870,15 +869,6 @@ class TaskService:
                     db.execute("UPDATE service_tasks SET workspace_evicted_at=? WHERE id=?", (now(), row["id"]))
                 count += 1
         return count
-
-    def _public_data(self, session_id, value):
-        if isinstance(value, str):
-            return self.service.web_text(session_id, value)
-        if isinstance(value, dict):
-            return {key: self._public_data(session_id, item) for key, item in value.items()}
-        if isinstance(value, list):
-            return [self._public_data(session_id, item) for item in value]
-        return value
 
     def snapshot(self) -> dict:
         with self.store.connect() as db:

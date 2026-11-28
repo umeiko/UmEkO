@@ -240,7 +240,7 @@ UMEKO_SKILL_DIR=/srv/umeko/data/skills
 
 各副本通过 PostgreSQL 租约声明执行归属。滚动启动会保留其他有有效租约的 Run 和机器任务。执行副本退出或租约过期后，未完成的工作会标记失败，调用者可以重新提交。每个副本可领取排队任务，`UMEKO_TASK_WORKERS` 按副本计算。模型注册表中的并发上限是全部服务副本共用的额度。资源监控的 CPU 和进程指标依然来自所访问的副本。
 
-Run 状态、取消请求和 SSE 事件在数据库共享，客户端可通过同一个公开入口在不同副本重连。对应事件最多保留 `UMEKO_TASK_RETENTION_SECONDS`；会话历史单独保留。临时工作台和清理器共同检查活跃 Run。开启此模式后，运维验收应实际跨副本测试附件提交、SSE 续接和取消，再启动一个副本检查正在执行的任务是否继续。
+Run 状态、取消请求和 SSE 事件在数据库共享，客户端可通过同一个公开入口在不同副本重连。对应事件最多保留 `UMEKO_TASK_RETENTION_SECONDS`；会话历史单独保留。新一轮对话从已保存的消息和上下文摘要恢复，工具调用记录可在历史中查看。临时工作台和清理器共同检查活跃 Run。开启此模式后，运维验收应实际跨副本测试附件提交、SSE 续接和取消，再启动一个副本检查正在执行的任务是否继续。
 
 健康探针使用对应服务前缀下的 `GET /health`。未取得或已失去执行租约的副本返回 `503`。嵌入到其他 ASGI 应用时，宿主需要管理 UmEkO 子应用的 lifespan，以启动调度和租约续期，并在退出时关闭它们。
 
@@ -333,8 +333,8 @@ location /doc-master/consistency/image-text/ {
 普通入口使用 `python -m umeko.server` 会自动设置 ASGI `root_path`。
 自定义 Uvicorn 启动方式时，`--root-path` 需与 `UMEKO_BASE_PATH` 一致。
 原始端口主要用于代理转发和健康检查；配置前缀后直接打开原始端口并不能代表公共入口验证。
-当前 Run 状态保存在应用进程内，部署使用单个应用进程；多实例或多 worker 的任务调度需另行支持共享状态。
-重启不能恢复正在执行的 Run；计划升级时先等任务结束或停止任务。
+默认部署使用单个应用进程，Run 状态保存在进程内。需要多个实例或 worker 时，按 [PostgreSQL 多副本](#postgresql-replicas) 配置共享状态。
+计划重启某个进程前，先停止向该进程派发工作，并按需等待该进程上的任务结束。
 
 代理 HTTPS 的协议信息由 `X-Forwarded-Proto` 传递。NGINX 同机时默认信任回环来源；
 容器或远端代理可通过 Uvicorn 支持的 `FORWARDED_ALLOW_IPS` 环境变量显式信任相应代理地址。
@@ -464,9 +464,8 @@ JSON 导入也支持模型字段 `max_concurrent_requests`，省略时不会覆�
 流式请求直到收流、关闭连接后才释放额度；失败或取消同样释放。等待中的调用可以通过
 现有停止按钮取消，不会再发往模型服务。应用日志会记录模型排队等待。
 
-这是**单进程的模型调用队列**，不是可跨重启恢复的任务队列，也不限制每分钟请求数 / token 数。
-生产仍使用单个应用进程；多实例部署需要共享限流器和任务状态。额度只统计本进程的调用，
-同一公司模型被其他应用共用时，仍可能收到 LiteLLM 的限流错误，应按平台给本应用的额度设置。
+默认按进程统计并发。启用 [PostgreSQL 多副本](#postgresql-replicas) 后，各副本共用模型额度和排队顺序。执行进程退出时，正在等待该进程发出的模型调用随所属 Run 结束。
+并发额度只限制同一时刻的请求数。模型被其他应用共用时，仍可能收到上游限流错误，应按平台给本应用的额度设置。
 独立 CLI 进程的调用不计入 Web 服务的额度；通过独立 CLI 导入修改上限后，重启正在运行的 Web 服务以应用更新。
 队列本身不创建新会话；已有的任务接收、历史保留和 Session 清理策略仍需按部署需求另行设置。
 
@@ -731,7 +730,7 @@ for relative in sorted(set(approved) | {"scripts/run.py", "assets/config.json"})
 | 新进程里 Provider / 用户 / 历史消失 | `.env` 选择、实际数据目录和容器持久化挂载是否仍与原安装一致 |
 | 升级后技能报 MD5 失败或 `SCRIPT_TRUST_REJECTED` | 区分新旧会话，对比会话副本、原批准记录及当前可信库，按[技能升级与排查](#skill-security-upgrade)处理，不清空记录或关闭检查 |
 | 页面可以用，但管理面 9000 连不上 | 是否启用 `--no-admin`，以及管理面是否仍监听 `127.0.0.1`；它与用户面地址独立 |
-| Run 接口间歇性 404，或重启后任务找不到 | 是否启用了多 worker / 多实例，或进程重启；当前 Run 状态在单进程内 |
+| Run 接口间歇性 404，或重启后任务找不到 | 多副本的数据库、应用 schema、共享卷和 `UMEKO_REPLICA_MODE` 是否一致。单进程部署重启后会清空进程内的 Run 状态 |
 
 参考：[NGINX proxy_pass](https://nginx.org/en/docs/http/ngx_http_proxy_module.html#proxy_pass)、
 [FastAPI 代理与 root_path](https://fastapi.tiangolo.com/advanced/behind-a-proxy/)、

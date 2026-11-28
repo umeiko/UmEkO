@@ -355,11 +355,11 @@ def create_app(
         response_model=list[WorkspaceNode],
         tags=["workspace"],
     )
-    def workspace_tree(session_id: str, filter: str = "") -> list[WorkspaceNode]:
+    def workspace_tree(session_id: str, name_filter: str = Query("", alias="filter")) -> list[WorkspaceNode]:
         try:
             nodes = [
                 WorkspaceNode(**node)
-                for node in service.workspace_tree(session_id, filter=filter)
+                for node in service.workspace_tree(session_id, name_filter=name_filter)
             ]
         except ValueError as e:
             raise HTTPException(status_code=400, detail=str(e)) from e
@@ -390,7 +390,7 @@ def create_app(
                 raise HTTPException(413, "技能文件过大")
             from ..skill_security import protected_name
             return {"name": pack + "/" + member, "content": path.read_text(encoding="utf-8"), "readonly": protected_name(path)}
-        except (ValueError, UnicodeError) as exc:
+        except ValueError as exc:
             raise HTTPException(400, str(exc)) from exc
 
     @app.put("/v1/sessions/{session_id}/skill-files/{pack}/{member:path}", tags=["client resources"])
@@ -858,16 +858,7 @@ def create_app(
                 for event in events:
                     cursor = event["id"]
 
-                    def web_value(value):
-                        if isinstance(value, str):
-                            return service.web_text(run.session_id, value)
-                        if isinstance(value, list):
-                            return [web_value(item) for item in value]
-                        if isinstance(value, dict):
-                            return {key: web_value(item) for key, item in value.items()}
-                        return value
-
-                    payload = json.dumps(web_value(event), ensure_ascii=False)
+                    payload = json.dumps(service.web_value(run.session_id, event), ensure_ascii=False)
                     yield f"id: {event['id']}\nevent: {event['type']}\ndata: {payload}\n\n"
                 if run.finished and not (await asyncio.to_thread(run.events_after, cursor) if service.replicas else run.events_after(cursor)):
                     return

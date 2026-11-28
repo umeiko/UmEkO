@@ -463,7 +463,7 @@ class Store:
         if not name:
             raise ValueError("模型名不能为空")
         limit = validate_limit(max_concurrent_requests)
-        if type(user_enabled) is not bool:
+        if not isinstance(user_enabled, bool):
             raise ValueError("user_enabled 必须是布尔值")
         mid = f"mdl_{uuid.uuid4().hex}"
         try:
@@ -486,7 +486,7 @@ class Store:
         if "vision" in fields:
             updates["vision"] = 1 if fields["vision"] else 0
         if "user_enabled" in fields:
-            if type(fields["user_enabled"]) is not bool:
+            if not isinstance(fields["user_enabled"], bool):
                 raise ValueError("user_enabled 必须是布尔值")
             updates["user_enabled"] = int(fields["user_enabled"])
         if "max_concurrent_requests" in fields:
@@ -816,8 +816,8 @@ class Store:
                     self.add_model(pid, mname, bool(m.get("vision", False)), limit, m.get("user_enabled", True))
                     created_m += 1
                 except ValueError:
-                    if type(m.get("user_enabled", True)) is not bool:
-                        raise ValueError("user_enabled 必须是布尔值")
+                    if not isinstance(m.get("user_enabled", True), bool):
+                        raise
                     if "vision" in m or "max_concurrent_requests" in m or "user_enabled" in m:
                         row = next(
                             (x for x in self.list_providers() if x["id"] == pid), None
