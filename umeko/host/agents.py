@@ -11,6 +11,10 @@ from .. import __version__
 from ..skillpacks import parse_skill_pack_text
 
 
+class AgentSlugConflict(ValueError):
+    """Another agent already owns this access path."""
+
+
 class AgentRegistry:
     def __init__(self, store):
         self.store = store
@@ -113,7 +117,7 @@ class AgentRegistry:
             db.begin_write()
             conflict = db.execute("SELECT id FROM agent_definitions WHERE slug=? AND id<>?", (slug, agent_id)).fetchone()
             if conflict:
-                raise ValueError("访问路径已被其他智能体使用")
+                raise AgentSlugConflict("访问路径已被其他智能体使用")
             db.execute("INSERT INTO agent_definitions VALUES(?,?,?,?,?,?,?) ON CONFLICT(id) DO UPDATE SET "
                        "name=excluded.name,enabled=excluded.enabled,definition_json=excluded.definition_json,updated_at=excluded.updated_at",
                        (agent_id, slug, value["name"], int(value["enabled"]), json.dumps(value, ensure_ascii=False), stamp, stamp))

@@ -62,7 +62,8 @@ jobs:
         run: >-
           pytest tests/test_database.py tests/test_admin_automation.py tests/test_agents.py
           tests/test_protocols.py tests/test_service_access.py tests/test_skill_approvals.py
-          tests/test_builtin_agents.py::test_recreated_container_restores_missing_builtin_packages -q
+          tests/test_builtin_agents.py::test_recreated_container_restores_missing_builtin_packages
+          tests/test_builtin_agents.py::test_parallel_builtin_startup_keeps_one_agent tests/test_replicas.py -q
         env:
           PYTHONUTF8: "1"
           UMEKO_TEST_NGINX: /usr/sbin/nginx

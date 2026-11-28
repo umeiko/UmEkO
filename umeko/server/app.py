@@ -105,15 +105,19 @@ def create_app(
     data_root = data_root if data_root is not None else settings.data_root
     @asynccontextmanager
     async def lifespan(app):
-        service.task_service.start()
-        service.resource_monitor.start()
         try:
+            service.task_service.start()
+            service.resource_monitor.start()
             async with mcp_server.session_manager.run():
                 yield
         finally:
             service.resource_monitor.stop()
-            await asyncio.to_thread(service.task_service.stop)
-            service.run_manager.shutdown()
+            try:
+                await asyncio.to_thread(service.task_service.stop)
+                await asyncio.to_thread(service.run_manager.shutdown)
+            finally:
+                if service.replicas:
+                    await asyncio.to_thread(service.replicas.stop)
 
     app = FastAPI(
         lifespan=lifespan,
@@ -136,7 +140,8 @@ def create_app(
     identities = IdentityStore(store)
     service.identity_store = identities
     service.agent_registry = AgentRegistry(store)
-    install_builtin_agents(service.agent_registry, service._skills_library_dir())
+    with service.skill_approvals.lock:
+        install_builtin_agents(service.agent_registry, service._skills_library_dir())
     service.agent_card = AgentCards(store)
     service.task_service = TaskService(service, settings)
     service.resource_monitor = ResourceMonitor(service, service.task_service)
@@ -230,6 +235,8 @@ def create_app(
 
     @app.get("/health", tags=["system"])
     def health() -> dict:
+        if service.replicas and not service.replicas.ready():
+            raise HTTPException(503, "副本尚未就绪")
         return {"status": "ok"}
 
     @app.post("/v1/auth/register", response_model=UserView, status_code=201, tags=["auth"])
@@ -348,11 +355,11 @@ def create_app(
         response_model=list[WorkspaceNode],
         tags=["workspace"],
     )
-    def workspace_tree(session_id: str, filter: str = "") -> list[WorkspaceNode]:
+    def workspace_tree(session_id: str, name_filter: str = Query("", alias="filter")) -> list[WorkspaceNode]:
         try:
             nodes = [
                 WorkspaceNode(**node)
-                for node in service.workspace_tree(session_id, filter=filter)
+                for node in service.workspace_tree(session_id, name_filter=name_filter)
             ]
         except ValueError as e:
             raise HTTPException(status_code=400, detail=str(e)) from e
@@ -383,7 +390,7 @@ def create_app(
                 raise HTTPException(413, "技能文件过大")
             from ..skill_security import protected_name
             return {"name": pack + "/" + member, "content": path.read_text(encoding="utf-8"), "readonly": protected_name(path)}
-        except (ValueError, UnicodeError) as exc:
+        except ValueError as exc:
             raise HTTPException(400, str(exc)) from exc
 
     @app.put("/v1/sessions/{session_id}/skill-files/{pack}/{member:path}", tags=["client resources"])
@@ -669,6 +676,16 @@ def create_app(
 
     @app.delete("/v1/sessions/{session_id}", status_code=204, tags=["sessions"])
     def delete_session(session_id: str, request: Request) -> None:
+        if service.replicas:
+            if store.session(session_id, request.state.user["id"]) is None:
+                raise HTTPException(404, "会话不存在")
+            try:
+                service.delete_session_admin(session_id)
+            except KeyError as exc:
+                raise HTTPException(404, "会话不存在") from exc
+            except ValueError as exc:
+                raise HTTPException(409, str(exc)) from exc
+            return
         session = service.sessions.get(session_id)
         if session and session.lock.locked():
             raise HTTPException(409, "Session 正在运行")
@@ -837,22 +854,13 @@ def create_app(
             while True:
                 if await request.is_disconnected():
                     return
-                events = run.events_after(cursor)
+                events = await asyncio.to_thread(run.events_after, cursor) if service.replicas else run.events_after(cursor)
                 for event in events:
                     cursor = event["id"]
 
-                    def web_value(value):
-                        if isinstance(value, str):
-                            return service.web_text(run.session_id, value)
-                        if isinstance(value, list):
-                            return [web_value(item) for item in value]
-                        if isinstance(value, dict):
-                            return {key: web_value(item) for key, item in value.items()}
-                        return value
-
-                    payload = json.dumps(web_value(event), ensure_ascii=False)
+                    payload = json.dumps(service.web_value(run.session_id, event), ensure_ascii=False)
                     yield f"id: {event['id']}\nevent: {event['type']}\ndata: {payload}\n\n"
-                if run.status in {"completed", "failed", "cancelled"} and not run.events_after(cursor):
+                if run.finished and not (await asyncio.to_thread(run.events_after, cursor) if service.replicas else run.events_after(cursor)):
                     return
                 yield ": keep-alive\n\n"
                 await asyncio.sleep(0.25)
@@ -973,7 +981,7 @@ def create_app(
             from ..skill_layout import copy_package, slug
             skill_name = slug(skill_name)
             with service.skill_approvals.lock:
-                dest = copy_package(service._skills_library_dir(), session.root / "client" / "skills", skill_name, content)
+                copy_package(service._skills_library_dir(), session.root / "client" / "skills", skill_name, content)
                 session.session.script_trust.issue(skill_name, service._skills_library_dir(),
                     approved_files=service.skill_approvals.approved_files(skill_name))
             if parse_skill_pack_text(content) is not None:
@@ -1022,7 +1030,7 @@ def create_app(
         session = get_session(session_id)
         # 状态判定：优先活跃 Run；否则看最后一条 assistant 消息是否存在
         active = service.active_run(session_id)
-        last_run = session.active_run_holder["run"]
+        last_run = service.run_manager.latest(session_id) if service.replicas else session.active_run_holder["run"]
         if active is not None:
             run_status, run_id = active.status, active.id
         elif last_run is not None:

@@ -25,7 +25,7 @@ from .llm import LLMClient, message_text
 from .prompts.vision import image_input_guidance
 from .session import Session
 from .tool_catalog import RETIRED_TOOLS, canonical_tool_name
-from .skills import Skill, ToolResult, build_file_tools, resolve_readable_path
+from .skills import Skill, ToolResult, build_file_tools
 from .sub_agent import FileSubAgent
 
 logger = logging.getLogger(__name__)
@@ -261,13 +261,18 @@ class UmekoAgent:
             self._estimate_tokens(self._request_messages(self._messages))
         ) + math.ceil(self._estimate_tokens(self._tools))
 
-    def context_stats(self) -> dict:
+    def context_stats(self, *, restored_context: tuple[str | None, list[dict]] | None = None) -> dict:
+        messages = self._messages
+        anchor = self._usage_anchor
+        if restored_context is not None:
+            summary, history = restored_context
+            messages = self._restored_messages(history, summary)
+            anchor = None
         message_tokens = math.ceil(
-            self._estimate_tokens(self._request_messages(self._messages))
+            self._estimate_tokens(self._request_messages(messages))
         )
         tool_tokens = math.ceil(self._estimate_tokens(self._tools))
         estimated = message_tokens + tool_tokens
-        anchor = self._usage_anchor
         if anchor is not None:
             used = anchor + max(0, estimated - self._usage_anchor_estimate)
         else:
@@ -282,24 +287,26 @@ class UmekoAgent:
             "exact": anchor is not None,
             "percent": round(used * 100 / limit, 1),
             "message_count": sum(
-                1 for item in self._messages if item.get("role") != "system"
+                1 for item in messages if item.get("role") != "system"
             ),
         }
 
-    def restore_history(self, messages: list[dict], summary: str | None = None) -> None:
-        """恢复持久化的用户/助手文本历史，不重放旧工具调用。"""
-        self._release_skill_context()
+    def _restored_messages(self, messages: list[dict], summary: str | None) -> list[dict]:
         system = self._messages[0]
         prefix = (
             [{"role": "system", "content": f"[已压缩的对话上下文]\n{summary}"}]
             if summary else []
         )
-        # 新会话尚未发过请求，没有精确锚点
-        self._usage_anchor = None
-        self._messages = [system, *prefix] + [
+        return [system, *prefix] + [
             {"role": item["role"], "content": item["content"]}
             for item in messages if item.get("role") in {"user", "assistant"}
         ]
+
+    def restore_history(self, messages: list[dict], summary: str | None = None) -> None:
+        """恢复持久化的用户/助手文本历史，不重放旧工具调用。"""
+        self._release_skill_context()
+        self._usage_anchor = None
+        self._messages = self._restored_messages(messages, summary)
 
     def compact_context(self) -> dict:
         """Summarize old working context while retaining the most recent user turn."""

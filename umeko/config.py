@@ -12,6 +12,7 @@ import re
 import ssl
 from dataclasses import dataclass, field, replace
 from pathlib import Path
+from typing import Callable
 from urllib.parse import urlsplit
 
 from dotenv import dotenv_values, load_dotenv
@@ -33,6 +34,7 @@ class ModelConfig:
     # 注册表模型 ID：同一模型的所有客户端共用并发额度；0 表示不限制。
     model_id: str | None = None
     max_concurrent_requests: int = 0
+    queue_factory: Callable[[ModelConfig], object] | None = field(default=None, repr=False, compare=False)
 
 
 @dataclass(frozen=True)
@@ -82,6 +84,7 @@ class Settings:
     # Optional independently built frontend. None uses bundled assets.
     ui_dir: str | None = None
     serve_ui: bool = True
+    replica_mode: bool = False
 
 
 def normalize_base_path(value: str, setting_name: str = "UMEKO_BASE_PATH") -> str:
@@ -178,6 +181,9 @@ def load_settings(env_path: str | Path | None = None, data_root: str | Path | No
     serve_ui = os.getenv("UMEKO_SERVE_UI", "true").strip().lower()
     if serve_ui not in {"true", "false", "1", "0"}:
         raise RuntimeError("UMEKO_SERVE_UI 必须为 true 或 false")
+    replica_mode = os.getenv("UMEKO_REPLICA_MODE", "false").strip().lower()
+    if replica_mode not in {"true", "false", "1", "0"}:
+        raise RuntimeError("UMEKO_REPLICA_MODE 必须为 true 或 false")
     model_ca = _load_ca_file(Path(env_path), "MODEL_CA_FILE")
     root = Path(data_root) if data_root is not None else Path(os.getenv("UMEKO_DATA_ROOT") or "server_data")
     if data_root is None and not root.is_absolute():
@@ -197,6 +203,7 @@ def load_settings(env_path: str | Path | None = None, data_root: str | Path | No
         registry_managed=True,
         ui_dir=ui_dir or None,
         serve_ui=serve_ui in {"true", "1"},
+        replica_mode=replica_mode in {"true", "1"},
         max_subagent_tool_iterations=max(
             1, int(os.getenv("MAX_SUBAGENT_TOOL_ITERATIONS", "24"))
         ),
@@ -214,6 +221,8 @@ def load_settings(env_path: str | Path | None = None, data_root: str | Path | No
     from .host.configuration import LEGACY_MODEL_KEYS, migrate_legacy_models, resolve_provider_settings
     from .host.storage import Store
 
+    if settings.replica_mode and not settings.database_url:
+        raise RuntimeError("UMEKO_REPLICA_MODE 需要 PostgreSQL")
     store = Store.from_settings(settings)
     # 旧安装首次迁移；注册表已有配置时，不再读取 .env 凭据作为运行时回退。
     if store.config().get("LEGACY_MODEL_CONFIG_MIGRATED") != "1":

@@ -1,11 +1,13 @@
 from __future__ import annotations
 
+from concurrent.futures import ThreadPoolExecutor
 import json
 import hashlib
 import os
 from pathlib import Path
 import subprocess
 import sys
+from threading import Barrier
 import zipfile
 
 import pytest
@@ -13,7 +15,8 @@ from fastapi.testclient import TestClient
 
 from umeko.config import ModelConfig, Settings
 from umeko.host.agents import AgentRegistry
-from umeko.host.builtin_agents import ASSETS, IMAGE_QC_SKILL, INSTALL_KEY, install_builtin_agents
+from umeko.host.builtin_agents import (ASSETS, FLOW_CHART_SLUG, IMAGE_QC_SKILL, IMAGE_QC_SLUG, INSTALL_KEY,
+                                      agent_installation_key, install_builtin_agents)
 from umeko.host.builtin_skills import installation_key
 from umeko.host.storage import Store
 from umeko.server.app import create_app
@@ -86,6 +89,39 @@ def test_restart_preserves_edits_and_does_not_restore_deleted_defaults(tmp_path)
     assert "image-qc" not in {item["slug"] for item in final.agent_registry.list()}
     assert final.store.default_skill("doc-image-qc.md") is None
     assert not checks.exists()
+
+
+@pytest.mark.parametrize("slug,key", [(IMAGE_QC_SLUG, INSTALL_KEY), (FLOW_CHART_SLUG, agent_installation_key(FLOW_CHART_SLUG))])
+def test_parallel_builtin_startup_keeps_one_agent(tmp_path, monkeypatch, test_database_url, slug, key):
+    seeded = app_for(tmp_path, database_url=test_database_url).state.agent_service
+    with seeded.store.connect() as db:
+        db.execute("DELETE FROM agent_definitions WHERE slug=?", (slug,))
+        db.execute("DELETE FROM app_config WHERE key=?", (key,))
+    seeded.run_manager.shutdown()
+
+    both_creating = Barrier(2)
+    save = AgentRegistry.save
+
+    def synchronize_save(registry, value, agent_id=None):
+        if value["slug"] == slug and agent_id is None:
+            both_creating.wait(timeout=30)
+        return save(registry, value, agent_id)
+
+    monkeypatch.setattr(AgentRegistry, "save", synchronize_save)
+    with ThreadPoolExecutor(max_workers=2) as replicas:
+        starts = [replicas.submit(app_for, tmp_path, database_url=test_database_url) for _ in range(2)]
+        apps = [start.result(timeout=60) for start in starts]
+    try:
+        ids = set()
+        for app in apps:
+            service = app.state.agent_service
+            created, = (agent for agent in service.agent_registry.list() if agent["slug"] == slug)
+            ids.add(created["id"])
+            assert service.store.config()[key] == "1"
+        assert len(ids) == 1
+    finally:
+        for app in apps:
+            app.state.agent_service.run_manager.shutdown()
 
 
 def test_recreated_container_restores_missing_builtin_packages(tmp_path, monkeypatch, test_database_url, approve_skill_files):

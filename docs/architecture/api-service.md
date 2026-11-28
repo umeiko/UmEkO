@@ -9,7 +9,7 @@ flowchart TB
     A2A[A2A /agent/name/a2a] --> Identity
     Identity --> Admission[输入校验 / 幂等 / 容量检查]
     Admission --> Tasks[(数据库持久化任务与事件)]
-    Tasks --> Worker[单进程任务调度器]
+    Tasks --> Worker[任务调度器]
     Worker --> Agent[AgentService / RunManager]
     Agent --> Model[每模型调用队列]
     Worker --> Files[临时工作区与产物]

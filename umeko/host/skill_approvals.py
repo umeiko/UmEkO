@@ -22,7 +22,7 @@ def skill_maintenance(method):
 class SkillApprovals:
     def __init__(self, service):
         self.service = service
-        self.lock = threading.RLock()
+        self._lock = threading.RLock()
         with service.store.connect() as db:
             db.lock_schema()
             # Earlier per-session maintenance events did not approve a library
@@ -43,6 +43,11 @@ class SkillApprovals:
                 pack TEXT NOT NULL, member TEXT NOT NULL, event_id BIGINT NOT NULL,
                 md5 TEXT NOT NULL, sha256 TEXT NOT NULL, actor TEXT NOT NULL,
                 actor_id TEXT NOT NULL, created_at TEXT NOT NULL, PRIMARY KEY(pack,member))""")
+
+    @property
+    def lock(self):
+        replicas = getattr(self.service, "replicas", None)
+        return replicas.lock("skill-library") if replicas else self._lock
 
     def source(self, pack, member):
         pack = slug(pack)

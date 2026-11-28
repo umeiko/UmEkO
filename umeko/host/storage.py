@@ -6,6 +6,7 @@ import json
 import secrets
 import threading
 import uuid
+from contextlib import nullcontext
 from datetime import datetime, timedelta, timezone
 from pathlib import Path
 
@@ -210,7 +211,7 @@ class Store:
         except (ValueError, TypeError):
             return False
 
-    def create_user(self, username: str, password: str, role: str = "user") -> dict:
+    def create_user(self, username: str, password: str, role: str = "user", *, connection=None) -> dict:
         username = username.strip()
         if len(username) < 3 or len(password) < 4:
             raise ValueError("用户名至少 3 个字符，密码至少 4 个字符")
@@ -221,7 +222,7 @@ class Store:
             "created_at": _now(), "avatar_url": None, "role": role,
         }
         try:
-            with self.connect() as db:
+            with (self.connect() if connection is None else nullcontext(connection)) as db:
                 db.execute(
                     "INSERT INTO users(id,username,password_hash,created_at,role) VALUES (?,?,?,?,?)", (
                         user["id"], username, self.hash_password(password),
@@ -231,6 +232,14 @@ class Store:
         except DatabaseIntegrityError as exc:
             raise ValueError("用户名已存在") from exc
         return user
+
+    def create_first_admin(self, username: str, password: str) -> bool:
+        with self.connect() as db:
+            db.begin_write()
+            if db.execute("SELECT 1 FROM users WHERE role='admin' LIMIT 1").fetchone():
+                return False
+            self.create_user(username, password, role="admin", connection=db)
+            return True
 
     LOCAL_USERNAME = "local"
 
@@ -454,7 +463,7 @@ class Store:
         if not name:
             raise ValueError("模型名不能为空")
         limit = validate_limit(max_concurrent_requests)
-        if type(user_enabled) is not bool:
+        if not isinstance(user_enabled, bool):
             raise ValueError("user_enabled 必须是布尔值")
         mid = f"mdl_{uuid.uuid4().hex}"
         try:
@@ -477,7 +486,7 @@ class Store:
         if "vision" in fields:
             updates["vision"] = 1 if fields["vision"] else 0
         if "user_enabled" in fields:
-            if type(fields["user_enabled"]) is not bool:
+            if not isinstance(fields["user_enabled"], bool):
                 raise ValueError("user_enabled 必须是布尔值")
             updates["user_enabled"] = int(fields["user_enabled"])
         if "max_concurrent_requests" in fields:
@@ -807,8 +816,8 @@ class Store:
                     self.add_model(pid, mname, bool(m.get("vision", False)), limit, m.get("user_enabled", True))
                     created_m += 1
                 except ValueError:
-                    if type(m.get("user_enabled", True)) is not bool:
-                        raise ValueError("user_enabled 必须是布尔值")
+                    if not isinstance(m.get("user_enabled", True), bool):
+                        raise
                     if "vision" in m or "max_concurrent_requests" in m or "user_enabled" in m:
                         row = next(
                             (x for x in self.list_providers() if x["id"] == pid), None
@@ -983,8 +992,8 @@ class Store:
         if not result.rowcount:
             raise KeyError(session_id)
 
-    def add_message(self, session_id: str, role: str, content: str, attachments: str = "[]"):
-        with self.connect() as db:
+    def add_message(self, session_id: str, role: str, content: str, attachments: str = "[]", *, connection=None):
+        with (self.connect() if connection is None else nullcontext(connection)) as db:
             db.execute("INSERT INTO messages(session_id,role,content,attachments,created_at) VALUES(?,?,?,?,?)",
                        (session_id, role, content, attachments, _now()))
             db.execute("UPDATE agent_sessions SET updated_at=? WHERE id=?", (_now(), session_id))

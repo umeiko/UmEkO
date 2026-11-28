@@ -4454,7 +4454,7 @@
 <h2 id="delete-adminv1sessionssession_id">DELETE /admin/v1/sessions/{session_id}<a class="headerlink" href="#delete-adminv1sessionssession_id" title="Permanent link">&para;</a></h2>
 <p>删除会话与文件</p>
 <p>认证：<code>umeko_admin</code> Cookie。</p>
-<p>永久删除历史与会话目录；与仅驱逐缓存不同。</p>
+<p>永久删除历史与会话目录。多副本模式下，有运行中的 Run 时返回 409。</p>
 <table>
 <thead>
 <tr>
@@ -4484,6 +4484,10 @@
 <tr>
 <td>204</td>
 <td>Successful Response</td>
+</tr>
+<tr>
+<td>409</td>
+<td>多副本会话存在执行中的 Run。</td>
 </tr>
 <tr>
 <td>422</td>

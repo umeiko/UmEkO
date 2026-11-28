@@ -144,6 +144,8 @@ def test_root_and_prefixed_ui_auth_and_session_isolation(tmp_path, prefix):
             other.post(prefix + "/v1/auth/register", json={"username": "other", "password": "password"}).raise_for_status()
             assert other.get(prefix + f"/v1/sessions/{sid}/workspace/tree").status_code == 404
             assert owner.get(prefix + f"/v1/sessions/{sid}/workspace/tree").status_code == 200
+            tree_path = prefix + f"/v1/sessions/{sid}/workspace/tree"
+            assert owner.get(tree_path, params={"filter": "["}).status_code == 400
             # Tool history retains its task identity for grouping and active-run replay.
             event_id = app.state.store.add_tool_event(
                 sid, "main", "read_document", arguments='{"path":"sample.txt"}', run_id="run_history")

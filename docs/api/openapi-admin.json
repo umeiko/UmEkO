@@ -2570,7 +2570,7 @@
     },
     "/admin/v1/sessions/{session_id}": {
       "delete": {
-        "description": "永久删除历史与会话目录；与仅驱逐缓存不同。",
+        "description": "永久删除历史与会话目录。多副本模式下，有运行中的 Run 时返回 409。",
         "operationId": "delete_session_admin_v1_sessions__session_id__delete",
         "parameters": [
           {
@@ -2589,6 +2589,9 @@
           },
           "401": {
             "description": "未登录、会话失效或不是管理员。"
+          },
+          "409": {
+            "description": "多副本会话存在执行中的 Run。"
           },
           "422": {
             "content": {

@@ -48,7 +48,13 @@ def restore_missing_builtin_package(bundle_dir: Path, library_dir: Path, name: s
         copy_builtin_assets(bundle_dir, Path(staging), name, entry)
         if target.exists():
             return False
-        (Path(staging) / name).rename(target)
+        try:
+            (Path(staging) / name).rename(target)
+        except OSError:
+            installed = entry_path(library_dir, name)
+            if not installed.is_file():
+                raise
+            return False  # Another installer finished publishing the same package.
     logging.getLogger(__name__).info("Restored missing bundled skill package %s", name)
     return True
 

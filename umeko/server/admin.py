@@ -234,6 +234,8 @@ def create_admin_app(settings: Settings, service: AgentService, store: Store, pu
 
     @app.get("/health")
     def health() -> dict:
+        if service.replicas and not service.replicas.ready():
+            raise HTTPException(503, "副本尚未就绪")
         return {"status": "ok", "role": "admin"}
 
     @app.post("/admin/login")
@@ -513,12 +515,15 @@ def create_admin_app(settings: Settings, service: AgentService, store: Store, pu
         except KeyError as exc:
             raise HTTPException(404, "会话不存在") from exc
 
-    @app.delete("/admin/v1/sessions/{session_id}", status_code=204)
+    @app.delete("/admin/v1/sessions/{session_id}", status_code=204,
+                responses={409: {"description": "多副本会话存在执行中的 Run。"}})
     def delete_session(session_id: str) -> None:
         try:
             service.delete_session_admin(session_id)
         except KeyError as exc:
             raise HTTPException(404, str(exc)) from exc
+        except ValueError as exc:
+            raise HTTPException(409, str(exc)) from exc
 
     @app.post("/admin/v1/sessions/{session_id}/evict")
     def evict_session(session_id: str) -> dict:
@@ -723,8 +728,8 @@ def create_admin_app(settings: Settings, service: AgentService, store: Store, pu
         pack_dir = (base / pack).resolve()
         try:
             pack_dir.relative_to(base.resolve())
-        except ValueError:
-            raise HTTPException(400, "非法包名")
+        except ValueError as exc:
+            raise HTTPException(400, "非法包名") from exc
         scripts = []
         if pack_dir.is_dir():
             for f in sorted(pack_dir.rglob("*.py")):
@@ -740,8 +745,8 @@ def create_admin_app(settings: Settings, service: AgentService, store: Store, pu
         base = service._skills_library_dir()
         try:
             target = member_path(base, pack, script_name)
-        except ValueError:
-            raise HTTPException(400, "非法路径")
+        except ValueError as exc:
+            raise HTTPException(400, "非法路径") from exc
         if not target.is_file():
             raise HTTPException(404, "脚本不存在")
         return {"name": script_name, "content": target.read_text(encoding="utf-8")}
@@ -774,8 +779,8 @@ def create_admin_app(settings: Settings, service: AgentService, store: Store, pu
         base = service._skills_library_dir()
         try:
             target = member_path(base, pack, script_name)
-        except ValueError:
-            raise HTTPException(400, "非法路径")
+        except ValueError as exc:
+            raise HTTPException(400, "非法路径") from exc
         with service.skill_approvals.lock:
             if target.is_file():
                 target.unlink()
@@ -806,8 +811,8 @@ def create_admin_app(settings: Settings, service: AgentService, store: Store, pu
         base = service._skills_library_dir()
         try:
             target = member_path(base, pack, member_name)
-        except ValueError:
-            raise HTTPException(400, "非法路径")
+        except ValueError as exc:
+            raise HTTPException(400, "非法路径") from exc
         if target.suffix == ".py":
             raise HTTPException(400, "脚本请走 skill-scripts 删除")
         with service.skill_approvals.lock:
@@ -850,8 +855,8 @@ def create_admin_app(settings: Settings, service: AgentService, store: Store, pu
     def get_skill_source(name: str) -> dict:
         try:
             target = entry_path(service._skills_library_dir(), name)
-        except ValueError:
-            raise HTTPException(400, "非法路径")
+        except ValueError as exc:
+            raise HTTPException(400, "非法路径") from exc
         if not target.is_file():
             raise HTTPException(404, "源文件不存在")
         return {"name": name, "content": target.read_text(encoding="utf-8")}
@@ -877,8 +882,8 @@ def create_admin_app(settings: Settings, service: AgentService, store: Store, pu
     def delete_skill_source(name: str) -> None:
         try:
             target = entry_path(service._skills_library_dir(), name)
-        except ValueError:
-            raise HTTPException(400, "非法路径")
+        except ValueError as exc:
+            raise HTTPException(400, "非法路径") from exc
         if target.is_file():
             target.unlink()
 

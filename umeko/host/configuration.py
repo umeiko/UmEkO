@@ -17,7 +17,8 @@ def model_from_row(row: dict, defaults: ModelConfig) -> ModelConfig:
     return ModelConfig(row["model"], row["api_key"], row["base_url"],
                        proxy=row["proxy"] or None, ca_file=defaults.ca_file,
                        model_id=row.get("model_id"),
-                       max_concurrent_requests=row.get("max_concurrent_requests", 0))
+                       max_concurrent_requests=row.get("max_concurrent_requests", 0),
+                       queue_factory=defaults.queue_factory)
 
 
 def deployment_defaults(settings: Settings) -> Settings:
@@ -25,7 +26,8 @@ def deployment_defaults(settings: Settings) -> Settings:
     if not settings.registry_managed:
         return settings  # 保留进程内显式注入 ModelConfig 的核心 API。
     return replace(settings, text_model=ModelConfig(
-        "unconfigured", "", "https://invalid.unconfigured", ca_file=settings.text_model.ca_file
+        "unconfigured", "", "https://invalid.unconfigured", ca_file=settings.text_model.ca_file,
+        queue_factory=settings.text_model.queue_factory,
     ), vision_model=None, sub_model=None, text_model_vision=False, sub_model_vision=False)
 
 
