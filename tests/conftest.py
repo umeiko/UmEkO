@@ -1,7 +1,6 @@
 from __future__ import annotations
 
 import socket
-import json
 import os
 import subprocess
 import threading

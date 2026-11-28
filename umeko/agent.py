@@ -25,7 +25,7 @@ from .llm import LLMClient, message_text
 from .prompts.vision import image_input_guidance
 from .session import Session
 from .tool_catalog import RETIRED_TOOLS, canonical_tool_name
-from .skills import Skill, ToolResult, build_file_tools, resolve_readable_path
+from .skills import Skill, ToolResult, build_file_tools
 from .sub_agent import FileSubAgent
 
 logger = logging.getLogger(__name__)

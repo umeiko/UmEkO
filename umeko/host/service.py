@@ -10,7 +10,6 @@ from __future__ import annotations
 import hashlib
 import json
 import mimetypes
-import os
 import shutil
 import tempfile
 import threading
@@ -427,7 +426,7 @@ class AgentService:
         # 文件系统 skills/ 目录不再自动播种——是否下发由管理员决定；停用项不下发。
         dispatched = agent_snapshot["dispatched_skills"] if agent_snapshot else self.store.default_skills(enabled_only=True)
         for item in dispatched:
-            dest = copy_package(self._skills_library_dir(), target, item["name"], item["content"])
+            copy_package(self._skills_library_dir(), target, item["name"], item["content"])
             script_trust.issue(item["name"], self._skills_library_dir(),
                                approved_files=self.skill_approvals.approved_files(item["name"]))
             if parse_skill_pack_text(item["content"]) is not None:
@@ -600,7 +599,7 @@ class AgentService:
                 with self.store.connect() as db:
                     task = db.execute("SELECT input_json,workspace_evicted_at,workspace_expires_at,status FROM service_tasks WHERE session_id=?", (session_id,)).fetchone()
                 if task and (task["workspace_evicted_at"] or task["status"] in TERMINAL_STATUSES and task["workspace_expires_at"] and task["workspace_expires_at"] <= _now()):
-                    raise KeyError("该节点已过期，请重新申请")
+                    raise KeyError("该节点已过期，请重新申请") from exc
                 snapshot = json.loads(task["input_json"]).get("agent_snapshot") if task else None
             return self.create_session(
                 user_id=record["user_id"], title=record["title"],

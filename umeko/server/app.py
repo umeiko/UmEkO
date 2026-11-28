@@ -981,7 +981,7 @@ def create_app(
             from ..skill_layout import copy_package, slug
             skill_name = slug(skill_name)
             with service.skill_approvals.lock:
-                dest = copy_package(service._skills_library_dir(), session.root / "client" / "skills", skill_name, content)
+                copy_package(service._skills_library_dir(), session.root / "client" / "skills", skill_name, content)
                 session.session.script_trust.issue(skill_name, service._skills_library_dir(),
                     approved_files=service.skill_approvals.approved_files(skill_name))
             if parse_skill_pack_text(content) is not None:
