@@ -45,6 +45,22 @@ python scripts/admin_api.py PUT /admin/v1/models/<模型ID> --json-file change.j
 
 在线规范为每个操作提供摘要、行为说明、请求约束和认证要求；生成的[完整参考](reference-admin.md)与服务内手册使用同一份契约。`toggle` 会反转状态、凭据轮换只返回一次、导入和删除可能产生较大影响；AI 应先读取、按明确任务修改、回读确认，超时后查询状态，不能盲目重放。
 
+## SQL 诊断 {#sql-diagnostics}
+
+通过管理基址请求 `GET /admin/v1/diagnostics/sql`，查看当前使用的 SQLite 或 PostgreSQL、可访问的表和字段、允许写入的表及行数上限。`POST` 同一路径执行一条 SQL。两个入口都使用管理员 Cookie 和 `UMEKO_ADMIN_BASE_PATH`。
+
+```json
+{"sql":"SELECT id, status FROM service_tasks WHERE status = ? ORDER BY created_at DESC LIMIT 20","params":["failed"]}
+```
+
+```json
+{"sql":"UPDATE messages SET content = ? WHERE id = ?","params":["修正后的测试记录",42]}
+```
+
+SQL 使用单表语句和不带引号的表、字段名。`SELECT` 支持 `*`、字段列表、`COUNT(*)`、排序和 `LIMIT`。条件支持比较、`LIKE`、`IS NULL`、`IS NOT NULL` 和 `AND`。所有值通过 `params` 按顺序绑定；`LIMIT` 可写正整数。写入限 `messages` 和 `tool_events`，可用单行 `INSERT`、带 `WHERE` 的 `UPDATE` / `DELETE`。查询返回 `rows` 和 `truncated`，写入返回 `affected_rows`。每次最多查询或修改 200 行，写入超限会回滚。
+
+账号、凭据、任务状态、文件映射和技能信任的修改使用各自的管理接口。直接修改历史只会更新数据库，已加载的会话可在完成活动任务后驱逐缓存再读取。服务日志记录写入操作的管理员 ID、表和影响行数。
+
 ## 会话查看
 
 在用户列表点击“查看会话”，再点击会话标题或“查看内容”，可只读查看该用户的聊天消息、附件名称、工具调用参数与结果，以及保存的上下文摘要和技能挂载。“返回用户列表”回到用户管理；关闭详情则留在当前用户的会话列表。

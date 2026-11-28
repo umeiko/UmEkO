@@ -3,6 +3,177 @@
 > 自动生成；由运行版本的 OpenAPI 导出。
 
 
+## DiagnosticCatalog
+
+```json
+{
+  "properties": {
+    "backend": {
+      "enum": [
+        "sqlite",
+        "postgresql"
+      ],
+      "title": "Backend",
+      "type": "string"
+    },
+    "max_rows": {
+      "title": "Max Rows",
+      "type": "integer"
+    },
+    "tables": {
+      "additionalProperties": {
+        "$ref": "#/components/schemas/DiagnosticTable"
+      },
+      "title": "Tables",
+      "type": "object"
+    }
+  },
+  "required": [
+    "backend",
+    "max_rows",
+    "tables"
+  ],
+  "title": "DiagnosticCatalog",
+  "type": "object"
+}
+```
+
+## DiagnosticSqlIn
+
+```json
+{
+  "additionalProperties": false,
+  "properties": {
+    "params": {
+      "items": {
+        "anyOf": [
+          {
+            "maxLength": 16384,
+            "type": "string"
+          },
+          {
+            "type": "integer"
+          },
+          {
+            "type": "number"
+          },
+          {
+            "type": "boolean"
+          },
+          {
+            "type": "null"
+          }
+        ]
+      },
+      "maxItems": 100,
+      "title": "Params",
+      "type": "array"
+    },
+    "sql": {
+      "maxLength": 4096,
+      "minLength": 1,
+      "title": "Sql",
+      "type": "string"
+    }
+  },
+  "required": [
+    "sql"
+  ],
+  "title": "DiagnosticSqlIn",
+  "type": "object"
+}
+```
+
+## DiagnosticSqlOut
+
+```json
+{
+  "properties": {
+    "affected_rows": {
+      "title": "Affected Rows",
+      "type": "integer"
+    },
+    "operation": {
+      "enum": [
+        "SELECT",
+        "INSERT",
+        "UPDATE",
+        "DELETE"
+      ],
+      "title": "Operation",
+      "type": "string"
+    },
+    "rows": {
+      "items": {
+        "additionalProperties": true,
+        "type": "object"
+      },
+      "title": "Rows",
+      "type": "array"
+    },
+    "table": {
+      "title": "Table",
+      "type": "string"
+    },
+    "truncated": {
+      "title": "Truncated",
+      "type": "boolean"
+    }
+  },
+  "required": [
+    "operation",
+    "table",
+    "rows",
+    "affected_rows",
+    "truncated"
+  ],
+  "title": "DiagnosticSqlOut",
+  "type": "object"
+}
+```
+
+## DiagnosticTable
+
+```json
+{
+  "properties": {
+    "columns": {
+      "items": {
+        "type": "string"
+      },
+      "title": "Columns",
+      "type": "array"
+    },
+    "insert_columns": {
+      "items": {
+        "type": "string"
+      },
+      "title": "Insert Columns",
+      "type": "array"
+    },
+    "update_columns": {
+      "items": {
+        "type": "string"
+      },
+      "title": "Update Columns",
+      "type": "array"
+    },
+    "writable": {
+      "title": "Writable",
+      "type": "boolean"
+    }
+  },
+  "required": [
+    "columns",
+    "writable",
+    "insert_columns",
+    "update_columns"
+  ],
+  "title": "DiagnosticTable",
+  "type": "object"
+}
+```
+
 ## HTTPValidationError
 
 ```json

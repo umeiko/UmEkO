@@ -21,11 +21,16 @@
 | 全局工具下发 | `/admin/v1/tools`、`/tools/{name}` |
 | 用户会话与内容 | `/admin/v1/users/{user_id}/sessions`、`/sessions/{session_id}`、`/sessions/{session_id}/evict` |
 | 资源、机器任务与文件树 | `/admin/v1/resources`、`/tasks`、`/tasks/{task_id}`、`/tasks/{task_id}/files`、`/tasks/{task_id}/cancel` |
+| SQL 诊断 | `GET`、`POST /admin/v1/diagnostics/sql` |
 | 技能库与下发 | `/admin/v1/skill-library`、`/skill-source/{name}`、`/default-skills` |
 | 代码、成员文件与测试 | `/admin/v1/skill-scripts/{pack}`、`/skill-scripts/{pack}/{script_name}`、`/skill-members/{pack}/{member_name}` |
 | 可信代码管理 | `/admin/v1/skill-security/catalog`、`/admin/v1/skill-security/selection`、`/admin/v1/skill-security/batch`、`/admin/v1/skill-security/{pack}/{member}` |
 
 表中同一格省略前缀的路径均从 `/admin/v1` 开始。不要由此猜测 HTTP 方法或遗漏路径参数，执行前查 OpenAPI。
+
+## SQL 诊断
+
+先 GET 诊断目录确认表、字段和写入范围，再 POST JSON。例如 `{"sql":"SELECT id, status FROM service_tasks WHERE status = ? LIMIT 20","params":["failed"]}`。SQL 使用单表语句，数据值均通过有序的 `params` 绑定。`rows` 是查询结果，`truncated` 表示结果被截断。写入限消息及工具调用历史，更新或删除必须带 `WHERE`，`affected_rows` 是已提交的行数。账号、凭据、任务状态及技能信任继续走对应管理 API。
 
 ## 模型与供应商
 

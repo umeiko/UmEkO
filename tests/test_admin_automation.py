@@ -116,10 +116,10 @@ def running_admin(app, prefix):
 
     class Gateway(BaseHTTPRequestHandler):
         def do_request(self):
+            raw = self.rfile.read(int(self.headers.get("Content-Length", 0)))
             if prefix and not self.path.startswith(prefix + "/"):
                 self.send_error(404)
                 return
-            raw = self.rfile.read(int(self.headers.get("Content-Length", 0)))
             with httpx.Client(trust_env=False) as upstream:
                 reply = upstream.request(self.command, f"http://127.0.0.1:{port}" + (self.path[len(prefix):] if prefix else self.path),
                                          content=raw, headers={key: value for key, value in self.headers.items() if key.lower() not in {"host", "connection"}})
@@ -145,6 +145,89 @@ def running_admin(app, prefix):
         gateway.server_close()
         server.should_exit = True
         thread.join(5)
+
+
+def test_sql_diagnostic_crud_uses_only_the_admin_entry(admin_pair):
+    user_app, app, service, account, ordinary, prefix = admin_pair
+    path = "/admin/v1/diagnostics/sql"
+    service.store.save_session("sql-session", ordinary["id"], "SQL fixture")
+    query = {"sql": "SELECT id, content FROM messages WHERE session_id = ? ORDER BY id LIMIT 1",
+             "params": ["sql-session"]}
+    with TestClient(user_app) as user:
+        assert user.post("/teams/workbench" + path, json=query).status_code == 404
+
+    with running_admin(app, prefix) as base, httpx.Client(trust_env=False) as client:
+        url = base + path
+        assert client.get(url).status_code == 401
+        assert client.post(url, json=query).status_code == 401
+        client.cookies.set("umeko_admin", service.store.issue_token(ordinary["id"]), path=prefix or "/")
+        assert client.post(url, json=query).status_code == 401
+        client.cookies.clear()
+        client.post(base + "/admin/login", json={"username": account["username"],
+                                                "password": "synthetic-password"}).raise_for_status()
+        spec = client.get(base + "/admin/v1/openapi.json").json()["paths"][path]
+        assert spec["get"]["security"] == spec["post"]["security"] == [{"umeko_admin": []}]
+        catalog = client.get(url).raise_for_status().json()
+        assert catalog["backend"] == service.store.backend
+        assert catalog["tables"]["messages"]["writable"] is True
+        assert "password_hash" not in catalog["tables"]["users"]["columns"]
+        if prefix:
+            origin = base.removesuffix(prefix)
+            for wrong in (path, "/teams/workbench" + path, prefix + "-extra" + path):
+                assert client.post(origin + wrong, json=query).status_code == 404
+
+        def execute(sql, *params):
+            return client.post(url, json={"sql": sql, "params": params}).raise_for_status().json()
+
+        content = "有引号 ' 与问号 ? 的合成数据;"
+        assert execute("INSERT INTO messages (session_id, role, content, created_at) VALUES (?, ?, ?, ?)",
+                       "sql-session", "user", content, "2026-01-01T00:00:00+00:00")["affected_rows"] == 1
+        row, = client.post(url, json=query).raise_for_status().json()["rows"]
+        assert row["content"] == content
+        assert execute("UPDATE messages SET content = ? WHERE id = ?", "edited", row["id"])["affected_rows"] == 1
+        assert service.store.messages("sql-session")[0]["content"] == "edited"
+        assert execute("DELETE FROM messages WHERE id = ?", row["id"])["affected_rows"] == 1
+        assert execute("SELECT COUNT(*) FROM messages WHERE session_id = ?", "sql-session")["rows"] == [{"count": 0}]
+
+        client.post(base + "/admin/logout").raise_for_status()
+        assert client.get(url).status_code == 401
+        assert client.post(url, json=query).status_code == 401
+
+
+def test_sql_diagnostic_checks_schema_parameters_and_rolls_back_bulk_writes(admin_pair):
+    _, app, service, account, ordinary, prefix = admin_pair
+    url = prefix + "/admin/v1/diagnostics/sql"
+    service.store.save_session("sql-limit", ordinary["id"], "SQL fixture")
+    with TestClient(app) as client:
+        client.post(prefix + "/admin/login", json={"username": account["username"],
+                                                  "password": "synthetic-password"}).raise_for_status()
+        max_rows = client.get(url).json()["max_rows"]
+        with service.store.connect() as db:
+            db.executemany("INSERT INTO messages (session_id,role,content,created_at) VALUES (?,?,?,?)",
+                           [("sql-limit", "user", "original", "2026-01-01T00:00:00+00:00")] * (max_rows + 1))
+
+        for sql, params, expected in (
+            ("SELECT password_hash FROM users", [], 403),
+            ("SELECT * FROM auth_tokens", [], 403),
+            ("DELETE FROM skill_file_approvals WHERE pack = ?", ["fixture"], 403),
+            ("UPDATE service_tasks SET status = ? WHERE id = ?", ["failed", "fixture"], 403),
+            ("UPDATE messages SET session_id = ? WHERE id = ?", ["wrong-session", 1], 403),
+            ("UPDATE messages SET attachments = ? WHERE id = ?", ["not attachment data", 1], 403),
+            ("UPDATE messages SET role = ? WHERE id = ?", ["unrecognized", 1], 400),
+            ("DELETE FROM messages", [], 400),
+            ("SELECT id FROM messages; SELECT id FROM messages", [], 400),
+            ("SELECT id FROM messages WHERE id = ?", [], 400),
+            ("INSERT INTO messages (session_id, role, content, created_at) VALUES (?, ?, ?, ?)",
+             ["missing", "user", "missing parent", "2026-01-01T00:00:00+00:00"], 409),
+            ("DELETE FROM messages WHERE session_id = ?", ["sql-limit"], 409),
+        ):
+            reply = client.post(url, json={"sql": sql, "params": params})
+            assert reply.status_code == expected, reply.text
+        rows = service.store.messages("sql-limit")
+        assert len(rows) == max_rows + 1 and all(row["content"] == "original" for row in rows)
+        limited = client.post(url, json={"sql": "SELECT * FROM messages WHERE session_id = ?", "params": ["sql-limit"]})
+        assert limited.headers["cache-control"] == "no-store"
+        assert len(limited.json()["rows"]) == max_rows and limited.json()["truncated"] is True
 
 
 def test_downloaded_client_can_manage_models_users_agents_skills_and_permissions(admin_pair):

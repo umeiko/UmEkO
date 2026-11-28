@@ -1606,6 +1606,28 @@
 </li>
       
         <li class="md-nav__item">
+  <a href="#get-adminv1diagnosticssql" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        GET /admin/v1/diagnostics/sql
+      
+    </span>
+  </a>
+  
+</li>
+      
+        <li class="md-nav__item">
+  <a href="#post-adminv1diagnosticssql" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        POST /admin/v1/diagnostics/sql
+      
+    </span>
+  </a>
+  
+</li>
+      
+        <li class="md-nav__item">
   <a href="#get-adminv1openapijson" class="md-nav__link">
     <span class="md-ellipsis">
       
@@ -2744,6 +2766,28 @@
 </li>
       
         <li class="md-nav__item">
+  <a href="#get-adminv1diagnosticssql" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        GET /admin/v1/diagnostics/sql
+      
+    </span>
+  </a>
+  
+</li>
+      
+        <li class="md-nav__item">
+  <a href="#post-adminv1diagnosticssql" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        POST /admin/v1/diagnostics/sql
+      
+    </span>
+  </a>
+  
+</li>
+      
+        <li class="md-nav__item">
   <a href="#get-adminv1openapijson" class="md-nav__link">
     <span class="md-ellipsis">
       
@@ -2775,7 +2819,7 @@
 <blockquote>
 <p>自动生成：请修改源码或生成器，不直接编辑本文件。</p>
 </blockquote>
-<p>共 <strong>73</strong> 个 HTTP 操作。<a href="../openapi-admin.json">下载 OpenAPI</a> · <a href="../schemas/">数据结构</a></p>
+<p>共 <strong>75</strong> 个 HTTP 操作。<a href="../openapi-admin.json">下载 OpenAPI</a> · <a href="../schemas/">数据结构</a></p>
 <p>路径为应用内部路由；带前缀部署时在公共 URL 前加 <code>UMEKO_ADMIN_BASE_PATH</code>。认证与操作行为来自运行时管理契约。</p>
 <p>泛型 <code>object</code> / 任意 JSON 表示源码尚未声明完整字段模型，请结合各专题指南。表中响应码来自 OpenAPI，不包含中间件产生的全部错误。</p>
 <h2 id="_2">接口索引<a class="headerlink" href="#_2" title="Permanent link">&para;</a></h2>
@@ -3147,6 +3191,16 @@
 <td>POST</td>
 <td><code>/admin/v1/skill-scripts/{pack}/{script_name}/test</code></td>
 <td>测试已批准的技能脚本</td>
+</tr>
+<tr>
+<td>GET</td>
+<td><code>/admin/v1/diagnostics/sql</code></td>
+<td>SQL 诊断目录</td>
+</tr>
+<tr>
+<td>POST</td>
+<td><code>/admin/v1/diagnostics/sql</code></td>
+<td>执行诊断 SQL</td>
 </tr>
 <tr>
 <td>GET</td>
@@ -5946,6 +6000,76 @@
 <tr>
 <td>200</td>
 <td>application/json: object</td>
+</tr>
+<tr>
+<td>422</td>
+<td>application/json: HTTPValidationError</td>
+</tr>
+<tr>
+<td>401</td>
+<td>未登录、会话失效或不是管理员。</td>
+</tr>
+</tbody>
+</table>
+<h2 id="get-adminv1diagnosticssql">GET /admin/v1/diagnostics/sql<a class="headerlink" href="#get-adminv1diagnosticssql" title="Permanent link">&para;</a></h2>
+<p>SQL 诊断目录</p>
+<p>认证：<code>umeko_admin</code> Cookie。</p>
+<p>返回数据库后端、行数上限、可读字段及允许写入的表。</p>
+<table>
+<thead>
+<tr>
+<th>响应码</th>
+<th>内容</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td>200</td>
+<td>application/json: DiagnosticCatalog</td>
+</tr>
+<tr>
+<td>401</td>
+<td>未登录、会话失效或不是管理员。</td>
+</tr>
+</tbody>
+</table>
+<h2 id="post-adminv1diagnosticssql">POST /admin/v1/diagnostics/sql<a class="headerlink" href="#post-adminv1diagnosticssql" title="Permanent link">&para;</a></h2>
+<p>执行诊断 SQL</p>
+<p>认证：<code>umeko_admin</code> Cookie。</p>
+<p>以 SQL 和有序 params 提交单条单表 SELECT、INSERT、UPDATE 或 DELETE，值使用 ?。仅会话消息和工具调用历史可写，UPDATE 和 DELETE 要有 WHERE。成功写入后提交事务，超过行数上限或违反约束则回滚。</p>
+<p>请求体：必填。</p>
+<p><code>application/json</code> → <code>DiagnosticSqlIn</code></p>
+<table>
+<thead>
+<tr>
+<th>响应码</th>
+<th>内容</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td>200</td>
+<td>application/json: DiagnosticSqlOut</td>
+</tr>
+<tr>
+<td>400</td>
+<td>SQL 不受支持、参数不符或执行失败。</td>
+</tr>
+<tr>
+<td>403</td>
+<td>诊断操作不允许访问该表或字段。</td>
+</tr>
+<tr>
+<td>409</td>
+<td>约束冲突或写入超过行数上限，事务回滚。</td>
+</tr>
+<tr>
+<td>415</td>
+<td>请求必须使用 application/json。</td>
+</tr>
+<tr>
+<td>503</td>
+<td>无法连接数据库。</td>
 </tr>
 <tr>
 <td>422</td>

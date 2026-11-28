@@ -12,6 +12,8 @@ OPERATIONS = {
     "me": ("当前管理员", "读取当前登录管理员的身份。普通用户和未登录请求均返回 401。"),
     "admin_schema": ("管理接口规范", "读取当前运行版本的完整 OpenAPI，包括参数、请求模型、认证与操作影响；需要管理员登录。"),
     "resources": ("资源监控", "读取主机、进程、任务队列、模型队列和历史采样；不发起模型调用。"),
+    "sql_diagnostics_catalog": ("SQL 诊断目录", "返回数据库后端、行数上限、可读字段及允许写入的表。"),
+    "execute_diagnostic_sql": ("执行诊断 SQL", "以 SQL 和有序 params 提交单条单表 SELECT、INSERT、UPDATE 或 DELETE，值使用 ?。仅会话消息和工具调用历史可写，UPDATE 和 DELETE 要有 WHERE。成功写入后提交事务，超过行数上限或违反约束则回滚。"),
     "service_accounts": ("服务账号列表", "返回账号、权限选项与接入方式；不返回已有账号的原始凭据。"),
     "service_access": ("读取机器接入方式", "读取凭据鉴权或共享匿名模式。此设置不改变管理员 API 鉴权。"),
     "update_service_access": ("设置机器接入方式", "required 为凭据鉴权，anonymous 为共享免鉴权；匿名调用不按 IP 隔离身份。管理 API 始终需要管理员。"),

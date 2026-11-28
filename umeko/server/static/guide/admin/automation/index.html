@@ -830,6 +830,17 @@
 </li>
       
         <li class="md-nav__item">
+  <a href="#sql" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        SQL 诊断
+      
+    </span>
+  </a>
+  
+</li>
+      
+        <li class="md-nav__item">
   <a href="#_5" class="md-nav__link">
     <span class="md-ellipsis">
       
@@ -1248,6 +1259,17 @@
 </li>
       
         <li class="md-nav__item">
+  <a href="#sql" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        SQL 诊断
+      
+    </span>
+  </a>
+  
+</li>
+      
+        <li class="md-nav__item">
   <a href="#_5" class="md-nav__link">
     <span class="md-ellipsis">
       
@@ -1395,6 +1417,11 @@ python<span class="w"> </span>scripts/admin_api.py<span class="w"> </span>PUT<sp
 <p>所有管理页面的服务端能力都有 HTTP 接口：用户与角色、用户模型/工具权限、Provider 与模型、每模型并发、默认模型、工具回合上限、智能体与技能范围、服务接入、服务账号、技能文件与下发、可信代码、脚本测试、会话内容、机器任务和资源监控。</p>
 <p>完整方法、字段约束、状态码和操作行为见 <a href="../api-reference/">管理接口完整参考</a> 与 <a href="../schemas/">请求数据结构</a>。<a href="../openapi-admin.json">下载规范快照</a>用于离线阅读；实际执行前优先读取运行服务的规范。</p>
 <p>主题与界面语言是浏览器偏好；监听端口、TLS 和路径前缀是启动配置，不能当作管理 API 可热改的服务配置。</p>
+<h2 id="sql">SQL 诊断<a class="headerlink" href="#sql" title="Permanent link">&para;</a></h2>
+<p>用管理员身份请求 <code>GET /admin/v1/diagnostics/sql</code>，先查看可操作的表和字段。<code>POST</code> 到同一路径，提交一条 SQL 和有序参数。此处查询最近失败的任务：</p>
+<div class="highlight"><pre><span></span><code><span class="p">{</span><span class="nt">"sql"</span><span class="p">:</span><span class="s2">"SELECT id, status FROM service_tasks WHERE status = ? ORDER BY created_at DESC LIMIT 20"</span><span class="p">,</span><span class="nt">"params"</span><span class="p">:[</span><span class="s2">"failed"</span><span class="p">]}</span>
+</code></pre></div>
+<p>诊断查询支持 SQLite 和 PostgreSQL。写入范围是会话消息与工具调用历史，更新和删除都要有 <code>WHERE</code>，每次最多修改 200 行。账号、密钥、技能信任或任务状态应使用各自的管理 API。具体请求和响应字段见 <a href="../api-reference/">管理接口完整参考</a>。</p>
 <h2 id="_5">几个容易误操作的地方<a class="headerlink" href="#_5" title="Permanent link">&para;</a></h2>
 <ul>
 <li><code>toggle</code> 会反转状态，重试可能把刚启用的技能又关闭。先读取，再按目标决定是否调用。</li>

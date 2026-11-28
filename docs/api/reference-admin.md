@@ -2,7 +2,7 @@
 
 > 自动生成：请修改源码或生成器，不直接编辑本文件。
 
-共 **73** 个 HTTP 操作。[下载 OpenAPI](openapi-admin.json) · [数据结构](schemas.md)
+共 **75** 个 HTTP 操作。[下载 OpenAPI](openapi-admin.json) · [数据结构](schemas.md)
 
 路径为应用内部路由；带前缀部署时在公共 URL 前加 `UMEKO_ADMIN_BASE_PATH`。认证与操作行为来自运行时管理契约。
 
@@ -84,6 +84,8 @@
 | POST | `/admin/v1/skill-security/{pack}/{member}` | 批准当前文件版本 |
 | DELETE | `/admin/v1/skill-security/{pack}/{member}` | 撤销文件可信版本 |
 | POST | `/admin/v1/skill-scripts/{pack}/{script_name}/test` | 测试已批准的技能脚本 |
+| GET | `/admin/v1/diagnostics/sql` | SQL 诊断目录 |
+| POST | `/admin/v1/diagnostics/sql` | 执行诊断 SQL |
 | GET | `/admin/v1/openapi.json` | 管理接口规范 |
 
 ## GET /health
@@ -1386,6 +1388,42 @@ args 为 JSON 对象字符串，timeout 限制在 1–30 秒；整包受保护�
 | 响应码 | 内容 |
 | --- | --- |
 | 200 | application/json: object |
+| 422 | application/json: HTTPValidationError |
+| 401 | 未登录、会话失效或不是管理员。 |
+
+## GET /admin/v1/diagnostics/sql
+
+SQL 诊断目录
+
+认证：`umeko_admin` Cookie。
+
+返回数据库后端、行数上限、可读字段及允许写入的表。
+
+| 响应码 | 内容 |
+| --- | --- |
+| 200 | application/json: DiagnosticCatalog |
+| 401 | 未登录、会话失效或不是管理员。 |
+
+## POST /admin/v1/diagnostics/sql
+
+执行诊断 SQL
+
+认证：`umeko_admin` Cookie。
+
+以 SQL 和有序 params 提交单条单表 SELECT、INSERT、UPDATE 或 DELETE，值使用 ?。仅会话消息和工具调用历史可写，UPDATE 和 DELETE 要有 WHERE。成功写入后提交事务，超过行数上限或违反约束则回滚。
+
+请求体：必填。
+
+`application/json` → `DiagnosticSqlIn`
+
+| 响应码 | 内容 |
+| --- | --- |
+| 200 | application/json: DiagnosticSqlOut |
+| 400 | SQL 不受支持、参数不符或执行失败。 |
+| 403 | 诊断操作不允许访问该表或字段。 |
+| 409 | 约束冲突或写入超过行数上限，事务回滚。 |
+| 415 | 请求必须使用 application/json。 |
+| 503 | 无法连接数据库。 |
 | 422 | application/json: HTTPValidationError |
 | 401 | 未登录、会话失效或不是管理员。 |
 

@@ -92,6 +92,16 @@ python scripts/admin_api.py PUT /admin/v1/models/<实际模型ID> --json-file ch
 
 主题与界面语言是浏览器偏好；监听端口、TLS 和路径前缀是启动配置，不能当作管理 API 可热改的服务配置。
 
+## SQL 诊断
+
+用管理员身份请求 `GET /admin/v1/diagnostics/sql`，先查看可操作的表和字段。`POST` 到同一路径，提交一条 SQL 和有序参数。此处查询最近失败的任务：
+
+```json
+{"sql":"SELECT id, status FROM service_tasks WHERE status = ? ORDER BY created_at DESC LIMIT 20","params":["failed"]}
+```
+
+诊断查询支持 SQLite 和 PostgreSQL。写入范围是会话消息与工具调用历史，更新和删除都要有 `WHERE`，每次最多修改 200 行。账号、密钥、技能信任或任务状态应使用各自的管理 API。具体请求和响应字段见 [管理接口完整参考](api-reference.md)。
+
 ## 几个容易误操作的地方
 
 - `toggle` 会反转状态，重试可能把刚启用的技能又关闭。先读取，再按目标决定是否调用。

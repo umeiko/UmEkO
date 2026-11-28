@@ -1033,6 +1033,8 @@ def create_admin_app(settings: Settings, service: AgentService, store: Store, pu
         return {"output": result}
 
     mount_ui(app, ui_dir)
+    from .admin_sql import install_admin_sql
     from .admin_automation import add_admin_automation
+    install_admin_sql(app, store)
     add_admin_automation(app, base_path)
     return app

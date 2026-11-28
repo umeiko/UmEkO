@@ -2,6 +2,7 @@
 from __future__ import annotations
 
 import sqlite3
+import time
 from contextlib import contextmanager
 from pathlib import Path
 
@@ -97,6 +98,16 @@ class DatabaseConnection:
         if self.postgres:
             return self.execute(sql + " RETURNING id", params).fetchone()[0]
         return self.execute(sql, params).lastrowid
+
+    def limit_diagnostic_query(self) -> None:
+        """Bound work on a dedicated connection that will be closed after the request."""
+        if self.postgres:
+            self.execute("SET LOCAL statement_timeout = '5s'")
+            self.execute("SET LOCAL lock_timeout = '2s'")
+        else:
+            self.execute("PRAGMA busy_timeout=2000")
+            deadline = time.monotonic() + 5
+            self._connection.set_progress_handler(lambda: int(time.monotonic() >= deadline), 1000)
 
 
 @contextmanager
