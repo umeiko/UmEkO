@@ -699,7 +699,7 @@ allowed_tool_names 是完整个人清单，null 跟随全局。工具旧名兼�
 
 认证：`umeko_admin` Cookie。
 
-永久删除历史与会话目录；与仅驱逐缓存不同。
+永久删除历史与会话目录。多副本模式下，有运行中的 Run 时返回 409。
 
 | 参数 | 位置 | 必填 | 类型与约束 |
 | --- | --- | --- | --- |
@@ -708,6 +708,7 @@ allowed_tool_names 是完整个人清单，null 跟随全局。工具旧名兼�
 | 响应码 | 内容 |
 | --- | --- |
 | 204 | Successful Response |
+| 409 | 多副本会话存在执行中的 Run。 |
 | 422 | application/json: HTTPValidationError |
 | 401 | 未登录、会话失效或不是管理员。 |
 

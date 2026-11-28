@@ -256,9 +256,11 @@ class LLMClient:
         self._model = model
         model_id = getattr(model, "model_id", None)
         limit = getattr(model, "max_concurrent_requests", 0)
-        self._call_queue = (
-            model_call_queue(model_id, limit) if model_id else ModelCallQueue(limit)
-        )
+        factory = getattr(model, "queue_factory", None)
+        if factory is not None:
+            self._call_queue = factory(model)
+        else:
+            self._call_queue = model_call_queue(model_id, limit) if model_id else ModelCallQueue(limit)
         self._client: OpenAI | None = None
         self._client_lock = threading.Lock()
         self._last_usage: dict | None = None

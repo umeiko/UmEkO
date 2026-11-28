@@ -19,14 +19,10 @@ import threading
 
 def _bootstrap_admin(store, logger: logging.Logger) -> None:
     """没有任何管理员时创建引导账号，环境变量优先。"""
-    if store.has_admin():
-        return
     username = os.getenv("UMEKO_ADMIN_USERNAME", "umeko")
     password = os.getenv("UMEKO_ADMIN_PASSWORD", "1234")
-    store.create_user(username, password, role="admin")
-    logger.info(
-        "已创建默认管理员账号：%s / %s（请尽快在管理面修改密码）", username, password
-    )
+    if store.create_first_admin(username, password):
+        logger.info("已创建引导管理员账号 %s", username)
 
 
 def _serve_admin(app, host: str, port: int) -> None:
@@ -88,6 +84,7 @@ def main() -> None:
             "UMEKO_DATA_ROOT=server_data\n"
             "# Optional PostgreSQL URL. Leave empty to use the local SQLite database.\n"
             "UMEKO_DATABASE_URL=\n"
+            "UMEKO_REPLICA_MODE=false\n"
             "UMEKO_TASK_WORKERS=4\n"
             "UMEKO_TASK_QUEUE_LIMIT=100\n"
             "UMEKO_TASK_CALLER_LIMIT=20\n"

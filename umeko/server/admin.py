@@ -234,6 +234,8 @@ def create_admin_app(settings: Settings, service: AgentService, store: Store, pu
 
     @app.get("/health")
     def health() -> dict:
+        if service.replicas and not service.replicas.ready():
+            raise HTTPException(503, "副本尚未就绪")
         return {"status": "ok", "role": "admin"}
 
     @app.post("/admin/login")
@@ -513,12 +515,15 @@ def create_admin_app(settings: Settings, service: AgentService, store: Store, pu
         except KeyError as exc:
             raise HTTPException(404, "会话不存在") from exc
 
-    @app.delete("/admin/v1/sessions/{session_id}", status_code=204)
+    @app.delete("/admin/v1/sessions/{session_id}", status_code=204,
+                responses={409: {"description": "多副本会话存在执行中的 Run。"}})
     def delete_session(session_id: str) -> None:
         try:
             service.delete_session_admin(session_id)
         except KeyError as exc:
             raise HTTPException(404, str(exc)) from exc
+        except ValueError as exc:
+            raise HTTPException(409, str(exc)) from exc
 
     @app.post("/admin/v1/sessions/{session_id}/evict")
     def evict_session(session_id: str) -> dict:

@@ -38,8 +38,10 @@ class Run:
     # Keep the submitted answer with its execution even if the session is rebuilt.
     structured_result: dict | None = field(default=None, repr=False)
     events: list[dict] = field(default_factory=list)
-    _event_lock: threading.Lock = field(default_factory=threading.Lock, repr=False)
+    _event_lock: threading.RLock = field(default_factory=threading.RLock, repr=False)
     _cancel_event: threading.Event = field(default_factory=threading.Event, repr=False)
+    _publish: Callable | None = field(default=None, repr=False)
+    _remote_cancel: Callable[[], bool] | None = field(default=None, repr=False)
 
     @property
     def finished(self) -> bool:
@@ -55,6 +57,8 @@ class Run:
                 "timestamp": _now(),
                 "data": data,
             }
+            if self._publish is not None:
+                self._publish(self, event)
             self.events.append(event)
             return event
 
@@ -63,30 +67,40 @@ class Run:
             return [event for event in self.events if event["id"] > event_id]
 
     def cancel_requested(self) -> bool:
+        if self._remote_cancel is not None and not self._cancel_event.is_set() and self._remote_cancel():
+            self.request_cancel()
         return self._cancel_event.is_set()
 
     def request_cancel(self) -> None:
-        if self.finished:
-            return
-        self._cancel_event.set()
-        if self.status != "cancelling":
-            self.status = "cancelling"
-            self.emit(ev.RUN_CANCELLING)
+        with self._event_lock:
+            if self.finished:
+                return
+            self._cancel_event.set()
+            if self.status != "cancelling":
+                self.status = "cancelling"
+                self.emit(ev.RUN_CANCELLING)
+
+    def start(self):
+        with self._event_lock:
+            if self.status == "queued":
+                self.status = "running"
+                self.emit(ev.RUN_STARTED)
 
     def finish(self, status: str, *, reply: str | None = None, error: str | None = None) -> None:
         """宿主在执行结束后调用：落定状态并发终态事件。"""
-        self.status = status
-        self.completed_at = _now()
-        if reply is not None:
-            self.reply = reply
-        if error is not None:
-            self.error = error
-        if status == "completed":
-            self.emit(ev.RUN_COMPLETED, reply=self.reply)
-        elif status == "failed":
-            self.emit(ev.RUN_FAILED, error=self.error)
-        elif status == "cancelled":
-            self.emit(ev.RUN_CANCELLED, reply=self.reply)
+        with self._event_lock:
+            self.status = status
+            self.completed_at = _now()
+            if reply is not None:
+                self.reply = reply
+            if error is not None:
+                self.error = error
+            if status == "completed":
+                self.emit(ev.RUN_COMPLETED, reply=self.reply)
+            elif status == "failed":
+                self.emit(ev.RUN_FAILED, error=self.error)
+            elif status == "cancelled":
+                self.emit(ev.RUN_CANCELLED, reply=self.reply)
 
 
 class RunManager:

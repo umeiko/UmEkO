@@ -70,6 +70,6 @@ UMEKO_DATA_ROOT/
 
 ## 部署约束
 
-当前采用单应用进程，反向代理在外层处理公共 HTTPS 与路径。备份包含实际使用的数据库、会话文件和根目录 `skills/` 中的技能库。PostgreSQL 配置见 [部署说明](../deployment.md#postgresql)。
+默认运行单应用进程。配置 PostgreSQL 多副本后，各副本共享持久化卷及 Run 状态，通过租约恢复已离线副本的任务。反向代理处理公共 HTTPS 与路径。备份包含数据库、会话文件和管理员技能库。配置见 [PostgreSQL 多副本](../deployment.md#postgresql-replicas)。
 
 源码：[server/app.py](https://github.com/umeiko/UmEkO/blob/main/umeko/server/app.py)、[server/admin.py](https://github.com/umeiko/UmEkO/blob/main/umeko/server/admin.py)、[host/service.py](https://github.com/umeiko/UmEkO/blob/main/umeko/host/service.py)。

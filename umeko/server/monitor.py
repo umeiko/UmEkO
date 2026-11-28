@@ -11,6 +11,7 @@ from datetime import datetime, timezone
 import psutil
 
 from ..host.database import DatabaseUnavailable
+from ..host.replicas import ReplicaModelQueue
 from ..llm.concurrency import model_call_queue
 
 
@@ -52,10 +53,17 @@ class ResourceMonitor:
         with self.service.store.connect() as db:
             sessions = db.execute("SELECT COUNT(*) FROM agent_sessions WHERE purpose='chat'").fetchone()[0]
             machine_sessions = db.execute("SELECT COUNT(*) FROM agent_sessions WHERE purpose='task'").fetchone()[0]
-        with self.service.run_manager._lock:
-            statuses = dict(Counter(r.status for r in self.service.runs.values()))
+            replicas = self.service.replicas
+            if replicas:
+                statuses = dict(db.execute("SELECT status,COUNT(*) FROM replica_runs GROUP BY status"))
+        if not replicas:
+            with self.service.run_manager._lock:
+                statuses = dict(Counter(r.status for r in self.service.runs.values()))
+        def queue(model):
+            mid, limit = model["id"], model["max_concurrent_requests"]
+            return ReplicaModelQueue(replicas, mid, limit) if replicas else model_call_queue(mid, limit)
         models = [{"id": m["id"], "name": m["name"], "provider": p["name"],
-                   **model_call_queue(m["id"], m["max_concurrent_requests"]).snapshot()}
+                   **queue(m).snapshot()}
                   for p in self.service.store.list_providers() for m in p["models"]]
         db_bytes = self.service.store.database_bytes()
         sample = {

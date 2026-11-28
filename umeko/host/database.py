@@ -78,6 +78,11 @@ class DatabaseConnection:
         else:
             self.execute("BEGIN IMMEDIATE")
 
+    def advisory_session_lock(self, scope: str, key: str) -> None:
+        self.execute("SELECT pg_advisory_lock(hashtext(current_schema()::text || ?), hashtext(?))",
+                     (":umeko:" + scope, key))
+        self._connection.commit()  # The lock lasts until the dedicated connection closes.
+
     def lock_schema(self):
         if self.postgres:
             self.begin_write()

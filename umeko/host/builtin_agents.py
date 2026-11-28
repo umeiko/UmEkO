@@ -10,6 +10,7 @@ import tempfile
 
 from ..skillpacks import parse_skill_pack_text
 from ..skill_layout import entry_path, member_path, migrate_library
+from .agents import AgentSlugConflict
 
 IMAGE_QC_SLUG = "image-qc"
 IMAGE_QC_SKILL = "doc-image-qc.md"
@@ -138,6 +139,14 @@ def agent_installation_key(slug: str) -> str:
     return "BUILTIN_AGENT_INSTALLED_" + slug
 
 
+def _register_builtin_agent(registry, definition) -> None:
+    try:
+        registry.save(definition)
+    except AgentSlugConflict:
+        # A concurrent startup or administrator registered the slug first.
+        pass
+
+
 def _upgrade_stock_file(library_dir: Path, relative: Path, digests: set[str]) -> bool:
     """Never recreate a deleted file or replace an unknown/customized version."""
     target = entry_path(library_dir, relative.stem) if len(relative.parts) == 1 else member_path(library_dir, relative.parts[0], relative.name)
@@ -229,7 +238,7 @@ def _install_image_qc_agent(registry, library_dir: Path) -> bool:
         store.upsert_default_skill(IMAGE_QC_SKILL, content)
     if not any(item["slug"] == IMAGE_QC_SLUG for item in registry.list()):
         skill = next(item for item in store.default_skills() if item["name"] == IMAGE_QC_SKILL)
-        registry.save({
+        _register_builtin_agent(registry, {
             "slug": IMAGE_QC_SLUG,
             "name": "图像质检",
             "description": "检查单张图片或图文文档的图片质量、图文一致性及可见问题，生成检查清单与可下载的质检报告。",
@@ -266,8 +275,8 @@ def install_builtin_agents(registry, library_dir: Path) -> bool:
                     if name not in existing_skills:
                         store.set_default_skill_enabled(name, True)
                         skills[name]["enabled"] = True
-                registry.save({**definition, "disclosed_model_ids": [],
-                               "enabled": all(skills[name]["enabled"] for name in definition["skill_names"])})
+                enabled = all(skills[name]["enabled"] for name in definition["skill_names"])
+                _register_builtin_agent(registry, {**definition, "disclosed_model_ids": [], "enabled": enabled})
         # Keep subsequent edits, disabling and deletion, including removed dependencies.
         store.set_config({key: "1"})
         changed = True

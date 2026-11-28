@@ -41,17 +41,16 @@ class TemporaryWorkspaceMiddleware:
                 return await JSONResponse({"detail": "此服务仅提供 API"}, status_code=404, headers=PRIVATE)(scope, receive, send)
             return await HTMLResponse(render_ui("index.html", self.base_path, temporary_path="/TMP/" + token,
                                                guide_url=self.guide_url, directory=self.ui_dir), headers=PRIVATE)(scope, receive, send)
-        task = self.tasks.temporary_workspace(token)
+        task = await asyncio.to_thread(self.tasks.temporary_workspace, token)
         if task is None:
             return await JSONResponse(EXPIRED, status_code=410, headers=PRIVATE)(scope, receive, send)
         snapshot, sid = task["snapshot"], task["session_id"]
         if rest == "/v1/temporary" and method == "GET" or rest == "/v1/temporary/activity" and method == "POST":
-            task = self.tasks.open_workspace(token, activity=method == "POST")
+            task = await asyncio.to_thread(self.tasks.open_workspace, token, activity=method == "POST")
             if task is None:
                 return await JSONResponse(EXPIRED, status_code=410, headers=PRIVATE)(scope, receive, send)
-            state = self.tasks.service.sessions.get(sid)
-            active = state.active_run_holder["run"] if state else None
-            busy = not task["completed_at"] or (active and not active.finished)
+            active = await asyncio.to_thread(self.tasks.workspace_active, sid)
+            busy = not task["completed_at"] or active is not None
             deadline = min(task["expires_at"], task["workspace_expires_at"]) if task["workspace_expires_at"] else task["expires_at"]
             return await JSONResponse({"state": "ready" if sid and (task["run_id"] or task["completed_at"]) else "pending", "task_id": task["id"],
                                        "session_id": sid, "agent_name": snapshot.get("name", "Agent"),
@@ -62,16 +61,19 @@ class TemporaryWorkspaceMiddleware:
         service, store = self.tasks.service, self.tasks.store
         if rest == "/v1/temporary/events" and method == "GET":
             request = Request(scope, receive)
+            def current():
+                if self.tasks.temporary_workspace(token) is None:
+                    return None
+                active = self.tasks.workspace_active(sid)
+                return {**session_revision(store, sid), "run_id": active.id if active else None}
+
             async def changes():
                 previous, cursor = None, 0
                 while not await request.is_disconnected():
-                    if self.tasks.temporary_workspace(token) is None:
+                    update = await asyncio.to_thread(current)
+                    if update is None:
                         yield 'event: session.expired\ndata: {}\n\n'
                         return
-                    state = service.sessions.get(sid)
-                    run = state.active_run_holder["run"] if state else None
-                    active = run if run and not run.finished else None
-                    update = {**session_revision(store, sid), "run_id": active.id if active else None}
                     if update != previous:
                         previous, cursor = update, cursor + 1
                         yield f'id: {cursor}\nevent: session.changed\ndata: {json.dumps(update)}\n\n'
@@ -114,7 +116,10 @@ class TemporaryWorkspaceMiddleware:
                 allowed = len(parts) == 2 and parts[0] + ".md" in skills
         run_match = re.fullmatch(r"/v1/runs/([^/]+)(/events|/cancel)?", rest)
         if run_match:
-            run = service.runs.get(run_match.group(1))
+            try:
+                run = await asyncio.to_thread(service.get_run, run_match.group(1))
+            except KeyError:
+                run = None
             if run is None or run.session_id != sid:
                 return await JSONResponse({"detail": "运行不存在或无权访问"}, status_code=404, headers=PRIVATE)(scope, receive, send)
             allowed = method == "GET" and run_match.group(2) != "/cancel" or method == "POST" and run_match.group(2) == "/cancel"

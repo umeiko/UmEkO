@@ -26,6 +26,7 @@ def isolated_skill_library(tmp_path, monkeypatch):
     # Server bootstrap and admin edits must never touch the developer's skill library.
     monkeypatch.setenv("UMEKO_SKILL_DIR", str(tmp_path / "skills"))
     monkeypatch.delenv("UMEKO_DATABASE_URL", raising=False)
+    monkeypatch.delenv("UMEKO_REPLICA_MODE", raising=False)
 
 
 @pytest.fixture

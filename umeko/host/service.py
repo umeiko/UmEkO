@@ -18,6 +18,7 @@ import uuid
 from contextlib import nullcontext
 from dataclasses import dataclass, field, replace
 from datetime import datetime, timezone
+from functools import wraps
 from pathlib import Path
 from urllib.parse import quote
 
@@ -39,11 +40,20 @@ from ..images import IMAGE_EXTS, detect_image_format, validate_image
 from .skill_approvals import SkillApprovals, skill_maintenance
 from .storage import Store
 from .results import MACHINE_RESULTS_PROMPT, SUBMISSION_REMINDER, ResultSubmission
+from .replicas import ReplicaLeaseLost, ReplicaRunManager, ReplicaRuntime
 from .configuration import deployment_defaults, model_from_row, resolve_provider_settings
 
 
 def _now() -> str:
     return datetime.now(timezone.utc).isoformat()
+
+
+def coordinated_session(method):
+    @wraps(method)
+    def locked(self, session_id, *args, **kwargs):
+        with self.session_guard(session_id):
+            return method(self, session_id, *args, **kwargs)
+    return locked
 
 
 def _artifact_kind(path: Path) -> str:
@@ -106,10 +116,15 @@ class AgentService:
         self.workspace_root = Path(workspace_root).resolve()
         self.workspace_root.mkdir(parents=True, exist_ok=True)
         self.store = store or Store.from_settings(settings, self.data_root)
+        self.replicas = None
+        if settings.replica_mode:
+            self._replica_skill_root = skill_packs_dir().resolve()
+            self.replicas = ReplicaRuntime(self.store, self.data_root, self._replica_skill_root)
+            self._base_settings = self.replicas.settings(self._base_settings)
         self.settings = resolve_provider_settings(self._base_settings, self.store)
         self.sessions: dict[str, SessionState] = {}
         self._lock = threading.Lock()
-        self.run_manager = RunManager(max_workers=4)
+        self.run_manager = ReplicaRunManager(self.replicas) if self.replicas else RunManager(max_workers=4)
         self.skill_approvals = SkillApprovals(self)
 
     @property
@@ -232,7 +247,7 @@ class AgentService:
         """
         if not content or not self.profile.mask_paths:
             return content
-        session = self.get_session(session_id)
+        session = self.sessions.get(session_id) or self.get_session(session_id)
         session_root = str(session.root.resolve())
         root_variants = {session_root, session_root.replace("\\", "/")}
         if not any(source in content for source in root_variants):
@@ -373,7 +388,10 @@ class AgentService:
 
     def _skills_library_dir(self) -> Path:
         """服务器技能库目录（与 run_skill_script / 管理面同源）。"""
-        return skill_packs_dir()
+        return self._replica_skill_root if self.replicas else skill_packs_dir()
+
+    def session_guard(self, session_id):
+        return self.replicas.lock("session", session_id) if self.replicas and session_id else nullcontext()
 
     @skill_maintenance
     def create_session(
@@ -560,7 +578,14 @@ class AgentService:
 
     def get_session(self, session_id: str) -> SessionState:
         try:
-            return self.sessions[session_id]
+            session = self.sessions[session_id]
+            if self.replicas:
+                record = self.store.session_by_id(session_id)
+                if record is None:
+                    self.evict_session(session_id)
+                    raise KeyError(session_id)
+                session.files = self.store.session_files(session_id)
+            return session
         except KeyError as exc:
             record = self.store.session_by_id(session_id)
             if record is None:
@@ -579,11 +604,13 @@ class AgentService:
 
     # ---------- Run 执行 ----------
 
+    @coordinated_session
     def create_run(self, session_id: str, user_input: str, attachments: list[str]) -> Run:
-        session = self.get_session(session_id)
-        active = session.active_run_holder["run"]
-        if active is not None and active.status not in {"completed", "failed", "cancelled"}:
+        if self.active_run(session_id) is not None:
             raise ValueError("当前 Session 已有任务正在运行")
+        if self.replicas:
+            self.evict_session(session_id)
+        session = self.get_session(session_id)
         # 用户级/会话级模型选择在每个新 Run 生效：配置有变化就重装配该 Session
         # （DB 历史保留，重建后自动恢复上下文，不影响其他在线 Session）。
         session = self._session_with_current_models(session)
@@ -596,15 +623,16 @@ class AgentService:
             if file_id not in session.files:
                 raise ValueError(f"未知附件：{file_id}")
             paths.append(session.files[file_id])
-        self.store.add_message(
-            session_id, "user", user_input,
-            json.dumps([path.name for path in paths], ensure_ascii=False),
-        )
-        run = self.run_manager.create(session_id)  # 自带 run.queued 事件并入注册表
-        session.active_run_holder["run"] = run
-        self.run_manager.submit(
-            run, lambda: self._execute_run(session, run, user_input, paths)
-        )
+        run = self.run_manager.create(session_id)
+        try:
+            self.store.add_message(session_id, "user", user_input,
+                                   json.dumps([path.name for path in paths], ensure_ascii=False))
+            session.active_run_holder["run"] = run
+            self.run_manager.submit(run, lambda: self._execute_run(session, run, user_input, paths))
+        except Exception:
+            run.finish("failed", error="无法启动本轮会话")
+            session.active_run_holder["run"] = None
+            raise
         return run
 
     def _session_with_current_models(self, session: SessionState) -> SessionState:
@@ -632,8 +660,7 @@ class AgentService:
                 if hasattr(self, "task_service"):
                     self.task_service.workspace_finished(session, run)
                 return
-            run.status = "running"
-            run.emit("run.started")
+            run.start()
             if session.result_submission:
                 session.result_submission.begin_run(run.id)
             try:
@@ -658,11 +685,13 @@ class AgentService:
                 if session.result_submission and not run.cancel_requested():
                     run.structured_result = session.result_submission.for_run(run.id)
                     reply = run.structured_result["text"]
-                self.store.add_message(session.id, "assistant", reply)
+                self._save_run_reply(session.id, reply)
                 if run.cancel_requested():
                     run.finish("cancelled", reply=reply)
                 else:
                     run.finish("completed", reply=reply)
+            except ReplicaLeaseLost:
+                return
             except OperationCancelled:
                 self._finish_cancelled(session, run)
             except Exception as exc:
@@ -677,14 +706,24 @@ class AgentService:
                         import logging
                         logging.getLogger(__name__).exception("Failed to retain temporary workspace metadata")
 
+    def _save_run_reply(self, session_id, reply):
+        if self.replicas:
+            with self.store.connect() as db:
+                self.replicas.require_owner(db)
+                self.store.add_message(session_id, "assistant", reply, connection=db)
+        else:
+            self.store.add_message(session_id, "assistant", reply)
+
     def _finish_cancelled(self, session: SessionState, run: Run) -> None:
         reply = "任务已停止。"
-        self.store.add_message(session.id, "assistant", reply)
+        self._save_run_reply(session.id, reply)
         run.finish("cancelled", reply=reply)
         if session.active_run_holder["run"] is run:
             session.active_run_holder["run"] = None
 
     def active_run(self, session_id: str) -> Run | None:
+        if self.replicas:
+            return self.run_manager.active(session_id)
         run = self.get_session(session_id).active_run_holder["run"]
         if run is None or run.status in {"completed", "failed", "cancelled"}:
             return None
@@ -693,11 +732,13 @@ class AgentService:
     def context_stats(self, session_id: str) -> dict:
         return self.get_session(session_id).agent.context_stats()
 
+    @coordinated_session
     def compact_context(self, session_id: str) -> dict:
-        session = self.get_session(session_id)
-        active = session.active_run_holder["run"]
-        if active is not None and active.status not in {"completed", "failed", "cancelled"}:
+        if self.active_run(session_id) is not None:
             raise ValueError("任务运行中，暂时不能压缩上下文")
+        if self.replicas:
+            self.evict_session(session_id)
+        session = self.get_session(session_id)
         session = self._session_with_current_models(session)
         with session.lock:
             result = session.agent.compact_context()
@@ -709,22 +750,22 @@ class AgentService:
             self.store.save_context_summary(session_id, summary, retained)
             return response
 
+    @coordinated_session
     def clear_context(self, session_id: str) -> dict:
-        session = self.get_session(session_id)
-        active = session.active_run_holder["run"]
-        if active is not None and active.status not in {"completed", "failed", "cancelled"}:
+        if self.active_run(session_id) is not None:
             raise ValueError("任务运行中，暂时不能清空上下文")
+        session = self.get_session(session_id)
         with session.lock:
             result = session.agent.clear_context()
             self.store.clear_context(session_id)
             return result
 
+    @coordinated_session
     def clear_chat(self, session_id: str) -> int:
         """清空聊天记录与上下文（保留文件与 Skill 挂载，相当于干净重来）。"""
-        session = self.get_session(session_id)
-        active = session.active_run_holder["run"]
-        if active is not None and active.status not in {"completed", "failed", "cancelled"}:
+        if self.active_run(session_id) is not None:
             raise ValueError("任务运行中，暂时不能清空聊天")
+        session = self.get_session(session_id)
         with session.lock:
             session.agent.clear_context()
             return self.store.clear_chat(session_id)
@@ -736,6 +777,7 @@ class AgentService:
 
     # ---------- Session 复制 ----------
 
+    @coordinated_session
     def clone_session(self, session_id: str, user_id: str) -> SessionState:
         """复制会话：目录树（workspace/attachments/generate/client）+ 对话记录 + 上下文摘要。
 
@@ -747,8 +789,7 @@ class AgentService:
         source = self.get_session(session_id)  # 不存在会抛 KeyError
         if source.user_id != user_id:
             raise KeyError(session_id)
-        active = source.active_run_holder["run"]
-        if active is not None and active.status not in {"completed", "failed", "cancelled"}:
+        if self.active_run(session_id) is not None:
             raise ValueError("源会话任务运行中，等它结束再复制")
         record = self.store.session_by_id(session_id)
         new_id = f"sess_{uuid.uuid4().hex}"
@@ -946,11 +987,14 @@ class AgentService:
             result.append(info)
         return result
 
+    @coordinated_session
     def delete_session_admin(self, session_id: str) -> None:
         """删除 Session：内存驱逐 + DB 记录（FK 级联消息/挂载）+ 磁盘目录。"""
         record = self.store.session_by_id(session_id)
         if record is None:
             raise KeyError(f"未知会话：{session_id}")
+        if self.replicas and self.active_run(session_id):
+            raise ValueError("会话有执行中的任务，请停止后再删除")
         self.evict_session(session_id)
         self.store.delete_session(session_id, record["user_id"])
         target = (self.data_root / "users" / record["user_id"] / "sessions" / session_id).resolve()
@@ -983,7 +1027,13 @@ class AgentService:
                     raise ValueError("该账号仍有排队或执行中的任务，请先在资源监控中停止，并等待任务结束后再删除")
                 for task in tasks:
                     task_service._directory(task["id"])
-            sessions = db.execute("SELECT id FROM agent_sessions WHERE user_id=?", (user_id,)).fetchall()
+            sessions = db.execute("SELECT id FROM agent_sessions WHERE user_id=?" + (" FOR UPDATE" if self.replicas else ""),
+                                  (user_id,)).fetchall()
+            if self.replicas and db.execute(
+                "SELECT 1 FROM replica_runs r JOIN agent_sessions s ON s.id=r.session_id "
+                "WHERE s.user_id=? AND r.status IN ('queued','running','cancelling') LIMIT 1", (user_id,),
+            ).fetchone():
+                raise ValueError("该账号仍有执行中的会话，请停止后再删除")
             self.store.delete_user(user_id, connection=db)
         for row in sessions:
             self.evict_session(row["id"])
