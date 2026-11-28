@@ -14,15 +14,17 @@ from fastapi.testclient import TestClient
 from umeko.config import ModelConfig, Settings
 from umeko.host.agents import AgentRegistry
 from umeko.host.builtin_agents import ASSETS, IMAGE_QC_SKILL, INSTALL_KEY, install_builtin_agents
+from umeko.host.builtin_skills import installation_key
 from umeko.host.storage import Store
 from umeko.server.app import create_app
 from umeko.skills.pack_reader import read_pack_file
 from umeko.skills.script_runner import run_skill_script
 
 
-def app_for(tmp_path, prefix=""):
+def app_for(tmp_path, prefix="", database_url=None):
     return create_app(
-        Settings(ModelConfig("fixture", "fixture-key", "http://unused.invalid"), base_path=prefix),
+        Settings(ModelConfig("fixture", "fixture-key", "http://unused.invalid"),
+                 base_path=prefix, database_url=database_url),
         data_root=tmp_path / "data", workspace_root=tmp_path / "output",
     )
 
@@ -84,6 +86,64 @@ def test_restart_preserves_edits_and_does_not_restore_deleted_defaults(tmp_path)
     assert "image-qc" not in {item["slug"] for item in final.agent_registry.list()}
     assert final.store.default_skill("doc-image-qc.md") is None
     assert not checks.exists()
+
+
+def test_recreated_container_restores_missing_builtin_packages(tmp_path, monkeypatch, test_database_url, approve_skill_files):
+    app = app_for(tmp_path, database_url=test_database_url)
+    service, store = app.state.agent_service, app.state.store
+    assert store.config()[INSTALL_KEY] == store.config()[installation_key("drawio-correction.md")] == "1"
+    owner = store.create_user("fixture-admin", "fixture-pass", "admin")
+    script = Path("doc-image-qc/scripts/render_report.py")
+    previous = b'import json\nprint(json.dumps({"ok":True,"result":"retained fixture"}))\n'
+    original_library = service._skills_library_dir()
+    (original_library / script).write_bytes(previous)
+    approve_skill_files(service, "doc-image-qc")
+    approve_skill_files(service, "drawio-correction")
+    approved = service.skill_approvals.approved_files("doc-image-qc")
+    old = service.create_session(user_id=owner["id"])
+    old_record = old.session.script_trust.records / "doc-image-qc.json"
+    trust = old_record.read_bytes()
+    original = store.default_skill(IMAGE_QC_SKILL) + "\nAdministrator fixture instructions."
+    store.upsert_default_skill(IMAGE_QC_SKILL, original)
+    store.set_default_skill_enabled("drawio-flowchart.md", False)
+    store.delete_default_skill("document-check.md")
+    persisted_skills = store.default_skills()
+    persisted_agents = service.agent_registry.list()
+    service.run_manager.shutdown()
+
+    # The new container sees the same database and data volume, but an empty skill mount.
+    replacement = tmp_path / "replacement-library"
+    replacement.mkdir()
+    monkeypatch.setenv("UMEKO_SKILL_DIR", str(replacement))
+    restarted = app_for(tmp_path, database_url=test_database_url).state.agent_service
+    try:
+        assert (replacement / script).read_bytes() == (ASSETS / script).read_bytes()
+        assert (replacement / "doc-image-qc/references/checks.md").is_file()
+        assert (replacement / "drawio-correction/scripts/drawio_flow.py").read_bytes() == (
+            ASSETS / "drawio-flowchart/scripts/drawio_flow.py").read_bytes()
+        assert not (replacement / "document-check").exists()
+        assert restarted.store.default_skills() == persisted_skills
+        assert restarted.agent_registry.list() == persisted_agents
+        assert restarted.skill_approvals.approved_files("doc-image-qc") == approved
+
+        def execute(state):
+            return state.agent._skills["run_skill_script"].handler(pack="doc-image-qc", script="render_report.py", args="{}")
+
+        restored = restarted.get_session(old.id)
+        assert old_record.read_bytes() == trust
+        assert (restored.root / "client/skills" / script).read_bytes() == previous
+        assert execute(restored) == "retained fixture"
+        fresh = restarted.create_session(user_id=owner["id"])
+        assert (fresh.root / "client/skills" / script).is_file()
+        assert "SCRIPT_TRUST_REJECTED" in execute(fresh)
+        output = fresh.agent._skills["run_skill_script"].handler(
+            pack="drawio-correction", script="prepare_correction.py",
+            args=json.dumps({"source_text": "flowchart TD\nA[Start] --> B[End]"}),
+        )
+        assert "status=ready" in output
+        assert not install_builtin_agents(restarted.agent_registry, replacement)
+    finally:
+        restarted.run_manager.shutdown()
 
 
 @pytest.mark.parametrize("existing_agent", [False, True])

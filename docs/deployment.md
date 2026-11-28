@@ -91,7 +91,7 @@ uv run python -m umeko.server --env .env --host 127.0.0.1 --port 8000
 配置了公共前缀时，第 3 步应访问 NGINX / ALB 的公共地址，参见“带前缀部署”。
 服务可以在未配置模型时启动，但 `/health` 成功并不表示模型已配置或能够回答。
 
-启动后，“服务接入 → 智能体管理”自带 `image-qc` 图像质检智能体；配置主模型和视觉模型后可直接接入。首次初始化会将配套检查清单和报告脚本补入技能库，已有自定义文件不覆盖。后续启动只更新内容完全匹配已知原版的质检指引和报告脚本，保留自定义版本、检查清单及启用状态，不恢复已删除的文件。技能库默认是启动目录的 `skills/`（exe 则在其旁边），可用 `UMEKO_SKILL_DIR` 指向固定的可写、持久化目录；管理面与执行工具共用此路径。详见[图像质检智能体](api/agents.md#builtin-image-qc)。
+启动后，“服务接入 → 智能体管理”自带 `image-qc` 图像质检智能体。配置主模型和视觉模型后可直接接入。首次初始化会将配套检查清单和报告脚本补入技能库。后续启动只更新能识别的原版文件。数据库仍登记的内置包如果整包缺失，启动会从当前版本的随包资源恢复。技能库默认是启动目录的 `skills/`（exe 则在其旁边），容器部署可用 `UMEKO_SKILL_DIR` 指向固定的可写、持久化目录。详见[图像质检智能体](api/agents.md#builtin-image-qc)。
 
 首次上线及后续更新，还需完成[受控技能的部署与升级验收](#skill-security-upgrade)：网页和模型能用，不等于会话脚本已通过白名单与摘要检查。
 
@@ -563,7 +563,7 @@ UMEKO_DOWNLOAD_BLOCKED_HOSTS=restricted.example.internal,10.0.0.8
 
 部署目录应固定。默认会话文件在 `UMEKO_DATA_ROOT/users/` 下，SQLite 库在同一数据根目录。使用 PostgreSQL 时，在应用停写期间一并备份数据库（如 `pg_dump`）和完整数据目录，恢复时使用同一批备份。
 `UMEKO_DATA_ROOT/skill_trust/` 保存与会话代码配套的批准记录，须与数据库、会话文件在同一次停写备份中保存和恢复。
-管理面技能库在应用目录的 `skills/` 中（源码运行是项目根目录，exe 是 exe 所在目录），也应保留；
+管理面技能库位于 `UMEKO_SKILL_DIR`，未配置时使用应用的 `skills/` 目录，备份时也应保留。
 使用的外部产物目录、自定义 `--workspace-root`、部署 `.env` 和 CA 文件一并纳入备份。
 数据库和模型导入文件包含凭据，按私有配置管理，不提交到 Git。
 
@@ -584,11 +584,11 @@ UMEKO_DOWNLOAD_BLOCKED_HOSTS=restricted.example.internal,10.0.0.8
 
 #### 首次部署
 
-1. 固定数据与技能库位置。容器示例配置如下，均指**容器内**的绝对路径；分别挂载持久化存储。不要把 `UMEKO_SKILL_DIR` 指向某个用户的会话副本，也不要只保留数据目录中的数据库。
+1. 固定数据与技能库位置。容器示例配置如下，两个路径都是**容器内**的绝对路径。将持久化卷挂到 `/srv/umeko/data` 即可覆盖两个目录，也可将技能库放在独立挂载的卷上。已有技能库在容器重建前应按原目录结构和原始字节迁入该位置。PostgreSQL 保存技能登记和审批记录，管理员技能文件仍存放在文件卷中。
 
     ```ini
     UMEKO_DATA_ROOT=/srv/umeko/data
-    UMEKO_SKILL_DIR=/srv/umeko/skills
+    UMEKO_SKILL_DIR=/srv/umeko/data/skills
     ```
 
 2. 以实际服务账号检查这两个目录可读写；私有记录留在数据根的 `skill_trust/`，不作为静态目录发布。固定启动目录，核对容器环境和 `.env` 的最终取值。
@@ -600,7 +600,7 @@ UMEKO_DOWNLOAD_BLOCKED_HOSTS=restricted.example.internal,10.0.0.8
 
 停止新任务并等待或停止正在执行的任务，停应用后成套备份：数据库、`users/` 下的会话文件、`skill_trust/`、管理员技能库、私有配置及 CA。记录应用版本、实际目录/容器卷、计划更改的技能文件；不把这些私有备份提交 Git。
 
-更新源码、镜像或 exe 后，先核对持久化卷是否挂到了原位置。空目录挂载会遮住镜像内文件；数据库已有安装标记时，删除技能库并重启也不保证重新安装所有资源。启动会保留管理员自定义与删除，仅按内置资源的已知原版策略更新，不能把“拉了最新代码”视为所有运行库文件都已更新。
+更新源码、镜像或 exe 后，先核对持久化卷是否挂到了原位置。当安装标记和默认下发记录仍在，但某个内置技能整包缺失时，启动会从当前版本恢复 `SKILL.md`、成员及共享依赖。恢复保留自定义的下发正文、启停状态和审批记录。库中已有的自定义文件、包内单个文件的删除，以及已移除的默认下发记录均保留。丢失的自定义包、脚本和私有配置需要从备份恢复。恢复的代码仍按原始字节校验，已有审批摘要不匹配时，按门禁流程审查当前版本后再批准。
 
 需要更改 `.py`、辅助模块或 `config.json` 时，在**管理员库**审查并维护完整版本，暂停创建新会话直到修改完成。不要让发布脚本递归覆盖 `users/*/sessions/*/client/skills/`，也不要在下发后格式化、改换行或重新编码会话代码。共享模块需与对应入口成套验证；信任校验会检查整个包的受保护文件。
 
@@ -635,7 +635,7 @@ import json
 from pathlib import Path
 
 data = Path("/srv/umeko/data")
-library = Path("/srv/umeko/skills")
+library = Path("/srv/umeko/data/skills")
 user_id, session_id, pack = "usr_example", "sess_example", "sample-skill"
 record = data / "skill_trust" / session_id / (pack + ".json")
 session = data / "users" / user_id / "sessions" / session_id / "client/skills" / pack

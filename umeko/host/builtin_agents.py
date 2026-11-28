@@ -10,7 +10,6 @@ import tempfile
 
 from ..skillpacks import parse_skill_pack_text
 from ..skill_layout import entry_path, member_path, migrate_library
-from ..skillassets import skill_members
 
 IMAGE_QC_SLUG = "image-qc"
 IMAGE_QC_SKILL = "doc-image-qc.md"
@@ -208,22 +207,20 @@ def _upgrade_stock_prompt(registry, slug=IMAGE_QC_SLUG, prompt=IMAGE_QC_PROMPT, 
 
 
 def _install_image_qc_agent(registry, library_dir: Path) -> bool:
+    from .builtin_skills import copy_builtin_assets, restore_missing_builtin_package
+
     store = registry.store
+    name = Path(IMAGE_QC_SKILL).stem
+    entry = entry_path(ASSETS, name)
     if store.config().get(INSTALL_KEY) == "1":
+        restored = store.default_skill(IMAGE_QC_SKILL) is not None and restore_missing_builtin_package(
+            ASSETS, library_dir, name, entry,
+        )
         assets_updated = _upgrade_builtin_assets(store, library_dir)
         prompt_updated = _upgrade_stock_prompt(registry)
-        return assets_updated or prompt_updated
+        return restored or assets_updated or prompt_updated
     # Materialize editable library sources. An existing source or script wins.
-    name = Path(IMAGE_QC_SKILL).stem
-    sources = {"SKILL.md": entry_path(ASSETS, name), **skill_members(ASSETS, name)}
-    for relative, source in sources.items():
-        target = member_path(library_dir, name, relative, create=True)
-        target.parent.mkdir(parents=True, exist_ok=True)
-        try:
-            with target.open("xb") as output:
-                output.write(source.read_bytes())
-        except FileExistsError:
-            pass
+    copy_builtin_assets(ASSETS, library_dir, name, entry)
     _upgrade_builtin_assets(store, library_dir)
     if store.default_skill(IMAGE_QC_SKILL) is None:
         content = entry_path(library_dir, IMAGE_QC_SKILL).read_text(encoding="utf-8")

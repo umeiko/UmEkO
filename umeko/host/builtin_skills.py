@@ -9,7 +9,7 @@ import tempfile
 
 from ..skillpacks import parse_skill_pack_text
 from ..skillassets import skill_members
-from ..skill_layout import entry_path, member_path, migrate_library, entries
+from ..skill_layout import checked, entry_path, member_path, migrate_library, entries
 from .builtin_agents import ASSETS, IMAGE_QC_SKILL
 
 
@@ -20,6 +20,37 @@ def asset_path(root, relative):
 
 def installation_key(filename: str) -> str:
     return "BUILTIN_SKILL_INSTALLED_" + filename
+
+
+def copy_builtin_assets(bundle_dir: Path, library_dir: Path, name: str, entry: Path) -> None:
+    sources = {"SKILL.md": entry, **skill_members(bundle_dir, name)}
+    for relative, source in sources.items():
+        target = member_path(library_dir, name, relative, create=True)
+        if target.exists():
+            continue
+        data = source.read_bytes()
+        target.parent.mkdir(parents=True, exist_ok=True)
+        try:
+            with target.open("xb") as output:
+                output.write(data)
+        except FileExistsError:
+            pass
+
+
+def restore_missing_builtin_package(bundle_dir: Path, library_dir: Path, name: str, entry: Path) -> bool:
+    """Restore a lost package, preserving file edits and removals inside existing packages."""
+    target = checked(library_dir, name)
+    if target.exists() or entry_path(library_dir, name).exists():
+        return False
+    library_dir.mkdir(parents=True, exist_ok=True)
+    # Stage on the mounted filesystem so a failed copy leaves the package absent and retryable.
+    with tempfile.TemporaryDirectory(dir=library_dir, prefix=".skill-restore-") as staging:
+        copy_builtin_assets(bundle_dir, Path(staging), name, entry)
+        if target.exists():
+            return False
+        (Path(staging) / name).rename(target)
+    logging.getLogger(__name__).info("Restored missing bundled skill package %s", name)
+    return True
 
 
 def _upgrade_stock_assets(store, library_dir: Path) -> bool:
@@ -77,21 +108,19 @@ def _upgrade_stock_assets(store, library_dir: Path) -> bool:
 def install_builtin_skills(store, library_dir: Path) -> bool:
     """Discover packages from bundled files; no domain tools or agent registrations."""
     migrate_library(library_dir)
-    installed = False
+    config = store.config()
+    known = {item["name"] for item in store.default_skills()}
+    changed = False
     for name, entry in entries(ASSETS).items():
         # This existing default has its own agent bootstrap and stock-upgrade policy.
         identity = name + ".md"
-        if identity == IMAGE_QC_SKILL or store.config().get(installation_key(identity)) == "1":
+        if identity == IMAGE_QC_SKILL:
             continue
-        sources = {"SKILL.md": entry, **skill_members(ASSETS, name)}
-        for relative, source in sources.items():
-            target = member_path(library_dir, name, relative, create=True)
-            target.parent.mkdir(parents=True, exist_ok=True)
-            try:
-                with target.open("xb") as output:
-                    output.write(source.read_bytes())
-            except FileExistsError:
-                pass
+        if config.get(installation_key(identity)) == "1":
+            if identity in known:
+                changed = restore_missing_builtin_package(ASSETS, library_dir, name, entry) or changed
+            continue
+        copy_builtin_assets(ASSETS, library_dir, name, entry)
         content = entry_path(library_dir, name).read_text(encoding="utf-8")
         if parse_skill_pack_text(content) is None:
             raise ValueError(f"默认技能格式无效，请检查 {entry.name}")
@@ -100,5 +129,5 @@ def install_builtin_skills(store, library_dir: Path) -> bool:
             # Visible in administration. Agent bootstrap may enable new dependencies.
             store.set_default_skill_enabled(identity, False)
         store.set_config({installation_key(identity): "1"})
-        installed = True
-    return _upgrade_stock_assets(store, library_dir) or installed
+        changed = True
+    return _upgrade_stock_assets(store, library_dir) or changed
